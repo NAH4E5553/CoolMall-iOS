@@ -1,0 +1,57 @@
+{
+  "configurations": [
+    {
+      "id": "BBE6108E-6148-4E26-B9D7-038B344D3BF0",
+      "name": "F0",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {
+    "testTimeoutsEnabled": true,
+    "defaultTestExecutionTimeAllowance": 60,
+    "maximumTestExecutionTimeAllowance": 120
+  },
+  "testTargets": [
+    {
+      "target": {
+        "containerPath": "container:Packages/MallKit",
+        "identifier": "MallCoreTests",
+        "name": "MallCoreTests"
+      },
+      "parallelizable": true
+    },
+    {
+      "target": {
+        "containerPath": "container:Packages/MallKit",
+        "identifier": "MallDataTests",
+        "name": "MallDataTests"
+      },
+      "parallelizable": true
+    },
+    {
+      "target": {
+        "containerPath": "container:Packages/MallKit",
+        "identifier": "CatalogFeatureTests",
+        "name": "CatalogFeatureTests"
+      },
+      "parallelizable": true
+    },
+    {
+      "target": {
+        "containerPath": "container:Packages/MallKit",
+        "identifier": "CartFeatureTests",
+        "name": "CartFeatureTests"
+      },
+      "parallelizable": true
+    },
+    {
+      "target": {
+        "containerPath": "container:CoolMalliOS.xcodeproj",
+        "identifier": "70806D7A1BF37458E51362EF",
+        "name": "CoolMalliOSUITests"
+      },
+      "parallelizable": false
+    }
+  ],
+  "version": 1
+}

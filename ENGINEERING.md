@@ -4,7 +4,7 @@
 
 本手册是架构决策、基础能力选型、代码规约、开发流程和验收要求的统一维护入口。
 
-**当前状态：F0-01 工程/合同及 F0-02 本地检查/测试入口已落地；五个库 Target、App、共享 Scheme/Test Plan、SwiftSyntax 源码检查和工程归属检查均有实际文件。iOS 26.2/27.0 模拟器测试通过；按用户安排，iOS 17 兼容性保留为后续真机待验项。远程 CI 已接入，正常流水线、三类故意违规和主分支实际合并阻断已有证据；Bootstrap PR 仍待维护者复核/合并，F0 整体尚未验收，不进入 F1。** 实际命令、结果与限制见第 8 章。
+**当前状态：F0-01 工程/合同及 F0-02 本地检查/测试入口已落地；五个库 Target、App、共享 Scheme/Test Plan、SwiftSyntax 源码检查和工程归属检查均有实际文件。iOS 26.2/27.0 模拟器测试通过；按用户安排，iOS 17 兼容性保留为后续真机待验项。远程 CI 已接入，正常流水线、三类故意违规和主分支实际合并阻断已有证据；Bootstrap PR #1 已按用户指示合并至 main，合并提交的 main CI 已触发；F0 整体尚未验收，不进入 F1。** 实际命令、结果与限制见第 8 章。
 
 先阅读第 1—3 章理解方向与边界；实现页面先查 [2.5 MVVM 合同](#25-feature-内部的-mvvm-合同)；开发基础能力时查第 4—6 章；执行构建与检查时查第 7 章；具体开工顺序见 [8.4](#84-接下来如何开工)。
 
@@ -1022,9 +1022,9 @@ Apple 的 Xcode 27 支持表列出 iOS 17 及以上模拟器；但 Xcode 27 发�
 
 ### 7.4 远程 CI 接入与门禁
 
-远程为 GitHub 仓库 [NAH4E5553/CoolMall-iOS](https://github.com/NAH4E5553/CoolMall-iOS)，使用 GitHub Actions；已核实 Actions 启用及本机 Git 推送认证。工作流为 `.github/workflows/ios.yml`，执行器 `xcode-27`，通过 `DEVELOPER_DIR=/Applications/Xcode_27.0.app/Contents/Developer` 选择固定工具链；实际运行仍须通过原有完整版本校验，不用官方清单代替运行证据。主分支初始化为空提交，工程在 Bootstrap 分支经 PR 审查；实际远程运行和保护状态见 8.3。[官方执行器清单](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)
+远程为 GitHub 仓库 [NAH4E5553/CoolMall-iOS](https://github.com/NAH4E5553/CoolMall-iOS)，使用 GitHub Actions；已核实 Actions 启用及本机 Git 推送认证。工作流为 `.github/workflows/ios.yml`，执行器 `xcode-27`，通过 `DEVELOPER_DIR=/Applications/Xcode_27.0.app/Contents/Developer` 选择固定工具链；实际运行仍须通过原有完整版本校验，不用官方清单代替运行证据。主分支先初始化为空提交，工程经 Bootstrap PR #1 合并进入 main；实际远程运行和保护状态见 8.3。[官方执行器清单](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)
 
-F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 的同一完整验证，不裁剪纯文档路径，不缓存 DerivedData。远程明确选择已安装的 iOS 27.0 runtime；本地 iOS 26.2 证据另保留。`Scripts/select-simulator.py` 对准确 OS 和可用设备失败关闭；`Scripts/verify-local.sh` 执行 policy、format、boundaries、真实编译负向、Debug/Release 和包含 UI 的完整 Test Plan。只读工作流权限、不持有发布签名，checkout/upload-artifact 固定 commit SHA；成功或失败均上传日志和 xcresult（14 天），不上传 DerivedData。`required-checks` 使用 `always()` 汇总，只有所有登记上游成功才通过，缺失、失败、跳过、取消都拒绝。Bootstrap PR 未合并前，工作流尚不在默认 main 分支，周期任务和默认分支上的手动入口尚未激活；不能把触发配置存在写成已执行周期验收。
+F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 的同一完整验证，不裁剪纯文档路径，不缓存 DerivedData。远程明确选择已安装的 iOS 27.0 runtime；本地 iOS 26.2 证据另保留。`Scripts/select-simulator.py` 对准确 OS 和可用设备失败关闭；`Scripts/verify-local.sh` 执行 policy、format、boundaries、真实编译负向、Debug/Release 和包含 UI 的完整 Test Plan。只读工作流权限、不持有发布签名，checkout/upload-artifact 固定 commit SHA；成功或失败均上传日志和 xcresult（14 天），不上传 DerivedData。`required-checks` 使用 `always()` 汇总，只有所有登记上游成功才通过，缺失、失败、跳过、取消都拒绝。Bootstrap PR #1 合并后，工作流已位于默认 main 分支，main 推送已实际触发验证；手动及周期入口配置已进入默认分支，尚无已执行手动/周期验收记录，不能把配置存在写成已执行验收。
 
 每周入口目前覆盖当前系统的干净构建、全部测试及边界负向；iOS 17 按用户安排留待真机补验，因此 **7.2 的完整最低/当前系统 clean-compatibility 尚未完成**。Bootstrap 绿色仅说明现已执行的 F0 检查通过，不能据此宣称最低系统兼容、发布签名或 F0 整体验收完成。
 
@@ -1096,8 +1096,8 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 | F0-01 工程与合同 | CoolMalliOS App、MallKit 五个库 Target、4 个 Package 测试 Target、共享 CoolMalliOS Scheme/Test Plan、最小合同、fake、原生 Tab/Stack 外壳 | 已实施并在当前模拟器验证；未实现 F1 页面业务 |
 | F0-02 本地门禁 | `.swift-format`、工具链锁定、清单图、SwiftSyntax 源码、Xcode 归属/链接/配置、实际测试结果核验、负向夹具 | 已实施；具体本地验收记录如下，最低 runtime 行为仍待补验 |
 | 第一条业务链 | 商品列表/详情/规格、网络/分页/图片、真实 CartStore/磁盘恢复 | 未开始，继续等待 F0 整体验收 |
-| 本地版本管理 | `.gitignore`、GitHub `origin`、初始化 main、Bootstrap 分支 | 已推送 main 空提交 `645584a`；工程通过 Bootstrap PR #1 审查，尚未合并进入 main |
-| F0-03 远程 CI | GitHub Actions 工作流、精确 runtime 选择、required-checks、PR/周期触发与日志留存 | 已实施，正常远程及三类负向/合并阻断有实测证据；最终工程提交以 PR 最新检查为准，默认分支激活待合并 |
+| 本地版本管理 | `.gitignore`、GitHub `origin`、初始化 main、Bootstrap 分支 | main 从初始化空提交 `645584a` 快进至合并提交 `443888e`；Bootstrap PR #1 已合并，本地 main 已同步 |
+| F0-03 远程 CI | GitHub Actions 工作流、精确 runtime 选择、required-checks、PR/周期触发与日志留存 | 已实施，正常远程及三类负向/合并阻断有实测证据；最终 PR 提交检查通过，main 合并提交验证已触发，尚待结果 |
 
 #### 本轮范围、公开入口与状态合同
 
@@ -1208,23 +1208,31 @@ CHANGE-04：将 UI 冒烟按两个独立行为拆为 `testCatalogRouteOpensCartA
 
 诊断验收结束后，[PR #2](https://github.com/NAH4E5553/CoolMall-iOS/pull/2) 已关闭且未合并；临时分支通过恢复提交 `5dac1af73ca2e1b84d9a4539eb2882b931bde4c2` 回到最初正常工程快照，远程 tree SHA 与 `ecd4e8f` 的 tree 精确一致。正式 Bootstrap 分支始终未包含故意错误；诊断提交与首次失败记录保留供审计。最终组合的正常结果以 [PR #1 最新检查](https://github.com/NAH4E5553/CoolMall-iOS/pull/1/checks) 为准，每次正式提交都重新验证；旧提交成功不作为新提交通过。
 
+#### Bootstrap 合并记录（2026-10-07）
+
+CHANGE-01：用户明确要求“合并 PR”。本次按正常主分支保护合并既有成果，并更新实际状态文案；没有修改 Target、公开合同、状态所有者、失败/取消路径、规则矩阵或测试配置。合并前核对精确 head `ae67f837e0cbef01df16c99086455684390a9875`，`F0 verification` 与 `required-checks` 均 SUCCESS，PR 为非草稿、MERGEABLE/CLEAN；该 head 的 [远程运行 37598417769](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/37598417769) 实际完成 **65 项治理及 14 项测试通过、0 失败、0 跳过**，下载 xcresult 已独立复核，两条 UI 分别约 21/19 秒。
+
+执行 `gh pr merge 1 --repo NAH4E5553/CoolMall-iOS --merge --match-head-commit ae67f837e0cbef01df16c99086455684390a9875` 成功，未使用管理员绕过。随后 `gh pr view` 确认为 MERGED，时间 **2026-10-07 10:07:25 UTC**，合并提交 **443888e487a6194cae64986f3439d26c7e151319**；`git fetch origin`、`git switch main`、`git merge --ff-only origin/main` 成功同步本地。该精确合并 SHA 已触发 [main 推送运行 37605293272](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/37605293272)，记录时为 **in_progress**，尚不宣称 main 测试通过。本节状态更新通过独立文档 PR 入库，不直接推送 main；诊断 PR #2 保持关闭且未合并。
+
+本次状态文案更新实际执行 `git diff --check`、`python3 Scripts/check-boundaries.py`、`python3 Scripts/check-project-boundaries.py` 与 `python3 -m unittest discover -s Tests/Governance`：均通过，治理测试为 **65 项**。治理首次沙箱执行中，两项真实清单负向被 SwiftPM/Clang 缓存写权限阻止，未视为预期规则命中；正常缓存权限下重跑原用例通过，日志 `.build/verification/merge-status-governance.log`。本次没有重跑本地 App 行为测试；该手册 PR 仍按现有工作流执行完整远程验证，不改路径过滤或测试要求。
+
 #### 未完成与下一步
 
-1. **Bootstrap 最终差异复核与合并**：F0-03 已有正常远程、三类故意违规红色、失败日志下载和 GitHub 实际阻止合并的证据；固定工具链、main 必需检查及管理员保护均已回读核对。最新工程提交必须取得 PR #1 的 `F0 verification` / `required-checks` SUCCESS，维护者完成差异复核后再合并，不能沿用旧提交绿灯。main 合并后才激活默认分支手动与每周入口，尚无已执行周期验收记录。
+1. **main 合并提交验收**：Bootstrap PR #1 已按用户指示合并，最新 PR head `ae67f83` 的两个检查均 SUCCESS；main 合并提交 `443888e` 已触发完整验证，当前仍运行中，不把 PR 通过代替 main 通过。默认分支已包含手动/每周入口配置，尚无已执行手动/周期验收记录。
 2. **iOS 17 兼容性留待后续真机验证（用户确认，2026-10-07）**：最低版本保留 **17.0**；当前已有 iOS 26.2/27.0 模拟器证据，iOS 17 实际运行、真机和发布签名仍未验证。暂不安装 iOS 17 runtime，后续具备真机时按 6.2/7.2 补验并记录准确系统版本与覆盖缺口。此安排仅调整验证时间和设备路径，不将待验项记为通过或豁免验收。
-3. 初始化 main 空提交为 `645584a`，已推送；工程位于 `codex/f0-engineering-baseline` 分支的 [Bootstrap PR #1](https://github.com/NAH4E5553/CoolMall-iOS/pull/1)。早期“无提交 SHA”日志按当时事实保留。工程尚未合并进入 main，维护者仍需差异复核。
-4. 公共 API、状态所有权与脚本局限仍需维护者差异复核。SwiftSyntax 检查已知语法/API 用法，不解析全部动态语义、别名或任意运行时副作用；不宣称架构永远正确。
-5. 保持最终提交远程绿色、完成维护者复核/合并及必要兼容性补验，才结束 F0、启动 F1-01。
+3. 继续通过 PR 维护 main，禁止直接推送受保护分支。初始化空提交 `645584a`、早期“无提交 SHA”日志和诊断失败记录按当时事实保留；工程已通过 Bootstrap PR #1 进入 main。
+4. 后续变更仍需维护者复核公共 API、状态所有权与脚本局限。SwiftSyntax 检查已知语法/API 用法，不解析全部动态语义、别名或任意运行时副作用；不宣称架构永远正确。
+5. 确认 main 验证通过并完成必要兼容性与设备补验，才结束 F0、启动 F1-01。
 
 ### 8.4 接下来如何开工
 
-F0-01/F0-02 已有真实代码和本地验证，F0-03 已接入并有远程正反例与合并拦截证据，接下来复核/合并 Bootstrap 并确认默认分支触发；iOS 17 兼容性按用户安排保留为后续真机待验项。完整未完成项见 8.3，每一步按实际结果更新，不以目录或配置文件存在代替验收。
+F0-01/F0-02 已有真实代码和本地验证，F0-03 已接入并有远程正反例与合并拦截证据，Bootstrap 已合并且默认分支验证已触发，接下来确认该次运行结果；iOS 17 兼容性按用户安排保留为后续真机待验项。完整未完成项见 8.3，每一步按实际结果更新，不以目录或配置文件存在代替验收。
 
 | 工作项 | 所属阶段与先决条件 | 具体交付 | 验收与当前状态 |
 | --- | --- | --- | --- |
 | F0-01 工程与合同 | 以本手册和 DEC-003 为基线 | 五个库 Target + App；最小 ProductLoading/购物车能力合同、fake、组合入口和共享 Scheme/Test Plan | 已实施；真实依赖图、public/internal 编译对照与当前系统测试通过，详见 8.3 |
 | F0-02 工具与测试入口 | 有 F0-01 可编译骨架 | 格式配置、源码/工程边界检查、合同测试、fixture 导航冒烟；锁定工具链 | 本地已实施；含 CI 工具正反例共 65 项治理测试与 14 项 App/合同测试通过（UI 拆为 2 场景）；最低 runtime、真机与必要手动设备验收仍待完成 |
-| F0-03 远程门禁 | F0-02 本地通过；仓库与 CI 平台确定 | 共享命令接入 CI、结果留存、必需检查及分支保护 | 已落地，正常远程/三类故意违规/实际合并阻断/日志下载见 8.3；最终提交须为绿，默认分支周期/手动激活待 Bootstrap 合并 |
+| F0-03 远程门禁 | F0-02 本地通过；仓库与 CI 平台确定 | 共享命令接入 CI、结果留存、必需检查及分支保护 | 已落地，正常远程/三类故意违规/实际合并阻断/日志下载见 8.3；最终 PR 提交绿色且已合并，main 验证运行中，手动/周期配置已进入默认分支但尚无运行证据 |
 | F1-01 商品列表 | F0 验收通过 | ProductListViewModel + View + fake/真实 ProductLoading；最少所需反馈组件、分页和图片方案 | 正常/空/失败/取消/反序返回、刷新与追加测试；待实施 |
 | F1-02 商品详情与规格 | 列表和基础能力合同稳定 | 独立 ProductDetailViewModel；以商品 ID 路由、规格草稿和加入购物车动作 | 页面实例隔离、输入校验、重复动作及失败恢复；待实施 |
 | F1-03 购物车闭环 | CartStore 合同/实现就绪，与商品动作联调 | CartViewModel、角标投影、同一事实源、持久化与重启恢复 | 第 6 章存储/账号分区/失败回滚测试；待实施。F1-02 可先用同合同 fake，F1 完成前必须换真实实现验证 |

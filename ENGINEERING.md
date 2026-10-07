@@ -1016,7 +1016,7 @@ xcodebuild test \
 
 先在 Xcode → Settings → Components → Other Installed Platforms → Add Platforms 中查找并安装 iOS 17 runtime，再创建使用该 runtime 的模拟器。优先验证最低版本 **17.0**；若 Apple 当前仅提供较新的 17.x，记录确切版本及 17.0 仍未覆盖的缺口，不能把它写成最低版本已验证。[Apple 安装说明](https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components)
 
-安装后核对真实 runtime 和设备 UDID，将 8.3 完整验证入口的 `MALL_SIMULATOR_ID` 替换为该设备，执行同一 `Scripts/verify-local.sh`；检查日志中的目标 OS，以及完整 Test Plan 的实际数量、失败和跳过数。按 6.2 补充最低系统的必要交互、外观及辅助功能检查。当前 13 项自动化测试通过也不代表所有手动设备验证已完成。
+安装后核对真实 runtime 和设备 UDID，将 8.3 完整验证入口的 `MALL_SIMULATOR_ID` 替换为该设备，执行同一 `Scripts/verify-local.sh`；检查日志中的目标 OS，以及完整 Test Plan 的实际数量、失败和跳过数。按 6.2 补充最低系统的必要交互、外观及辅助功能检查。当前自动化测试通过也不代表所有手动设备验证已完成。
 
 Apple 的 Xcode 27 支持表列出 iOS 17 及以上模拟器；但 Xcode 27 发布说明同时限定 Device Hub 键盘/指针输入支持 iOS 18 及以上。该限制不等于已证明 XCTest 自动化不可运行：实际执行并分别记录；若无法完成手动输入验证，用 iOS 17 真机补充相应证据。runtime 不可下载、不可启动或测试不能执行时保持“未验证”，不自行更改锁定工具链或提高最低系统。[系统支持表](https://developer.apple.com/xcode/system-requirements)、[Xcode 27 发布说明](https://developer.apple.com/documentation/xcode-release-notes/xcode-27-release-notes)
 
@@ -1146,7 +1146,7 @@ python3 Scripts/check-test-results.py .build/verification/F0-all.xcresult
 - 格式、SwiftSyntax 源码（18 个 App/库/测试文件）及 Xcode 归属/链接/编译配置检查通过。工具自身 Swift 文件也受格式检查。
 - 治理正反例 **56 项通过**；包括真实 Package 的未知 Target/外部依赖、Catalog→Cart/Data（含不活跃条件分支与选择性导入）、Core→SwiftUI、生产 @testable、重导出、SPI、package 权限、public ViewModel、直接 API、源码软链接/重复归属、搜索路径、缺失链接/测试、格式错误。注释/字符串为正常对照。
 - 真实临时工程编译对照：public FixtureProductService 调用 exit **0**；读取 internal FixtureProductDTO exit **65**，精确诊断为 `module 'MallData' has no member named 'FixtureProductDTO'`；不以任意编译错误充数。
-- 完整 Test Plan 当前系统实际 **13 项通过，0 失败，0 跳过**：Core 1、Data 6、Catalog 3、Cart 2、UI 1。`.build/verification/F0-all.xcresult` 及其 `.summary.json`/`.tests.json` 已核对。不能只以 `TEST SUCCEEDED` 作为验收。
+- 该次完整 Test Plan 实际 **13 项通过，0 失败，0 跳过**：Core 1、Data 6、Catalog 3、Cart 2、UI 1。`.build/verification/F0-all.xcresult` 及其 `.summary.json`/`.tests.json` 已核对。不能只以 `TEST SUCCEEDED` 作为验收。
 - `Scripts/verify-local.sh` **exit 0**：新建 DerivedData 的 Debug/Release 模拟器构建均成功，工程直接入口运行相同 **13 项测试、0 失败/跳过**，结果计数门禁通过。完整记录：`.build/verification/20261007T065927Z-27250/run.log`、`Debug.log`、`Release.log`、`tests.log`、`Tests.xcresult`、`Tests.summary.json`、`Tests.tests.json`。该次集成运行时治理为 55 项；随后新增例外登记失败关闭测试和字符串 token 回归，最终治理复验为 56 项。
 - 最终脚本/手册同步后再执行 `Scripts/check-boundary-negative.sh`（日志 `.build/verification/boundaries-complete.log`）；格式入口另执行 `Scripts/check-format.sh`。编译负向每次使用独立临时源码/DerivedData，并把正常/违规日志保留在 `.build/verification/compiler-<UTC时间>/`。
 
@@ -1202,6 +1202,10 @@ main 原保护查询返回 404（未受保护）；已通过 GitHub API 配置 `
 
 CHANGE-04：修复限定于执行环境准备。完整入口显式 bootstatus、安装并预启动 App，再串行运行测试进程；不改业务实现、用例断言、登记 Target、60/120 秒限额或 Swift Testing 用例内部 Task 竞争。修改后本地实际执行 `MALL_SIMULATOR_ID=B9578251-B27D-450A-9081-D308F9F49783 Scripts/verify-local.sh`，exit **0**：**65 项**治理、格式/源码/工程边界、真实编译正负对照、干净 Debug/Release 构建与 iOS 26.2 的 **13 项通过、0 失败/跳过**；记录 `.build/verification/20261007T081602Z-42840/`。包含同一修复与错误商品夹具的远程诊断 `3f5a863` / `37592704529` 已完成：完整门禁/Debug/Release 通过，测试入口按预期 exit **65**，下载 xcresult 核对为 **13 项、12 通过、仅商品合同 1 失败、0 跳过**，UI **31.69 秒**通过，required-checks FAILURE 且 PR BLOCKED。记录 `.build/verification/negative-business-fixed.log`、`negative-business-fixed-pr-state.json`、`remote-business-fixed/classification.json`。该故意失败运行约 21 分钟，日志显示失败后的 Xcode 诊断收集等待 600 秒；这不是新的用例超时，实际 UI 已通过。不通过提高时限或删测试消除波动。
 
+正式提交 `09e633d` 的 [正常运行 37595605708](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/37595605708) 仍失败，不能用前一轮诊断的 UI 通过代替正常验收。实际 **13 项、12 通过、1 失败、0 跳过**：所有合同通过，唯一失败为 UI 60 秒超时；动作最终完成约 79 秒，没有其他功能断言失败。`required-checks` FAILURE 且非草稿 PR BLOCKED，保护继续有效。预热已缩短启动至约 16 秒，但同一条测试中路由往返和 Tab 往返的自动化查询累计仍超过单用例预算。保留 `.build/verification/positive-final-first.log` 与 `remote-positive-final-first/` 的 xcresult，不隐藏首次正式提交失败。
+
+CHANGE-04：将 UI 冒烟按两个独立行为拆为 `testCatalogRouteOpensCartAndReturns` 和 `testFeatureTabsSwitchAndReturn`，每条均从 App 启动并验证 Catalog 夹具开始；原来的打开购物车、返回、切换两 Tab 及全部断言均保留，多验证一次启动前提。不改 App/五库实现、状态所有权、共享 Test Plan 的 Target 与 60/120 秒限额，也不改并发合同测试。登记实际用例从 **13 增为 14**（Core 1、Data 6、Catalog 3、Cart 2、UI 2），本地实际执行 `MALL_SIMULATOR_ID=B9578251-B27D-450A-9081-D308F9F49783 Scripts/verify-local.sh`，exit **0**：**65 项**治理正反例、格式/完整边界、真实编译正负对照和干净 Debug/Release 构建通过；iOS **26.2** 的完整 Test Plan 实际 **14 项通过、0 失败、0 跳过**，结果计数确认 UI 为 2 项，其他四 Target 共 12 项不变。日志与 xcresult 位于 `.build/verification/20261007T090505Z-47905/`；本地启动时为 `09e633d` 加工作区修改，远程最新工程提交另行验证，不能将本地结果冒充远程通过。
+
 诊断验收结束后，[PR #2](https://github.com/NAH4E5553/CoolMall-iOS/pull/2) 已关闭且未合并；临时分支通过恢复提交 `5dac1af73ca2e1b84d9a4539eb2882b931bde4c2` 回到最初正常工程快照，远程 tree SHA 与 `ecd4e8f` 的 tree 精确一致。正式 Bootstrap 分支始终未包含故意错误；诊断提交与首次失败记录保留供审计。最终组合的正常结果以 [PR #1 最新检查](https://github.com/NAH4E5553/CoolMall-iOS/pull/1/checks) 为准，每次正式提交都重新验证；旧提交成功不作为新提交通过。
 
 #### 未完成与下一步
@@ -1219,7 +1223,7 @@ F0-01/F0-02 已有真实代码和本地验证，F0-03 已接入并有远程正�
 | 工作项 | 所属阶段与先决条件 | 具体交付 | 验收与当前状态 |
 | --- | --- | --- | --- |
 | F0-01 工程与合同 | 以本手册和 DEC-003 为基线 | 五个库 Target + App；最小 ProductLoading/购物车能力合同、fake、组合入口和共享 Scheme/Test Plan | 已实施；真实依赖图、public/internal 编译对照与当前系统测试通过，详见 8.3 |
-| F0-02 工具与测试入口 | 有 F0-01 可编译骨架 | 格式配置、源码/工程边界检查、合同测试、fixture 导航冒烟；锁定工具链 | 本地已实施；含 CI 工具正反例共 65 项治理测试与 13 项 App/合同测试通过；最低 runtime、真机与必要手动设备验收仍待完成 |
+| F0-02 工具与测试入口 | 有 F0-01 可编译骨架 | 格式配置、源码/工程边界检查、合同测试、fixture 导航冒烟；锁定工具链 | 本地已实施；含 CI 工具正反例共 65 项治理测试与 14 项 App/合同测试通过（UI 拆为 2 场景）；最低 runtime、真机与必要手动设备验收仍待完成 |
 | F0-03 远程门禁 | F0-02 本地通过；仓库与 CI 平台确定 | 共享命令接入 CI、结果留存、必需检查及分支保护 | 已落地，正常远程/三类故意违规/实际合并阻断/日志下载见 8.3；最终提交须为绿，默认分支周期/手动激活待 Bootstrap 合并 |
 | F1-01 商品列表 | F0 验收通过 | ProductListViewModel + View + fake/真实 ProductLoading；最少所需反馈组件、分页和图片方案 | 正常/空/失败/取消/反序返回、刷新与追加测试；待实施 |
 | F1-02 商品详情与规格 | 列表和基础能力合同稳定 | 独立 ProductDetailViewModel；以商品 ID 路由、规格草稿和加入购物车动作 | 页面实例隔离、输入校验、重复动作及失败恢复；待实施 |

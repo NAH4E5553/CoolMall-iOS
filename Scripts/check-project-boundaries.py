@@ -90,7 +90,7 @@ def validate_project(root, policy, paths):
     targets = {objects[i]['name']: objects[i] for i in main['targets']}
     require(set(targets) == {'CoolMalliOS', 'CoolMalliOSUITests'}, 'MOD-01: App target set mismatch')
     require(len([o for o in objects.values() if o['isa'] == 'PBXNativeTarget']) == 2, 'MOD-01: unregistered App target')
-    allowed_settings = {'PRODUCT_NAME', 'PRODUCT_BUNDLE_IDENTIFIER', 'GENERATE_INFOPLIST_FILE', 'SWIFT_VERSION', 'IPHONEOS_DEPLOYMENT_TARGET', 'TARGETED_DEVICE_FAMILY', 'SDKROOT', 'SUPPORTED_PLATFORMS', 'CODE_SIGN_STYLE', 'SWIFT_STRICT_CONCURRENCY', 'SWIFT_OPTIMIZATION_LEVEL', 'INFOPLIST_KEY_UILaunchScreen_Generation', 'INFOPLIST_KEY_UIApplicationSceneManifest_Generation', 'INFOPLIST_KEY_CFBundleDisplayName', 'CURRENT_PROJECT_VERSION', 'MARKETING_VERSION', 'TEST_TARGET_NAME', 'CLANG_ENABLE_MODULES', 'DEBUG_INFORMATION_FORMAT', 'ENABLE_TESTABILITY', 'ONLY_ACTIVE_ARCH'}
+    allowed_settings = {'PRODUCT_NAME', 'PRODUCT_BUNDLE_IDENTIFIER', 'GENERATE_INFOPLIST_FILE', 'SWIFT_VERSION', 'SWIFT_ACTIVE_COMPILATION_CONDITIONS', 'IPHONEOS_DEPLOYMENT_TARGET', 'TARGETED_DEVICE_FAMILY', 'SDKROOT', 'SUPPORTED_PLATFORMS', 'CODE_SIGN_STYLE', 'SWIFT_STRICT_CONCURRENCY', 'SWIFT_OPTIMIZATION_LEVEL', 'INFOPLIST_KEY_UILaunchScreen_Generation', 'INFOPLIST_KEY_UIApplicationSceneManifest_Generation', 'INFOPLIST_KEY_CFBundleDisplayName', 'CURRENT_PROJECT_VERSION', 'MARKETING_VERSION', 'TEST_TARGET_NAME', 'CLANG_ENABLE_MODULES', 'DEBUG_INFORMATION_FORMAT', 'ENABLE_TESTABILITY', 'ONLY_ACTIVE_ARCH'}
     for owner in [main, *targets.values()]:
         configs = objects[owner['buildConfigurationList']]['buildConfigurations']
         require(len(configs) == 2 and {objects[i]['name'] for i in configs} == {'Debug', 'Release'}, 'MOD-06: configuration set mismatch')
@@ -99,6 +99,10 @@ def validate_project(root, policy, paths):
             settings = config['buildSettings']
             require(settings.get('ONLY_ACTIVE_ARCH') == ('YES' if config['name'] == 'Debug' else 'NO'), 'MOD-06: active architecture configuration changed')
             require(set(settings) <= allowed_settings, f'MOD-06: unknown/unsafe build settings: {set(settings)-allowed_settings}')
+            conditions = settings.get('SWIFT_ACTIVE_COMPILATION_CONDITIONS')
+            if conditions is not None:
+                require(config['name'] == 'Debug' and conditions == 'DEBUG',
+                        'MOD-06: SWIFT_ACTIVE_COMPILATION_CONDITIONS must be exactly DEBUG and only in Debug configuration')
             require(settings.get('SWIFT_VERSION') == '6.0' and settings.get('IPHONEOS_DEPLOYMENT_TARGET') == '17.0', 'MOD-06: language/deployment baseline changed')
             if owner != main:
                 require(settings.get('SWIFT_STRICT_CONCURRENCY') == 'complete', 'MOD-06: strict concurrency disabled')

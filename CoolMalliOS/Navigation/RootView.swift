@@ -1,5 +1,6 @@
 import CartFeature
 import CatalogFeature
+import Foundation
 import MallDesignSystem
 import SwiftUI
 
@@ -7,7 +8,33 @@ import SwiftUI
 struct RootView: View {
     let dependencies: AppDependencies
     @State private var router = SceneRouter()
+    #if DEBUG
+        private let navTestControl: NavigationTestControl
+    #endif
+
+    init(dependencies: AppDependencies) {
+        self.dependencies = dependencies
+        #if DEBUG
+            let control = NavigationTestControl()
+            navTestControl = control
+            let seededRouter = SceneRouter()
+            control.seed(into: seededRouter)
+            _router = State(initialValue: seededRouter)
+        #endif
+    }
+
     var body: some View {
+        tabs
+            #if DEBUG
+                .overlay(alignment: .top) {
+                    if navTestControl.isEnabled {
+                        NavigationTestControlOverlay(router: router)
+                    }
+                }
+            #endif
+    }
+
+    private var tabs: some View {
         TabView(selection: $router.selectedTab) {
             NavigationStack(path: $router.homePath) {
                 CatalogEntryView(products: dependencies.products, openCart: router.openCart)
@@ -109,3 +136,83 @@ private struct FixturePathProbeView: View {
         .navigationTitle("路径自检")
     }
 }
+
+#if DEBUG
+    /// TEST MEANS ONLY (NAV-02 v0.2 supplement): enabled solely by the UI-test
+    /// launch argument `--uitest-nav-control`; never compiled into Release and
+    /// never a user-reachable control. Pushed routes hide the tab bar, so a user
+    /// cannot switch tabs while any path is non-empty; this control seeds initial
+    /// per-tab paths (`--uitest-nav-paths home=cart;category=probe;...`) and the
+    /// overlay switches tabs programmatically to verify the structural rules.
+    /// Results obtained through it must be reported as controlled test evidence,
+    /// not as user-reachable interaction.
+    private struct NavigationTestControl {
+        let isEnabled: Bool
+        private let seededPaths: [SceneRouter.Tab: [SceneRouter.Route]]
+
+        @MainActor
+        init() {
+            let arguments = ProcessInfo.processInfo.arguments
+            isEnabled = arguments.contains("--uitest-nav-control")
+            var paths: [SceneRouter.Tab: [SceneRouter.Route]] = [:]
+            if let flag = arguments.firstIndex(of: "--uitest-nav-paths"), flag + 1 < arguments.count
+            {
+                for pair in arguments[flag + 1].split(separator: ";") {
+                    let parts = pair.split(separator: "=", maxSplits: 1)
+                    guard parts.count == 2 else { continue }
+                    let tabName = String(parts[0])
+                    guard let tab = Self.tab(named: tabName) else { continue }
+                    paths[tab] =
+                        String(parts[1]) == "cart"
+                        ? [.cart]
+                        : [.fixturePathProbe(label: tabName)]
+                }
+            }
+            seededPaths = paths
+        }
+
+        @MainActor
+        func seed(into router: SceneRouter) {
+            guard isEnabled else { return }
+            router.homePath = seededPaths[.home] ?? []
+            router.categoryPath = seededPaths[.category] ?? []
+            router.cartPath = seededPaths[.cart] ?? []
+            router.mePath = seededPaths[.me] ?? []
+        }
+
+        private static func tab(named name: String) -> SceneRouter.Tab? {
+            switch name {
+            case "home": .home
+            case "category": .category
+            case "cart": .cart
+            case "me": .me
+            default: nil
+            }
+        }
+    }
+
+    /// Visible test overlay, explicitly labeled so screenshots and logs cannot be
+    /// mistaken for product UI. Switches the selected tab programmatically.
+    /// The container must not set an accessibilityIdentifier: it would override
+    /// the per-button identifiers the UI tests query.
+    private struct NavigationTestControlOverlay: View {
+        let router: SceneRouter
+        var body: some View {
+            HStack(spacing: 8) {
+                Text("受控测试").font(.caption2)
+                controlButton("home", tab: .home)
+                controlButton("category", tab: .category)
+                controlButton("cart", tab: .cart)
+                controlButton("me", tab: .me)
+            }
+            .padding(6)
+            .background(.ultraThinMaterial, in: Capsule())
+        }
+
+        private func controlButton(_ name: String, tab: SceneRouter.Tab) -> some View {
+            Button("→\(name)") { router.selectedTab = tab }
+                .font(.caption2)
+                .accessibilityIdentifier("navctl.select.\(name)")
+        }
+    }
+#endif

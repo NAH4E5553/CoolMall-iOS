@@ -149,6 +149,75 @@ final class NavigationSmokeTests: XCTestCase {
         XCTAssertTrue(app.buttons["catalog.openCart"].waitForExistence(timeout: 5))
     }
 
+    /// NAV-02 v0.2 (user-reachable operations): a full tab round trip preserves
+    /// each tab root's observable state — home/cart fixture labels identical
+    /// before and after, pending markers keep resolving to the same roots.
+    @MainActor func testTabRoundTripPreservesRootObservableState() {
+        let app = launchApp()
+        XCTAssertTrue(app.staticTexts["catalog.fixture"].waitForExistence(timeout: 5))
+        let homeRootLabel = app.staticTexts["catalog.fixture"].label
+        app.tabBars.buttons["购物车"].tap()
+        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
+        let cartRootLabel = app.staticTexts["cart.fixture"].label
+        for _ in 0..<2 {
+            app.tabBars.buttons["分类"].tap()
+            XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
+            app.tabBars.buttons["我的"].tap()
+            XCTAssertTrue(app.staticTexts["me.pending"].waitForExistence(timeout: 5))
+            app.tabBars.buttons["首页"].tap()
+            XCTAssertTrue(app.staticTexts["catalog.fixture"].waitForExistence(timeout: 5))
+            XCTAssertEqual(app.staticTexts["catalog.fixture"].label, homeRootLabel)
+            app.tabBars.buttons["购物车"].tap()
+            XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
+            XCTAssertEqual(app.staticTexts["cart.fixture"].label, cartRootLabel)
+        }
+    }
+
+    /// NAV-02 v0.2 CONTROLLED TEST MEANS — not user-reachable interaction.
+    /// Pushed routes hide the tab bar, so a user cannot switch tabs while any
+    /// path is non-empty; the DEBUG-only launch argument seeds all four paths
+    /// (including cartPath) and the labeled overlay switches tabs
+    /// programmatically. Verifies: simultaneous non-empty paths, pushed-page
+    /// identity and local state across switches, and back popping only the
+    /// current stack. This supplements — never replaces — TC-NAV-04, whose
+    /// user-reachable scenario stays 未验证.
+    @MainActor func testControlledSimultaneousPathsSwitchingAndBackScope() {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "--uitest-nav-control",
+            "--uitest-nav-paths",
+            "home=cart;category=probe;cart=probe;me=probe",
+        ]
+        app.launch()
+        // Home is selected with its cart route pushed: all four paths non-empty.
+        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 10))
+        app.buttons["navctl.select.category"].tap()
+        XCTAssertTrue(app.staticTexts["category.probeIdentity"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["category.probeIdentity"].label, "身份计数：0")
+        app.buttons["category.probeTick"].tap()
+        app.buttons["category.probeTick"].tap()
+        XCTAssertEqual(app.staticTexts["category.probeIdentity"].label, "身份计数：2")
+        app.buttons["navctl.select.home"].tap()
+        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
+        app.buttons["navctl.select.category"].tap()
+        XCTAssertTrue(app.staticTexts["category.probeIdentity"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["category.probeIdentity"].label, "身份计数：2")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
+        app.buttons["navctl.select.home"].tap()
+        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["catalog.openCart"].waitForExistence(timeout: 5))
+        app.buttons["navctl.select.cart"].tap()
+        XCTAssertTrue(app.staticTexts["cart.probeIdentity"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
+        app.buttons["navctl.select.me"].tap()
+        XCTAssertTrue(app.staticTexts["me.probeIdentity"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["me.pending"].waitForExistence(timeout: 5))
+    }
+
     @MainActor private func launchApp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launch()

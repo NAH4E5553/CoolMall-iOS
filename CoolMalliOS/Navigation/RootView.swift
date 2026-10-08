@@ -98,17 +98,26 @@ struct RootView: View {
     }
 }
 
-/// NAV-01 shell placeholders. NAV-02 adds a fixture-only path probe so per-tab
-/// path behavior stays observable until real screens arrive; still no business state.
+/// NAV-01 shell placeholders. NAV-02 adds fixture-only path probes (and v0.3
+/// root-local identity ticks) so per-tab path behavior and root page identity
+/// stay observable until real screens arrive; still no business state.
 private struct PendingTabView: View {
     let marker: String
     let title: String
     let detail: String
     let pushProbe: () -> Void
+    @State private var rootTicks = 0
     var body: some View {
         VStack(spacing: 20) {
             FixtureNoticeView(title: title, detail: detail)
             Text("待接入").font(.headline).accessibilityIdentifier(marker)
+            // Root-local identity ticks (v0.3): a recreated view would restart at
+            // zero, so a preserved count proves the root page identity survived
+            // tab switches. Fixture scaffolding only, like the probe below.
+            Text("根页身份：\(rootTicks)")
+                .accessibilityIdentifier("\(marker).rootIdentity")
+            Button("根页计数 +1") { rootTicks += 1 }
+                .accessibilityIdentifier("\(marker).rootTick")
             Button("压入路径自检页", action: pushProbe)
                 .accessibilityIdentifier("\(marker).pushProbe")
         }

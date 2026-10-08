@@ -5,3 +5,9 @@ DerivedData/
 *.xcuserstate
 xcuserdata/
 __pycache__/
+
+# Local-only reference material, plans, and verification evidence.
+# App resources and executable test fixtures remain versioned.
+/Evidence/
+/IMPLEMENTATION_PLAN.md
+/PRODUCT_SPEC.md

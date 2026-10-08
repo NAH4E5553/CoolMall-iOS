@@ -13,7 +13,7 @@ public struct CatalogEntryView: View {
     }
     public var body: some View {
         VStack(spacing: 20) {
-            FixtureNoticeView(title: "商品入口", detail: "F0 本地夹具 · 尚未接入商品业务")
+            FixtureNoticeView(title: "首页（工程夹具）", detail: "真实首页待接入 · 当前展示本地工程夹具")
             switch viewModel.state {
             case .idle, .loading: ProgressView()
             case .ready(let product): Text(product.title).accessibilityIdentifier("catalog.fixture")
@@ -21,7 +21,7 @@ public struct CatalogEntryView: View {
             }
             Button("打开购物车", action: openCart).accessibilityIdentifier("catalog.openCart")
         }
-        .navigationTitle("商品")
+        .navigationTitle("首页")
         .task { await viewModel.load() }
     }
 }

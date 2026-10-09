@@ -182,30 +182,52 @@ final class NavigationSmokeTests: XCTestCase {
     }
 
     /// Companion of the test above: pending roots keep their local identity
-    /// ticks (a recreated view would restart at zero). After ticking both to
-    /// 2, one fixture-root round trip provides the away context, then a
-    /// category↔me away-and-back cycle re-asserts both counts; each root keeps
-    /// two count assertions, exactly as in the pre-split test.
-    @MainActor func testTabRoundTripPreservesPendingRootIdentityCounts() {
+    /// ticks (a recreated view would restart at zero). v0.6 correction — the
+    /// CI-time split had dropped the SECOND consecutive away-and-back round
+    /// (2 assertions per root instead of the pre-split 3); these tests restore
+    /// it. Split is per root, never per round: each root gets its initial
+    /// count plus TWO consecutive switch-away-and-back verifications in one
+    /// launch — a fresh launch may not stand in for the second round.
+    @MainActor func testTabRoundTripKeepsCategoryRootCountAcrossTwoRounds() {
         let app = launchApp()
         app.tabBars.buttons["分类"].tap()
         XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
         app.buttons["category.pending.rootTick"].tap()
         app.buttons["category.pending.rootTick"].tap()
         XCTAssertEqual(app.staticTexts["category.pending.rootIdentity"].label, "根页身份：2")
+        // Round 1: away to the me root, then back.
+        app.tabBars.buttons["我的"].tap()
+        XCTAssertTrue(app.staticTexts["me.pending"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["分类"].tap()
+        XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["category.pending.rootIdentity"].label, "根页身份：2")
+        // Round 2 (consecutive, same launch): away to a fixture root, then back.
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["catalog.fixture"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["分类"].tap()
+        XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["category.pending.rootIdentity"].label, "根页身份：2")
+    }
+
+    /// Companion half for the me root: initial count plus two consecutive
+    /// away-and-back rounds in one launch (away targets: category root, then
+    /// the cart fixture root).
+    @MainActor func testTabRoundTripKeepsMeRootCountAcrossTwoRounds() {
+        let app = launchApp()
         app.tabBars.buttons["我的"].tap()
         XCTAssertTrue(app.staticTexts["me.pending"].waitForExistence(timeout: 5))
         app.buttons["me.pending.rootTick"].tap()
         app.buttons["me.pending.rootTick"].tap()
         XCTAssertEqual(app.staticTexts["me.pending.rootIdentity"].label, "根页身份：2")
-        // One fixture-root round trip: switching away to home and cart roots.
-        app.tabBars.buttons["首页"].tap()
-        XCTAssertTrue(app.staticTexts["catalog.fixture"].waitForExistence(timeout: 5))
-        app.tabBars.buttons["购物车"].tap()
-        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
+        // Round 1: away to the category root, then back.
         app.tabBars.buttons["分类"].tap()
         XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["category.pending.rootIdentity"].label, "根页身份：2")
+        app.tabBars.buttons["我的"].tap()
+        XCTAssertTrue(app.staticTexts["me.pending"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["me.pending.rootIdentity"].label, "根页身份：2")
+        // Round 2 (consecutive, same launch): away to a fixture root, then back.
+        app.tabBars.buttons["购物车"].tap()
+        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
         app.tabBars.buttons["我的"].tap()
         XCTAssertTrue(app.staticTexts["me.pending"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["me.pending.rootIdentity"].label, "根页身份：2")
@@ -303,6 +325,76 @@ final class NavigationSmokeTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["me.probeIdentity"].waitForExistence(timeout: 5))
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.staticTexts["me.pending"].waitForExistence(timeout: 5))
+    }
+
+    /// NAV-03 AT-01: the home fixture emits a typed goodsId intent; the detail
+    /// placeholder shows the received id and the pending marker; NAV-R07 keeps
+    /// the tab bar hidden on the detail; back restores the home root and the
+    /// four tabs.
+    @MainActor func testProductDetailRoutePassesIDAndRestoresSourceRoot() {
+        let app = launchApp()
+        app.buttons["catalog.openProduct"].tap()
+        XCTAssertTrue(app.staticTexts["detail.goodsID"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["detail.goodsID"].label, "商品ID：1")
+        XCTAssertTrue(app.staticTexts["真实详情待接入 · 仅验证类型化导航与商品ID传递"].exists)
+        XCTAssertFalse(app.tabBars.buttons["首页"].waitForExistence(timeout: 2))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["catalog.openProduct"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["首页"].waitForExistence(timeout: 5))
+    }
+
+    /// NAV-03 AT-02: detail → independent cart → back restores the SAME detail
+    /// (same goodsId, same page identity via the detail tick) without swapping
+    /// the source tab; the tab bar stays hidden through the round trip and is
+    /// restored only at the home root.
+    @MainActor func testDetailIndependentCartReturnKeepsDetailIDAndIdentity() {
+        let app = launchApp()
+        app.buttons["catalog.openProduct"].tap()
+        XCTAssertTrue(app.staticTexts["detail.goodsID"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["detail.goodsID"].label, "商品ID：1")
+        app.buttons["detail.tick"].tap()
+        app.buttons["detail.tick"].tap()
+        XCTAssertEqual(app.staticTexts["detail.identity"].label, "详情身份：2")
+        app.buttons["detail.openCart"].tap()
+        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.tabBars.buttons["首页"].waitForExistence(timeout: 2))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["detail.goodsID"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["detail.goodsID"].label, "商品ID：1")
+        XCTAssertEqual(app.staticTexts["detail.identity"].label, "详情身份：2")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["catalog.openProduct"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["首页"].waitForExistence(timeout: 5))
+    }
+
+    /// NAV-03 AT-03: a NON-home source — the category placeholder entry pushes
+    /// goodsID 830001 (the TC-NAV-05 fixture value); the independent cart is
+    /// opened from that detail and returns to the same detail on the category
+    /// stack; back lands on the category root (source tab kept), and the home
+    /// stack is untouched.
+    @MainActor func testCategoryDetailSourceKeepsSourceTabAndHomeStack() {
+        let app = launchApp()
+        app.tabBars.buttons["分类"].tap()
+        XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
+        app.buttons["category.pending.openProduct"].tap()
+        XCTAssertTrue(app.staticTexts["detail.goodsID"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["detail.goodsID"].label, "商品ID：830001")
+        app.buttons["detail.tick"].tap()
+        app.buttons["detail.tick"].tap()
+        XCTAssertEqual(app.staticTexts["detail.identity"].label, "详情身份：2")
+        app.buttons["detail.openCart"].tap()
+        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.tabBars.buttons["首页"].waitForExistence(timeout: 2))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["detail.goodsID"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["detail.goodsID"].label, "商品ID：830001")
+        XCTAssertEqual(app.staticTexts["detail.identity"].label, "详情身份：2")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["首页"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["catalog.fixture"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["catalog.openCart"].exists)
     }
 
     @MainActor private func launchControlledApp() -> XCUIApplication {

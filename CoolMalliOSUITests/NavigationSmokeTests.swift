@@ -188,24 +188,17 @@ final class NavigationSmokeTests: XCTestCase {
         }
     }
 
-    /// NAV-02 v0.2/v0.3 CONTROLLED TEST MEANS — not user-reachable interaction.
-    /// Pushed routes hide the tab bar, so a user cannot switch tabs while any
-    /// path is non-empty; the DEBUG-only launch argument seeds all four paths
-    /// (including cartPath) and the labeled overlay switches tabs
-    /// programmatically. Verifies: simultaneous non-empty paths, pushed-page
-    /// identity and local state across switches for EVERY probe path
-    /// (category/cart/me tick to 2, switch away, switch back, still 2), the
-    /// home .cart route keeping its observable label across switches, and back
-    /// popping only the current stack. This supplements — never replaces —
-    /// TC-NAV-04, whose user-reachable scenario stays 未验证.
-    @MainActor func testControlledSimultaneousPathsSwitchingAndBackScope() {
-        let app = XCUIApplication()
-        app.launchArguments += [
-            "--uitest-nav-control",
-            "--uitest-nav-paths",
-            "home=cart;category=probe;cart=probe;me=probe",
-        ]
-        app.launch()
+    /// NAV-02 v0.2/v0.3/v0.5 CONTROLLED TEST MEANS — not user-reachable
+    /// interaction. Pushed routes hide the tab bar, so a user cannot switch
+    /// tabs while any path is non-empty; the DEBUG-only launch argument seeds
+    /// all four paths (including cartPath) and the labeled overlay switches
+    /// tabs programmatically. Originally one test; split into two (each with
+    /// its own launch) after CI exceeded the 60s per-test budget — same
+    /// CHANGE-04 pattern as the NAV-01 smoke split, no assertions removed.
+    /// Both supplement — never replace — TC-NAV-04, whose user-reachable
+    /// scenario stays 未验证.
+    @MainActor func testControlledProbePathsPreserveIdentityAcrossSwitches() {
+        let app = launchControlledApp()
         // Home is selected with its cart route pushed: all four paths non-empty.
         XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 10))
         let homeCartRouteLabel = app.staticTexts["cart.fixture"].label
@@ -223,13 +216,6 @@ final class NavigationSmokeTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["category.probeIdentity"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["category.probeIdentity"].label, "身份计数：2")
 
-        // Back on category pops only this stack; home's path is untouched.
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
-        app.buttons["navctl.select.home"].tap()
-        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["cart.fixture"].label, homeCartRouteLabel)
-
         // Cart probe (cartPath): same identity sequence across switches.
         app.buttons["navctl.select.cart"].tap()
         XCTAssertTrue(app.staticTexts["cart.probeIdentity"].waitForExistence(timeout: 5))
@@ -242,7 +228,7 @@ final class NavigationSmokeTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["cart.probeIdentity"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["cart.probeIdentity"].label, "身份计数：2")
 
-        // Me probe (mePath): same identity sequence, then pop every path.
+        // Me probe (mePath): same identity sequence.
         app.buttons["navctl.select.me"].tap()
         XCTAssertTrue(app.staticTexts["me.probeIdentity"].waitForExistence(timeout: 5))
         app.buttons["me.probeTick"].tap()
@@ -253,16 +239,49 @@ final class NavigationSmokeTests: XCTestCase {
         app.buttons["navctl.select.me"].tap()
         XCTAssertTrue(app.staticTexts["me.probeIdentity"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["me.probeIdentity"].label, "身份计数：2")
+    }
+
+    /// Controlled companion of the test above: back pops only the current
+    /// stack, and every seeded path (home/category/cart/me incl. cartPath)
+    /// pops to its own tab root. Same launch arguments; same boundaries.
+    @MainActor func testControlledBackPopsOnlyCurrentStackAcrossFourPaths() {
+        let app = launchControlledApp()
+        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 10))
+        let homeCartRouteLabel = app.staticTexts["cart.fixture"].label
+
+        // Back on category pops only this stack; home's path is untouched.
+        app.buttons["navctl.select.category"].tap()
+        XCTAssertTrue(app.staticTexts["category.probeIdentity"].waitForExistence(timeout: 5))
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(app.staticTexts["me.pending"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
+        app.buttons["navctl.select.home"].tap()
+        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["cart.fixture"].label, homeCartRouteLabel)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.buttons["catalog.openCart"].waitForExistence(timeout: 5))
+
+        // Cart probe (cartPath) pops to the cart tab root.
         app.buttons["navctl.select.cart"].tap()
         XCTAssertTrue(app.staticTexts["cart.probeIdentity"].waitForExistence(timeout: 5))
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
-        app.buttons["navctl.select.home"].tap()
-        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
+
+        // Me probe (mePath) pops to the me tab root.
+        app.buttons["navctl.select.me"].tap()
+        XCTAssertTrue(app.staticTexts["me.probeIdentity"].waitForExistence(timeout: 5))
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(app.buttons["catalog.openCart"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["me.pending"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor private func launchControlledApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "--uitest-nav-control",
+            "--uitest-nav-paths",
+            "home=cart;category=probe;cart=probe;me=probe",
+        ]
+        app.launch()
+        return app
     }
 
     @MainActor private func launchApp() -> XCUIApplication {

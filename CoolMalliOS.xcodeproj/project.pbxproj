@@ -97,6 +97,24 @@
 			<key>productRef</key>
 			<string>9C3551151EB0012AB46FDA96</string>
 		</dict>
+		<key>5265678C3E424FFE8E17C3CD</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOS/Testing/HomeUITestSupport.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>9612F14A7A5F4CDEA02443F4</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>5265678C3E424FFE8E17C3CD</string>
+		</dict>
 		<key>660CA075CF0162DDB830E9BB</key>
 		<dict>
 			<key>isa</key>
@@ -194,6 +212,7 @@
 			<key>files</key>
 			<array>
 				<string>F0815417B48BE7214411A425</string>
+				<string>9612F14A7A5F4CDEA02443F4</string>
 				<string>21399D0A8818802D6A238FF5</string>
 				<string>9EDD97C6A12732C87B234FCD</string>
 				<string>8DA6D32F4AE4C57469515AF5</string>
@@ -379,6 +398,24 @@
 			<key>productType</key>
 			<string>com.apple.product-type.application</string>
 		</dict>
+		<key>0E74FE63B5F140F78DF26BE1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOSUITests/HomeLoadTests.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>6BC735BB94E0414B8E59E58E</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>0E74FE63B5F140F78DF26BE1</string>
+		</dict>
 		<key>41730A52CE7F2281B47E9286</key>
 		<dict>
 			<key>isa</key>
@@ -419,6 +456,7 @@
 			<key>files</key>
 			<array>
 				<string>EE8B96540EBBB61C6D2214DC</string>
+				<string>6BC735BB94E0414B8E59E58E</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>

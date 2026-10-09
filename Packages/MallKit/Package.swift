@@ -19,7 +19,9 @@ let package = Package(
         .target(name: "CatalogFeature", dependencies: ["MallCore", "MallDesignSystem"]),
         .target(name: "CartFeature", dependencies: ["MallCore", "MallDesignSystem"]),
         .testTarget(name: "MallCoreTests", dependencies: ["MallCore"]),
-        .testTarget(name: "MallDataTests", dependencies: ["MallData", "MallCore"]),
+        .testTarget(
+            name: "MallDataTests", dependencies: ["MallData", "MallCore"],
+            resources: [.process("Resources")]),
         .testTarget(name: "CatalogFeatureTests", dependencies: ["CatalogFeature", "MallCore"]),
         .testTarget(name: "CartFeatureTests", dependencies: ["CartFeature", "MallCore"]),
     ],

@@ -112,12 +112,19 @@ final class NavigationSmokeTests: XCTestCase {
     /// NAV-02 (NAV-R02): re-tapping the current tab at any tab root is a no-op —
     /// no push, pop, or refresh. Extends the NAV-01 home/cart coverage to the
     /// pending tab roots.
-    @MainActor func testRepeatedCurrentTabTapsOnPendingRootsStayPut() {
+    /// Split for the CI per-test time budget (same CHANGE-04 pattern; every
+    /// assertion kept). This half: category root re-taps.
+    @MainActor func testRepeatedCategoryRootTapsStayPut() {
         let app = launchApp()
         app.tabBars.buttons["分类"].tap()
         XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
         for _ in 0..<3 { app.tabBars.buttons["分类"].tap() }
         XCTAssertTrue(app.staticTexts["category.pending"].exists)
+    }
+
+    /// Companion half: me-root and home-root re-taps.
+    @MainActor func testRepeatedMeAndHomeRootTapsStayPut() {
+        let app = launchApp()
         app.tabBars.buttons["我的"].tap()
         XCTAssertTrue(app.staticTexts["me.pending"].waitForExistence(timeout: 5))
         for _ in 0..<3 { app.tabBars.buttons["我的"].tap() }
@@ -149,19 +156,38 @@ final class NavigationSmokeTests: XCTestCase {
         XCTAssertTrue(app.buttons["catalog.openCart"].waitForExistence(timeout: 5))
     }
 
-    /// NAV-02 v0.2/v0.3 (user-reachable operations): a full tab round trip
-    /// preserves each tab root's observable state — pending roots keep their
-    /// local identity ticks (a recreated view would restart at zero), and the
-    /// home/cart fixture labels stay identical before and after. The home/cart
-    /// label check alone cannot distinguish recreation; active-instance
-    /// diagnostics for those two roots live in the NAV-02 evidence batch.
-    @MainActor func testTabRoundTripPreservesRootObservableState() {
+    /// NAV-02 v0.2/v0.3 (user-reachable operations), split for the CI per-test
+    /// time budget (same CHANGE-04 pattern as the earlier splits; every
+    /// assertion kept): a tab round trip preserves each root's observable
+    /// state. This half keeps the home/cart fixture labels identical before and
+    /// after two away-and-back cycles; the pending roots' local identity ticks
+    /// live in the companion test. The label check alone cannot distinguish
+    /// recreation; the active-instance diagnostics for home/cart live in the
+    /// NAV-02 evidence.
+    @MainActor func testTabRoundTripPreservesFixtureRootLabels() {
         let app = launchApp()
         XCTAssertTrue(app.staticTexts["catalog.fixture"].waitForExistence(timeout: 5))
         let homeRootLabel = app.staticTexts["catalog.fixture"].label
         app.tabBars.buttons["购物车"].tap()
         XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
         let cartRootLabel = app.staticTexts["cart.fixture"].label
+        for _ in 0..<2 {
+            app.tabBars.buttons["首页"].tap()
+            XCTAssertTrue(app.staticTexts["catalog.fixture"].waitForExistence(timeout: 5))
+            XCTAssertEqual(app.staticTexts["catalog.fixture"].label, homeRootLabel)
+            app.tabBars.buttons["购物车"].tap()
+            XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
+            XCTAssertEqual(app.staticTexts["cart.fixture"].label, cartRootLabel)
+        }
+    }
+
+    /// Companion of the test above: pending roots keep their local identity
+    /// ticks (a recreated view would restart at zero). After ticking both to
+    /// 2, one fixture-root round trip provides the away context, then a
+    /// category↔me away-and-back cycle re-asserts both counts; each root keeps
+    /// two count assertions, exactly as in the pre-split test.
+    @MainActor func testTabRoundTripPreservesPendingRootIdentityCounts() {
+        let app = launchApp()
         app.tabBars.buttons["分类"].tap()
         XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
         app.buttons["category.pending.rootTick"].tap()
@@ -172,32 +198,30 @@ final class NavigationSmokeTests: XCTestCase {
         app.buttons["me.pending.rootTick"].tap()
         app.buttons["me.pending.rootTick"].tap()
         XCTAssertEqual(app.staticTexts["me.pending.rootIdentity"].label, "根页身份：2")
-        for _ in 0..<2 {
-            app.tabBars.buttons["首页"].tap()
-            XCTAssertTrue(app.staticTexts["catalog.fixture"].waitForExistence(timeout: 5))
-            XCTAssertEqual(app.staticTexts["catalog.fixture"].label, homeRootLabel)
-            app.tabBars.buttons["购物车"].tap()
-            XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
-            XCTAssertEqual(app.staticTexts["cart.fixture"].label, cartRootLabel)
-            app.tabBars.buttons["分类"].tap()
-            XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
-            XCTAssertEqual(app.staticTexts["category.pending.rootIdentity"].label, "根页身份：2")
-            app.tabBars.buttons["我的"].tap()
-            XCTAssertTrue(app.staticTexts["me.pending"].waitForExistence(timeout: 5))
-            XCTAssertEqual(app.staticTexts["me.pending.rootIdentity"].label, "根页身份：2")
-        }
+        // One fixture-root round trip: switching away to home and cart roots.
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["catalog.fixture"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["购物车"].tap()
+        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["分类"].tap()
+        XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["category.pending.rootIdentity"].label, "根页身份：2")
+        app.tabBars.buttons["我的"].tap()
+        XCTAssertTrue(app.staticTexts["me.pending"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["me.pending.rootIdentity"].label, "根页身份：2")
     }
 
     /// NAV-02 v0.2/v0.3/v0.5 CONTROLLED TEST MEANS — not user-reachable
     /// interaction. Pushed routes hide the tab bar, so a user cannot switch
     /// tabs while any path is non-empty; the DEBUG-only launch argument seeds
     /// all four paths (including cartPath) and the labeled overlay switches
-    /// tabs programmatically. Originally one test; split into two (each with
-    /// its own launch) after CI exceeded the 60s per-test budget — same
+    /// tabs programmatically. Originally one test; split into independently
+    /// launched tests after CI exceeded the 60s per-test budget — same
     /// CHANGE-04 pattern as the NAV-01 smoke split, no assertions removed.
-    /// Both supplement — never replace — TC-NAV-04, whose user-reachable
-    /// scenario stays 未验证.
-    @MainActor func testControlledProbePathsPreserveIdentityAcrossSwitches() {
+    /// Together they cover probe identity across switches for every path and
+    /// back popping only the current stack. They supplement — never replace —
+    /// TC-NAV-04, whose user-reachable scenario stays 未验证.
+    @MainActor func testControlledProbeIdentityAcrossSwitchesCategoryAndCart() {
         let app = launchControlledApp()
         // Home is selected with its cart route pushed: all four paths non-empty.
         XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 10))
@@ -227,8 +251,16 @@ final class NavigationSmokeTests: XCTestCase {
         app.buttons["navctl.select.cart"].tap()
         XCTAssertTrue(app.staticTexts["cart.probeIdentity"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["cart.probeIdentity"].label, "身份计数：2")
+    }
 
-        // Me probe (mePath): same identity sequence.
+    /// Controlled companion of the test above: the me probe (mePath) keeps
+    /// identity across switches and the home .cart route keeps its observable
+    /// label. Same launch arguments; same boundaries.
+    @MainActor func testControlledProbeIdentityAcrossSwitchesMeAndHomeCart() {
+        let app = launchControlledApp()
+        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 10))
+
+        // Me probe (mePath): tick to 2, switch away and back, identity preserved.
         app.buttons["navctl.select.me"].tap()
         XCTAssertTrue(app.staticTexts["me.probeIdentity"].waitForExistence(timeout: 5))
         app.buttons["me.probeTick"].tap()

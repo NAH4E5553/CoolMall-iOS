@@ -182,30 +182,52 @@ final class NavigationSmokeTests: XCTestCase {
     }
 
     /// Companion of the test above: pending roots keep their local identity
-    /// ticks (a recreated view would restart at zero). After ticking both to
-    /// 2, one fixture-root round trip provides the away context, then a
-    /// category↔me away-and-back cycle re-asserts both counts; each root keeps
-    /// two count assertions, exactly as in the pre-split test.
-    @MainActor func testTabRoundTripPreservesPendingRootIdentityCounts() {
+    /// ticks (a recreated view would restart at zero). v0.6 correction — the
+    /// CI-time split had dropped the SECOND consecutive away-and-back round
+    /// (2 assertions per root instead of the pre-split 3); these tests restore
+    /// it. Split is per root, never per round: each root gets its initial
+    /// count plus TWO consecutive switch-away-and-back verifications in one
+    /// launch — a fresh launch may not stand in for the second round.
+    @MainActor func testTabRoundTripKeepsCategoryRootCountAcrossTwoRounds() {
         let app = launchApp()
         app.tabBars.buttons["分类"].tap()
         XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
         app.buttons["category.pending.rootTick"].tap()
         app.buttons["category.pending.rootTick"].tap()
         XCTAssertEqual(app.staticTexts["category.pending.rootIdentity"].label, "根页身份：2")
+        // Round 1: away to the me root, then back.
+        app.tabBars.buttons["我的"].tap()
+        XCTAssertTrue(app.staticTexts["me.pending"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["分类"].tap()
+        XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["category.pending.rootIdentity"].label, "根页身份：2")
+        // Round 2 (consecutive, same launch): away to a fixture root, then back.
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["catalog.fixture"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["分类"].tap()
+        XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["category.pending.rootIdentity"].label, "根页身份：2")
+    }
+
+    /// Companion half for the me root: initial count plus two consecutive
+    /// away-and-back rounds in one launch (away targets: category root, then
+    /// the cart fixture root).
+    @MainActor func testTabRoundTripKeepsMeRootCountAcrossTwoRounds() {
+        let app = launchApp()
         app.tabBars.buttons["我的"].tap()
         XCTAssertTrue(app.staticTexts["me.pending"].waitForExistence(timeout: 5))
         app.buttons["me.pending.rootTick"].tap()
         app.buttons["me.pending.rootTick"].tap()
         XCTAssertEqual(app.staticTexts["me.pending.rootIdentity"].label, "根页身份：2")
-        // One fixture-root round trip: switching away to home and cart roots.
-        app.tabBars.buttons["首页"].tap()
-        XCTAssertTrue(app.staticTexts["catalog.fixture"].waitForExistence(timeout: 5))
-        app.tabBars.buttons["购物车"].tap()
-        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
+        // Round 1: away to the category root, then back.
         app.tabBars.buttons["分类"].tap()
         XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["category.pending.rootIdentity"].label, "根页身份：2")
+        app.tabBars.buttons["我的"].tap()
+        XCTAssertTrue(app.staticTexts["me.pending"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["me.pending.rootIdentity"].label, "根页身份：2")
+        // Round 2 (consecutive, same launch): away to a fixture root, then back.
+        app.tabBars.buttons["购物车"].tap()
+        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
         app.tabBars.buttons["我的"].tap()
         XCTAssertTrue(app.staticTexts["me.pending"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["me.pending.rootIdentity"].label, "根页身份：2")

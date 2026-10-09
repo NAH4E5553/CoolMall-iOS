@@ -110,6 +110,18 @@ class ProjectBoundariesTests(unittest.TestCase):
             next(o for o in objects.values() if o['isa']=='XCBuildConfiguration')['buildSettings']['SWIFT_INCLUDE_PATHS']='$(SRCROOT)/Other'
         self.mutate_project(mutation); self.reject('MOD-06: unknown/unsafe build settings')
 
+    def test_compilation_conditions_release_forbidden(self):
+        def mutation(objects):
+            release = next(o for o in objects.values() if o['isa']=='XCBuildConfiguration' and o['name']=='Release')
+            release['buildSettings']['SWIFT_ACTIVE_COMPILATION_CONDITIONS']='DEBUG'
+        self.mutate_project(mutation); self.reject('MOD-06: SWIFT_ACTIVE_COMPILATION_CONDITIONS must be exactly DEBUG')
+
+    def test_compilation_conditions_unsafe_value_forbidden(self):
+        def mutation(objects):
+            debug = next(o for o in objects.values() if o['isa']=='XCBuildConfiguration' and o['name']=='Debug')
+            debug['buildSettings']['SWIFT_ACTIVE_COMPILATION_CONDITIONS']='DEBUG NAV_TEST_BACKDOOR'
+        self.mutate_project(mutation); self.reject('MOD-06: SWIFT_ACTIVE_COMPILATION_CONDITIONS must be exactly DEBUG')
+
     def test_unknown_project_object(self):
         self.mutate_project(lambda o: o.update({'UNKNOWN': {'isa':'PBXShellScriptBuildPhase'}})); self.reject('MOD-06: unsupported Xcode object')
 

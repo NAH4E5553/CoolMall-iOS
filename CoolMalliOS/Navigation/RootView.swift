@@ -205,30 +205,56 @@ private struct FixturePathProbeView: View {
 
     /// Visible test bar, explicitly labeled so screenshots and logs cannot be
     /// mistaken for product UI. Switches the selected tab programmatically.
-    /// Rendered as a full-width bottom strip that reserves its own layout space
-    /// (R-NAV-02-AT05-01) and adapts to accessibility sizes without wrapping.
+    /// Rendered as a bottom strip that reserves its own layout space
+    /// (R-NAV-02-AT05-01). At accessibility sizes the content regroups instead
+    /// of truncating: one row, then two grouped rows, then one item per row;
+    /// fixedSize keeps every label at its full single-line ideal width.
     /// The container must not set an accessibilityIdentifier: it would override
     /// the per-button identifiers the UI tests query.
     private struct NavigationTestControlOverlay: View {
         let router: SceneRouter
         var body: some View {
-            HStack(spacing: 12) {
-                Text("受控测试")
-                controlButton("home", tab: .home)
-                controlButton("category", tab: .category)
-                controlButton("cart", tab: .cart)
-                controlButton("me", tab: .me)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    marking
+                    controlButton("home", tab: .home)
+                    controlButton("category", tab: .category)
+                    controlButton("cart", tab: .cart)
+                    controlButton("me", tab: .me)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 12) {
+                        marking
+                        controlButton("home", tab: .home)
+                        controlButton("category", tab: .category)
+                    }
+                    HStack(spacing: 12) {
+                        controlButton("cart", tab: .cart)
+                        controlButton("me", tab: .me)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    marking
+                    controlButton("home", tab: .home)
+                    controlButton("category", tab: .category)
+                    controlButton("cart", tab: .cart)
+                    controlButton("me", tab: .me)
+                }
             }
             .font(.caption2)
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(.ultraThinMaterial)
         }
 
+        private var marking: some View {
+            Text("受控测试").fixedSize()
+        }
+
         private func controlButton(_ name: String, tab: SceneRouter.Tab) -> some View {
             Button("→\(name)") { router.selectedTab = tab }
+                .fixedSize()
                 .accessibilityIdentifier("navctl.select.\(name)")
         }
     }

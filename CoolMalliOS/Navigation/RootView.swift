@@ -40,10 +40,14 @@ struct RootView: View {
     private var tabs: some View {
         TabView(selection: $router.selectedTab) {
             NavigationStack(path: $router.homePath) {
-                CatalogEntryView(products: dependencies.products, openCart: router.openCart)
-                    .navigationDestination(for: SceneRouter.Route.self) { route in
-                        destination(for: route)
-                    }
+                CatalogEntryView(
+                    products: dependencies.products,
+                    openCart: router.openCart,
+                    openProduct: { id in router.append(.productDetail(goodsID: id), on: .home) }
+                )
+                .navigationDestination(for: SceneRouter.Route.self) { route in
+                    destination(for: route, on: .home)
+                }
             }
             .tabItem { Label("首页", systemImage: "house") }
             .tag(SceneRouter.Tab.home)
@@ -52,10 +56,14 @@ struct RootView: View {
                     marker: "category.pending",
                     title: "分类",
                     detail: "分类页面待接入 · 本入口为导航占位",
-                    pushProbe: { router.categoryPath.append(.fixturePathProbe(label: "category")) }
+                    pushProbe: { router.categoryPath.append(.fixturePathProbe(label: "category")) },
+                    // NAV-03: non-home source entry with the TC-NAV-05 fixture id.
+                    openProductDetail: {
+                        router.append(.productDetail(goodsID: 830001), on: .category)
+                    }
                 )
                 .navigationDestination(for: SceneRouter.Route.self) { route in
-                    destination(for: route)
+                    destination(for: route, on: .category)
                 }
             }
             .tabItem { Label("分类", systemImage: "square.grid.2x2") }
@@ -63,7 +71,7 @@ struct RootView: View {
             NavigationStack(path: $router.cartPath) {
                 CartEntryView(cart: dependencies.cart)
                     .navigationDestination(for: SceneRouter.Route.self) { route in
-                        destination(for: route)
+                        destination(for: route, on: .cart)
                     }
             }
             .tabItem { Label("购物车", systemImage: "cart") }
@@ -76,7 +84,7 @@ struct RootView: View {
                     pushProbe: { router.mePath.append(.fixturePathProbe(label: "me")) }
                 )
                 .navigationDestination(for: SceneRouter.Route.self) { route in
-                    destination(for: route)
+                    destination(for: route, on: .me)
                 }
             }
             .tabItem { Label("我的", systemImage: "person") }
@@ -87,13 +95,24 @@ struct RootView: View {
     /// Pushed routes cover the tab bar (the PRD-016 pattern from NAV-01), so
     /// re-tapping the current tab stays reachable only at tab roots, where the
     /// system pop-to-root is a no-op (PRD-013/NAV-R02; iOS 18+ auto-pops on
-    /// tab re-tap and that cannot be vetoed with public API).
+    /// tab re-tap and that cannot be vetoed with public API). PRD-017/NAV-R07:
+    /// the detail page and the independent cart it opens keep the bar hidden;
+    /// returning to the source root restores the four tabs.
     @ViewBuilder
-    private func destination(for route: SceneRouter.Route) -> some View {
+    private func destination(for route: SceneRouter.Route, on tab: SceneRouter.Tab) -> some View {
         switch route {
         case .cart:
             CartEntryView(cart: dependencies.cart)
                 .toolbar(.hidden, for: .tabBar)
+        case .productDetail(let goodsID):
+            // The cart intent from a detail pushes onto the SAME stack, so back
+            // restores this detail (same goodsId, same page identity) without
+            // touching the source tab (NAV-R03).
+            ProductDetailPlaceholderView(
+                goodsID: goodsID,
+                openCart: { router.append(.cart, on: tab) }
+            )
+            .toolbar(.hidden, for: .tabBar)
         case .fixturePathProbe(let label):
             FixturePathProbeView(label: label)
                 .toolbar(.hidden, for: .tabBar)
@@ -109,6 +128,7 @@ private struct PendingTabView: View {
     let title: String
     let detail: String
     let pushProbe: () -> Void
+    var openProductDetail: (() -> Void)? = nil
     @State private var rootTicks = 0
     var body: some View {
         VStack(spacing: 20) {
@@ -121,10 +141,43 @@ private struct PendingTabView: View {
                 .accessibilityIdentifier("\(marker).rootIdentity")
             Button("根页计数 +1") { rootTicks += 1 }
                 .accessibilityIdentifier("\(marker).rootTick")
+            if let openProductDetail {
+                Button("打开商品详情（夹具 830001）", action: openProductDetail)
+                    .accessibilityIdentifier("\(marker).openProduct")
+            }
             Button("压入路径自检页", action: pushProbe)
                 .accessibilityIdentifier("\(marker).pushProbe")
         }
         .navigationTitle(title)
+    }
+}
+
+/// NAV-03 engineering fixture: the typed product-detail destination before any
+/// real detail screen exists. It only proves route plumbing — the goodsId it
+/// received, page identity across an independent-cart round trip, and the cart
+/// intent staying on the source stack. No loading, no cart writes, no network,
+/// no persistence; superseded by the real detail task.
+private struct ProductDetailPlaceholderView: View {
+    let goodsID: Int64
+    let openCart: () -> Void
+    @State private var identityTicks = 0
+    var body: some View {
+        VStack(spacing: 20) {
+            FixtureNoticeView(
+                title: "商品详情（工程夹具）",
+                detail: "真实详情待接入 · 仅验证类型化导航与商品ID传递"
+            )
+            // verbatim: keep the raw goodsId (no localized digit grouping).
+            Text(verbatim: "商品ID：\(goodsID)")
+                .accessibilityIdentifier("detail.goodsID")
+            Text("详情身份：\(identityTicks)")
+                .accessibilityIdentifier("detail.identity")
+            Button("详情身份 +1") { identityTicks += 1 }
+                .accessibilityIdentifier("detail.tick")
+            Button("打开独立购物车", action: openCart)
+                .accessibilityIdentifier("detail.openCart")
+        }
+        .navigationTitle("商品详情")
     }
 }
 

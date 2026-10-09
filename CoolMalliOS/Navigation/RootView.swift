@@ -26,7 +26,10 @@ struct RootView: View {
     var body: some View {
         tabs
             #if DEBUG
-                .overlay(alignment: .top) {
+                // R-NAV-02-AT05-01: the control strip reserves layout space at the
+                // bottom instead of floating over the top, so it can never cover
+                // the navigation title/back area at any content size.
+                .safeAreaInset(edge: .bottom, spacing: 0) {
                     if navTestControl.isEnabled {
                         NavigationTestControlOverlay(router: router)
                     }
@@ -200,27 +203,32 @@ private struct FixturePathProbeView: View {
         }
     }
 
-    /// Visible test overlay, explicitly labeled so screenshots and logs cannot be
+    /// Visible test bar, explicitly labeled so screenshots and logs cannot be
     /// mistaken for product UI. Switches the selected tab programmatically.
+    /// Rendered as a full-width bottom strip that reserves its own layout space
+    /// (R-NAV-02-AT05-01) and adapts to accessibility sizes without wrapping.
     /// The container must not set an accessibilityIdentifier: it would override
     /// the per-button identifiers the UI tests query.
     private struct NavigationTestControlOverlay: View {
         let router: SceneRouter
         var body: some View {
-            HStack(spacing: 8) {
-                Text("受控测试").font(.caption2)
+            HStack(spacing: 12) {
+                Text("受控测试")
                 controlButton("home", tab: .home)
                 controlButton("category", tab: .category)
                 controlButton("cart", tab: .cart)
                 controlButton("me", tab: .me)
             }
-            .padding(6)
-            .background(.ultraThinMaterial, in: Capsule())
+            .font(.caption2)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial)
         }
 
         private func controlButton(_ name: String, tab: SceneRouter.Tab) -> some View {
             Button("→\(name)") { router.selectedTab = tab }
-                .font(.caption2)
                 .accessibilityIdentifier("navctl.select.\(name)")
         }
     }

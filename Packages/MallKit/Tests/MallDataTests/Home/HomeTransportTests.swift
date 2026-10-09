@@ -132,4 +132,18 @@ struct HomeTransportTests {
             Issue.record("expected CancellationError, got \(error)")
         }
     }
+
+    // MARK: R-HOME-01-05 production session configuration
+
+    @Test func productionConfigurationDisablesCookieCredentialAndCacheStorage() {
+        // The actual production configuration, not a test-injected session:
+        // no cookie storage, no credential storage, no URL cache.
+        let configuration = URLSessionTransport.makeProductionConfiguration(resourceTimeout: 30)
+        #expect(configuration.urlCredentialStorage == nil)
+        #expect(configuration.httpCookieStorage == nil)
+        #expect(configuration.urlCache == nil)
+        #expect(configuration.httpShouldSetCookies == false)
+        #expect(configuration.requestCachePolicy == .reloadIgnoringLocalCacheData)
+        #expect(configuration.timeoutIntervalForResource == 30)
+    }
 }

@@ -6,14 +6,21 @@ import SwiftUI
 /// error with an explicit retry, and section counts on success. The App
 /// injects the only read capability plus the read-only visibility flag; this
 /// view owns no routing and keeps no second copy of results.
+///
+/// Model lifetime (R-HOME-01-02): the model is created exactly once per
+/// Scene/home-root `@State` identity, inside the drive task — tab switches
+/// re-evaluate `init`/`body` freely without constructing and discarding
+/// replacement models. The single `.task(id:)` key covers visibility AND the
+/// retry trigger, so any change cancels the in-flight await (R-HOME-01-01).
 @MainActor
 public struct HomeEntryView: View {
-    @State private var viewModel: HomeViewModel
+    @State private var viewModel: HomeViewModel?
+    private let home: any HomeLoading
     private let isActive: Bool
     @State private var retryTrigger = 0
 
     public init(home: any HomeLoading, isActive: Bool) {
-        _viewModel = State(initialValue: HomeViewModel(home: home))
+        self.home = home
         self.isActive = isActive
     }
 
@@ -21,43 +28,61 @@ public struct HomeEntryView: View {
         ScrollView {
             VStack(spacing: 16) {
                 FixtureNoticeView(title: "首页", detail: "首页数据读取已接入，正式栏目布局待接入")
-                switch viewModel.state {
-                case .idle, .loading:
-                    ProgressView()
-                        .accessibilityIdentifier("home.loading")
-                case .ready(let snapshot):
-                    // A dedicated status row carries the loaded marker: a
-                    // container-level identifier would override the children's.
-                    Text("读取成功")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("home.loaded")
-                    counts(snapshot)
-                case .empty:
-                    Text("首页暂无内容")
-                        .accessibilityIdentifier("home.empty")
-                    retryButton
-                case .failed(let failure):
-                    VStack(spacing: 4) {
-                        Text("首页加载失败，请重试")
-                        Text(failureDescription(failure))
+                if let viewModel {
+                    switch viewModel.state {
+                    case .idle, .loading:
+                        ProgressView()
+                            .accessibilityIdentifier("home.loading")
+                    case .ready(let snapshot):
+                        // A dedicated status row carries the loaded marker: a
+                        // container-level identifier would override the children's.
+                        Text("读取成功")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("home.loaded")
+                        counts(snapshot)
+                    case .empty(let snapshot):
+                        Text("首页暂无内容")
+                            .accessibilityIdentifier("home.empty")
+                        // Valid empty still exposes the observable counts,
+                        // including the auxiliary full-category number
+                        // (R-HOME-01-03); empty semantics and retry stay.
+                        counts(snapshot)
+                        retryButton
+                    case .failed(let failure):
+                        VStack(spacing: 4) {
+                            Text("首页加载失败，请重试")
+                            Text(failureDescription(failure))
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityIdentifier("home.error")
+                        retryButton
                     }
-                    .accessibilityIdentifier("home.error")
-                    retryButton
+                } else {
+                    // One frame before the drive task creates the model.
+                    ProgressView()
+                        .accessibilityIdentifier("home.loading")
                 }
             }
             .padding()
         }
         .navigationTitle("首页")
-        .task(id: isActive) {
-            await viewModel.handleVisibility(isActive)
+        .task(id: driveKey) { @MainActor in
+            if viewModel == nil {
+                viewModel = HomeViewModel(home: home)
+            }
+            await viewModel?.drive(active: isActive, retryToken: retryTrigger)
         }
-        .task(id: retryTrigger) {
-            guard retryTrigger > 0 else { return }
-            await viewModel.retry()
-        }
+    }
+
+    private var driveKey: DriveKey {
+        DriveKey(active: isActive, retryTrigger: retryTrigger)
+    }
+
+    private struct DriveKey: Equatable {
+        let active: Bool
+        let retryTrigger: Int
     }
 
     private var retryButton: some View {

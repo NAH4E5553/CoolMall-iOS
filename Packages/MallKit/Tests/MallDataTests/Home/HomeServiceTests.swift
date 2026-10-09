@@ -235,6 +235,32 @@ struct HomeServiceTests {
             #"{"code":1000,"data":{"coupon":[{"id":860001,"title":"  "}]}}"#,
             #"{"code":1000,"data":{"category":[{"id":800001,"name":" "}]}}"#,
             #"{"code":1000,"data":{"category":[{"id":800001,"name":"x","parentId":"nope"}]}}"#,
+            // Repair follow-up: ID/price overflow beyond Int64/Int bounds.
+            #"{"code":1000,"data":{"goods":[{"id":9223372036854775808,"title":"ID溢出","price":1}]}}"#,
+            #"{"code":1000,"data":{"goods":[{"id":1,"title":"价溢出","price":9223372036854775808}]}}"#,
+        ]
+        for body in cases {
+            let transport = StubTransport(responses: [Self.ok(Data(body.utf8))])
+            await #expect(throws: HomeLoadFailure.invalidPayload) {
+                _ = try await Self.service(transport).loadHome()
+            }
+        }
+    }
+
+    @Test func typeErrorsOnRequiredAndOptionalFieldsFailWholeRead() async {
+        // Repair follow-up: wrong JSON types on required ids/prices and on
+        // optional text/parent fields are payload failures, never guesses.
+        let cases: [String] = [
+            #"{"code":1000,"data":{"goods":[{"id":"830001","title":"字符串ID","price":1}]}}"#,
+            #"{"code":1000,"data":{"goods":[{"id":1.5,"title":"小数ID","price":1}]}}"#,
+            #"{"code":1000,"data":{"goods":[{"id":1,"title":9,"price":1}]}}"#,
+            #"{"code":1000,"data":{"goods":[{"id":1,"title":"价bool","price":true}]}}"#,
+            #"{"code":1000,"data":{"goods":[{"id":1,"title":"副标题类型错","subTitle":7,"price":1}]}}"#,
+            #"{"code":1000,"data":{"banner":[{"id":1,"pic":"https://cdn.example.com/a.jpg","description":5}]}}"#,
+            #"{"code":1000,"data":{"category":[{"id":800001,"name":"x","parentId":"8"}]}}"#,
+            #"{"code":1000,"data":{"category":[{"id":800001,"name":"x","parentId":1.5}]}}"#,
+            #"{"code":1000,"data":{"coupon":[{"id":860001,"title":3}]}}"#,
+            #"{"code":1000,"data":{"flashSale":[{"id":830001,"title":"主图类型错","mainPic":true,"price":1}]}}"#,
         ]
         for body in cases {
             let transport = StubTransport(responses: [Self.ok(Data(body.utf8))])

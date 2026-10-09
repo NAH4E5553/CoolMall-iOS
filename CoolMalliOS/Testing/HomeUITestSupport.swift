@@ -19,6 +19,10 @@
             case valid
             case empty
             case retry
+            /// R-HOME-01-03 evidence mode: six display arrays empty while the
+            /// auxiliary full-category list is non-empty — the empty UI must
+            /// still expose the observable counts.
+            case emptyCategory = "empty-category"
         }
 
         let root: HomeRoot
@@ -42,16 +46,18 @@
         init(arguments: [String] = ProcessInfo.processInfo.arguments) {
             let hasNavFixture = arguments.contains("--uitest-nav-fixture")
             let homeFlagIndex = arguments.firstIndex(of: "--ui-home-fixture")
-            let homeValue: String?
+            var homeValue: String?
+            // R-HOME-01-04: a present flag with a missing or flag-like value
+            // must fail closed as a test-configuration error — it may never
+            // fall through to the real HTTP service.
+            var homeFlagWithoutValue = false
             if let homeFlagIndex {
                 let next = homeFlagIndex + 1
                 if next < arguments.count, !arguments[next].hasPrefix("-") {
                     homeValue = arguments[next]
                 } else {
-                    homeValue = nil
+                    homeFlagWithoutValue = true
                 }
-            } else {
-                homeValue = nil
             }
 
             if hasNavFixture && homeFlagIndex != nil {
@@ -62,6 +68,12 @@
             }
             if hasNavFixture {
                 root = .catalogFixture
+                fixtureMode = nil
+                service = nil
+                return
+            }
+            if homeFlagWithoutValue {
+                root = .testConfigError
                 fixtureMode = nil
                 service = nil
                 return
@@ -79,6 +91,7 @@
                 case .valid: service = FixtureHomeService()
                 case .empty: service = EmptySnapshotService()
                 case .retry: service = RetrySequenceService()
+                case .emptyCategory: service = OnlyCategoryAllSnapshotService()
                 }
                 return
             }
@@ -94,6 +107,22 @@
             HomeSnapshot(
                 banners: [], categories: [], allCategories: [], featured: [],
                 recommendations: [], goods: [], coupons: []
+            )
+        }
+    }
+
+    /// Deterministic only-categoryAll snapshot (DEBUG test input only): the
+    /// six display arrays are empty while the auxiliary category list is not.
+    private struct OnlyCategoryAllSnapshotService: HomeLoading {
+        func loadHome() async throws -> HomeSnapshot {
+            HomeSnapshot(
+                banners: [], categories: [],
+                allCategories: [
+                    HomeCategory(id: 800_001, name: "手机", parentID: nil, imageURL: nil),
+                    HomeCategory(id: 800_002, name: "电脑", parentID: 800_001, imageURL: nil),
+                    HomeCategory(id: 800_003, name: "家电", parentID: nil, imageURL: nil),
+                ],
+                featured: [], recommendations: [], goods: [], coupons: []
             )
         }
     }

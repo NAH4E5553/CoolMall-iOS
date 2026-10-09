@@ -281,4 +281,103 @@ struct HomeViewModelTests {
             return
         }
     }
+
+    // MARK: R-HOME-01-01 cancellation completion must not strand loading
+
+    @Test func cancelledTaskReturningValueRestoresIdleThenRereadSucceeds() async {
+        // The gated service ignores cancellation and returns a value anyway;
+        // the still-current request must fall back to idle (was: stuck loading).
+        let service = ScriptedService(steps: [.gate, .value(Self.snapshot(goodsID: 11))])
+        let viewModel = HomeViewModel(home: service)
+        let task = Task { await viewModel.handleVisibility(true) }
+        await waitUntil({ service.calls == 1 })
+        task.cancel()
+        service.release(.success(Self.emptySnapshot))
+        await task.value
+        #expect(viewModel.state == .idle)
+        await viewModel.handleVisibility(true)
+        #expect(service.calls == 2)
+        guard case .ready = viewModel.state else {
+            Issue.record("expected ready after re-read following cancelled value")
+            return
+        }
+    }
+
+    @Test func cancelledTaskThrowingPlainErrorRestoresIdleNotFailed() async {
+        let service = ScriptedService(steps: [.gate])
+        let viewModel = HomeViewModel(home: service)
+        let task = Task { await viewModel.handleVisibility(true) }
+        await waitUntil({ service.calls == 1 })
+        task.cancel()
+        service.release(.failure(HomeLoadFailure.timeout))
+        await task.value
+        #expect(viewModel.state == .idle)
+    }
+
+    @Test func validEmptyCommitSurvivesLateFailureFromRevokedRequest() async {
+        // B commits a valid empty; the older, revoked A then fails — empty must
+        // stay untouched (no ordinary-error surfacing, no clearing).
+        let service = ScriptedService(steps: [.gate, .gate])
+        let viewModel = HomeViewModel(home: service)
+        let firstLoad = Task { await viewModel.handleVisibility(true) }
+        await waitUntil({ service.calls == 1 })
+        await viewModel.handleVisibility(false)
+        let secondLoad = Task { await viewModel.handleVisibility(true) }
+        await waitUntil({ service.calls == 2 })
+        service.releaseLatest(.success(Self.emptySnapshot))
+        await secondLoad.value
+        guard case .empty = viewModel.state else {
+            Issue.record("expected empty from B")
+            return
+        }
+        service.release(.failure(HomeLoadFailure.httpStatus(500)))
+        await firstLoad.value
+        guard case .empty = viewModel.state else {
+            Issue.record("late A failure must not disturb committed empty")
+            return
+        }
+    }
+
+    // MARK: R-HOME-01-01 drive: retry is visibility-cancelled, token consumed once
+
+    @Test func driveCancelsInFlightRetryOnVisibilityLossWithoutAutoRetry() async {
+        let service = ScriptedService(steps: [
+            .failure(.timeout), .gate, .value(Self.snapshot(goodsID: 12)),
+        ])
+        let viewModel = HomeViewModel(home: service)
+        await viewModel.drive(active: true, retryToken: 0)
+        guard case .failed(.timeout) = viewModel.state else {
+            Issue.record("expected failed first read")
+            return
+        }
+        // User retry while active: the drive task starts a hanging request.
+        let retryTask = Task { await viewModel.drive(active: true, retryToken: 1) }
+        await waitUntil({ service.calls == 2 })
+        // Leaving the page: the single drive task is cancelled and restarted
+        // with active=false — the in-flight retry is revoked and the retained
+        // failure restored; its late success is discarded.
+        retryTask.cancel()
+        await viewModel.drive(active: false, retryToken: 1)
+        service.release(.success(Self.snapshot(goodsID: 12)))
+        await retryTask.value
+        guard case .failed(.timeout) = viewModel.state else {
+            Issue.record("expected retained failure after visibility-cancelled retry")
+            return
+        }
+        // Returning to the tab replays only the visibility path: the retry
+        // token was consumed, so there is no automatic retry.
+        await viewModel.drive(active: true, retryToken: 1)
+        #expect(service.calls == 2)
+        guard case .failed(.timeout) = viewModel.state else {
+            Issue.record("return must not auto-retry failed")
+            return
+        }
+        // A NEW explicit retry (fresh token) succeeds.
+        await viewModel.drive(active: true, retryToken: 2)
+        #expect(service.calls == 3)
+        guard case .ready = viewModel.state else {
+            Issue.record("expected ready after new explicit retry")
+            return
+        }
+    }
 }

@@ -11,13 +11,25 @@ final class URLSessionTransport: HTTPTransport, Sendable {
     }
 
     convenience init(resourceTimeout: TimeInterval) {
+        self.init(
+            session: URLSession(
+                configuration: Self.makeProductionConfiguration(resourceTimeout: resourceTimeout)))
+    }
+
+    /// H0 production session configuration (R-HOME-01-05): ephemeral with no
+    /// cookie storage, no credential storage, and business URL caching off.
+    /// Extracted so tests can verify the actual production values.
+    static func makeProductionConfiguration(resourceTimeout: TimeInterval)
+        -> URLSessionConfiguration
+    {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
+        configuration.urlCredentialStorage = nil
         configuration.timeoutIntervalForResource = resourceTimeout
-        self.init(session: URLSession(configuration: configuration))
+        return configuration
     }
 
     func send(url: URL, timeout: TimeInterval) async throws -> (Data, URLResponse) {

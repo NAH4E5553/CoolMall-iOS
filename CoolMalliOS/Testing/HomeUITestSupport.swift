@@ -23,6 +23,12 @@
             /// auxiliary full-category list is non-empty — the empty UI must
             /// still expose the observable counts.
             case emptyCategory = "empty-category"
+            /// HOME-02 approved evidence mode (9.7.5): banners 0 / coupons 1 /
+            /// categories 0 / featured 1 / recommendations 2 / goods 1 /
+            /// allCategories 3 — synthetic legal entries only (positive
+            /// unique ids, nil image URLs, clearly-test titles; the two
+            /// recommendations cover short and long titles).
+            case layoutMixed = "layout-mixed"
         }
 
         let root: HomeRoot
@@ -92,6 +98,7 @@
                 case .empty: service = EmptySnapshotService()
                 case .retry: service = RetrySequenceService()
                 case .emptyCategory: service = OnlyCategoryAllSnapshotService()
+                case .layoutMixed: service = LayoutMixedSnapshotService()
                 }
                 return
             }
@@ -123,6 +130,45 @@
                     HomeCategory(id: 800_003, name: "家电", parentID: nil, imageURL: nil),
                 ],
                 featured: [], recommendations: [], goods: [], coupons: []
+            )
+        }
+    }
+
+    /// HOME-02 approved deterministic input (DEBUG only, 9.7.5): the six
+    /// display arrays count 0/1/0/1/2/1 with an auxiliary 3. Synthetic legal
+    /// entries only; recommendations carry one short and one long title.
+    private struct LayoutMixedSnapshotService: HomeLoading {
+        func loadHome() async throws -> HomeSnapshot {
+            HomeSnapshot(
+                banners: [],
+                categories: [],
+                allCategories: [
+                    HomeCategory(id: 810_001, name: "合成分类甲", parentID: nil, imageURL: nil),
+                    HomeCategory(id: 810_002, name: "合成分类乙", parentID: 810_001, imageURL: nil),
+                    HomeCategory(
+                        id: 810_003, name: "合成分类丙长标题（测试输入，用于特大字体换行）",
+                        parentID: nil, imageURL: nil),
+                ],
+                featured: [
+                    HomeProductSummary(
+                        id: 830_101, title: "合成精选商品（测试输入）", subtitle: nil,
+                        imageURL: nil, priceYuan: Decimal(1))
+                ],
+                recommendations: [
+                    HomeProductSummary(
+                        id: 830_102, title: "合成推荐短", subtitle: nil,
+                        imageURL: nil, priceYuan: Decimal(2)),
+                    HomeProductSummary(
+                        id: 830_103,
+                        title: "合成推荐长标题——测试输入，验证长文字换行与左对齐",
+                        subtitle: nil, imageURL: nil, priceYuan: Decimal(3)),
+                ],
+                goods: [
+                    HomeProductSummary(
+                        id: 830_104, title: "合成全部商品（测试输入）", subtitle: nil,
+                        imageURL: nil, priceYuan: Decimal(4))
+                ],
+                coupons: [HomeCouponSummary(id: 860_101, title: "合成优惠券（测试输入）")]
             )
         }
     }

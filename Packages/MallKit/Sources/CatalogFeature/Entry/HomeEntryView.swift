@@ -2,10 +2,12 @@ import MallCore
 import MallDesignSystem
 import SwiftUI
 
-/// The real home entry for HOME-01's minimal read UI: loading, valid-empty,
-/// error with an explicit retry, and section counts on success. The App
-/// injects the only read capability plus the read-only visibility flag; this
-/// view owns no routing and keeps no second copy of results.
+/// The real home entry for HOME-01's minimal read UI plus HOME-02's section
+/// skeleton container: loading, valid-empty, error with an explicit retry, and
+/// — on success — the PRD-015 section skeletons followed by the engineering
+/// read-verification counts. The App injects the only read capability plus the
+/// read-only visibility flag; this view owns no routing and keeps no second
+/// copy of results.
 ///
 /// Model lifetime (R-HOME-01-02): the model is created exactly once per
 /// Scene/home-root `@State` identity, inside the drive task — tab switches
@@ -40,7 +42,14 @@ public struct HomeEntryView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .accessibilityIdentifier("home.loaded")
-                        counts(snapshot)
+                        // HOME-02: read-only section skeletons; empty sections
+                        // hide together with their titles.
+                        HomeContentView(snapshot: snapshot)
+                        // The H0 seven counts stay observable inside an
+                        // explicitly-labeled engineering verification block —
+                        // not a seventh business section. A later card must
+                        // migrate these assertions before removing it.
+                        readVerification(snapshot)
                     case .empty(let snapshot):
                         Text("首页暂无内容")
                             .accessibilityIdentifier("home.empty")
@@ -65,7 +74,10 @@ public struct HomeEntryView: View {
                         .accessibilityIdentifier("home.loading")
                 }
             }
-            .padding()
+            // HOME-02 approved layout: 16pt on both sides of the safe-area
+            // content; 16pt vertical spacing comes from the container stacks.
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16)
         }
         .navigationTitle("首页")
         .task(id: driveKey) { @MainActor in
@@ -91,8 +103,19 @@ public struct HomeEntryView: View {
             .accessibilityIdentifier("home.retry")
     }
 
-    /// PRD-015 order: 轮播 / 优惠券 / 分类 / 限时精选 / 推荐 / 全部商品,
-    /// with the full-category count as a separate auxiliary line.
+    /// Engineering-period read verification: the H0 seven counts (PRD-015
+    /// order, auxiliary full-category last) remain observable without being a
+    /// home content section.
+    private func readVerification(_ snapshot: HomeSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("读取校验（工程期）")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            counts(snapshot)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private func counts(_ snapshot: HomeSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             countRow("轮播", snapshot.banners.count, id: "banner")

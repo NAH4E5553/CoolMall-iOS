@@ -188,28 +188,33 @@ extension HomeLoadTests {
 
     /// AT-HOME-02-03: both empty inputs show no section skeletons while the
     /// H0 empty evidence (counts, auxiliary, retry) stays observable.
-    @MainActor func testEmptyInputsShowNoSectionsAndKeepEmptyEvidence() {
-        let inputs: [(mode: String, auxiliary: String)] = [
-            ("empty", "0"), ("empty-category", "3"),
-        ]
-        for input in inputs {
-            let app = XCUIApplication()
-            app.launchArguments += ["--ui-home-fixture", input.mode]
-            app.launch()
-            XCTAssertTrue(app.staticTexts["home.empty"].waitForExistence(timeout: 10))
-            for section in Self.orderedSections {
-                XCTAssertFalse(
-                    app.staticTexts["home.section.\(section.key).title"].exists,
-                    "\(section.key) title must not appear for \(input.mode)")
-                XCTAssertFalse(
-                    app.staticTexts["home.section.\(section.key).pending"].exists,
-                    "\(section.key) placeholder must not appear for \(input.mode)")
-            }
-            XCTAssertEqual(
-                app.staticTexts["home.count.categoryAll"].label, "完整分类（辅助）：\(input.auxiliary)")
-            XCTAssertTrue(app.buttons["home.retry"].exists)
-            app.terminate()
+    /// One launch per test method (CHANGE-04 precedent): a two-launch loop
+    /// exceeded CI's 60s per-test allowance on a cold simulator.
+    private func assertEmptyInputShowsNoSections(
+        _ app: XCUIApplication, mode: String, auxiliary: String
+    ) {
+        app.launchArguments += ["--ui-home-fixture", mode]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["home.empty"].waitForExistence(timeout: 10))
+        for section in Self.orderedSections {
+            XCTAssertFalse(
+                app.staticTexts["home.section.\(section.key).title"].exists,
+                "\(section.key) title must not appear for \(mode)")
+            XCTAssertFalse(
+                app.staticTexts["home.section.\(section.key).pending"].exists,
+                "\(section.key) placeholder must not appear for \(mode)")
         }
+        XCTAssertEqual(
+            app.staticTexts["home.count.categoryAll"].label, "完整分类（辅助）：\(auxiliary)")
+        XCTAssertTrue(app.buttons["home.retry"].exists)
+    }
+
+    @MainActor func testEmptyFixtureShowsNoSectionsAndKeepsEmptyEvidence() {
+        assertEmptyInputShowsNoSections(XCUIApplication(), mode: "empty", auxiliary: "0")
+    }
+
+    @MainActor func testEmptyCategoryFixtureShowsNoSectionsAndKeepsEmptyEvidence() {
+        assertEmptyInputShowsNoSections(XCUIApplication(), mode: "empty-category", auxiliary: "3")
     }
 
     /// AT-HOME-02-04 (retention across switches): within ONE launch, after

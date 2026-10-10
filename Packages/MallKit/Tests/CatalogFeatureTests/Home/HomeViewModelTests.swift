@@ -728,4 +728,55 @@ struct HomeViewModelTests {
         #expect(!viewModel.refreshFailedHint)
         #expect(!viewModel.isRefreshing)
     }
+
+    // MARK: R-HOME-02-R1-04 — an unstarted original-retry intent is consumed
+    // when the page loses visibility; returning never auto-retries it.
+
+    @Test func unstartedOriginalRetryIsConsumedByLeaveAndNotReplayedOnReturn() async {
+        let service = ScriptedService(steps: [
+            .failure(.timeout), .value(Self.snapshot(goodsID: 51)),
+        ])
+        let viewModel = HomeViewModel(home: service)
+        await viewModel.handleVisibility(true)
+        guard case .failed(.timeout) = viewModel.state else { return }
+        // The user taps the original retry and leaves before the drive task
+        // could start it (the retry token and the visibility loss coalesce
+        // into one off-page drive).
+        await viewModel.drive(active: false, retryToken: 1)
+        #expect(service.calls == 1, "the unstarted retry must not run off-page")
+        guard case .failed(.timeout) = viewModel.state else {
+            Issue.record("failed must be retained")
+            return
+        }
+        // Returning replays visibility only — no new tap happened.
+        await viewModel.drive(active: true, retryToken: 1)
+        #expect(service.calls == 1, "returning must not auto-retry the consumed intent")
+        guard case .failed(.timeout) = viewModel.state else {
+            Issue.record("failed must stay after return without auto-retry")
+            return
+        }
+        // A LATER explicit retry still works.
+        await viewModel.drive(active: true, retryToken: 2)
+        #expect(service.calls == 2)
+        guard case .ready = viewModel.state else {
+            Issue.record("a new explicit retry must still be executable")
+            return
+        }
+    }
+
+    @Test func unstartedOriginalRetryFromEmptyIsConsumedByLeaveToo() async {
+        let service = ScriptedService(steps: [
+            .value(Self.emptySnapshot), .value(Self.snapshot(goodsID: 52)),
+        ])
+        let viewModel = HomeViewModel(home: service)
+        await viewModel.handleVisibility(true)
+        guard case .empty = viewModel.state else { return }
+        await viewModel.drive(active: false, retryToken: 1)
+        await viewModel.drive(active: true, retryToken: 1)
+        #expect(service.calls == 1, "valid-empty retry window obeys the same contract")
+        guard case .empty = viewModel.state else {
+            Issue.record("empty must stay after return without auto-retry")
+            return
+        }
+    }
 }

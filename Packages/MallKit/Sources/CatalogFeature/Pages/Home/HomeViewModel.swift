@@ -60,8 +60,13 @@ final class HomeViewModel {
     func drive(active: Bool, retryToken: Int) async {
         // R-HOME-02-R1-01: losing visibility always wins — an accepted but
         // not-yet-started refresh is dropped here (suspend clears it), so an
-        // off-page drive can never issue a hidden request.
+        // off-page drive can never issue a hidden request. An original-retry
+        // intent that already arrived but has not started is likewise
+        // consumed WITHOUT running (R-HOME-02-R1-04): returning replays the
+        // visibility path only and never auto-retries; a later explicit
+        // retry still can.
         guard active else {
+            lastConsumedRetryToken = retryToken
             suspend()
             return
         }

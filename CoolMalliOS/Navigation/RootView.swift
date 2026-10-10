@@ -38,7 +38,16 @@ struct RootView: View {
     }
 
     private var tabs: some View {
-        TabView(selection: $router.selectedTab) {
+        // HOME-02-R1 (DEC-010): TabView selection writes go through the App
+        // entry so a re-tap of the selected home tab (an equal-value write,
+        // phase-A-verified) bumps the read-only event the home entry
+        // consumes; programmatic switches keep writing `selectedTab` directly.
+        TabView(
+            selection: Binding(
+                get: { router.selectedTab },
+                set: { router.selectFromTabBar($0) }
+            )
+        ) {
             NavigationStack(path: $router.homePath) {
                 homeRoot
                     .navigationDestination(for: SceneRouter.Route.self) { route in
@@ -132,7 +141,10 @@ struct RootView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("home.source")
-            HomeEntryView(home: dependencies.home, isActive: homeIsVisible)
+            HomeEntryView(
+                home: dependencies.home,
+                isActive: homeIsVisible,
+                refreshRequest: router.homeReTapEvent)
         }
     }
 

@@ -1,8 +1,9 @@
 import MallCore
 import Observation
 
-/// Page state for the HOME-01 minimal read UI. The Scene/home-root view
-/// identity owns this model; SwiftUI's task owns the await call.
+/// Page state for the HOME-01 minimal read UI plus the HOME-02-R1 re-tap
+/// refresh. The Scene/home-root view identity owns this model; SwiftUI's task
+/// owns every await call.
 ///
 /// Request validity: `generation` bumps on every accepted read and on every
 /// visibility loss, so a stale success/error/cancellation can never overwrite
@@ -12,6 +13,13 @@ import Observation
 /// request that gets cancelled — including a service that ignores
 /// cancellation and returns a value or a plain error — falls back to the
 /// retained state instead of stranding the page in loading (R-HOME-01-01).
+///
+/// HOME-02-R1 refresh (H0 v0.3/PRD-019): a re-tap refresh keeps the committed
+/// snapshot visible behind a small indicator; success replaces the snapshot
+/// wholesale, failure keeps the old content behind a retryable hint, and a
+/// busy model (first load or active refresh) accepts no second request. The
+/// raw re-tap counter never drives task keys — only the model-accepted
+/// `refreshTicket` does, so ignored re-taps cannot cancel an active request.
 @MainActor @Observable
 final class HomeViewModel {
     enum State: Equatable {
@@ -28,18 +36,32 @@ final class HomeViewModel {
     private var retainedState: State?
     private var lastConsumedRetryToken = 0
 
+    // HOME-02-R1 refresh state (internal projections only).
+    private(set) var isRefreshing = false
+    private(set) var refreshFailedHint = false
+    /// Monotonic ticket bumped whenever a refresh intent is ACCEPTED; the
+    /// entry mirrors it into its single drive task key.
+    private(set) var refreshTicket: UInt64 = 0
+    private var acceptedRefreshPending = false
+    private var lastHandledReTapToken: UInt64 = 0
+
     init(home: any HomeLoading) {
         self.home = home
     }
 
-    /// Single drive entry for the view's one `.task(id:)`: the key covers both
-    /// visibility and the retry trigger, so ANY key change cancels the
-    /// in-flight await — the first read and a user retry are cancelled alike
-    /// by an explicit visibility loss, never only by onDisappear
-    /// (R-HOME-01-01). A retry token is consumed exactly once: later
-    /// visibility drives replay the visibility path only and never
-    /// auto-retry a retained failed/empty.
+    /// Single drive entry for the view's one `.task(id:)`. The key covers
+    /// visibility, the original retry trigger and the model-ACCEPTED refresh
+    /// ticket, so ANY key change cancels the in-flight await — the first
+    /// read and a refresh are cancelled alike by an explicit visibility loss,
+    /// never only by onDisappear. A retry token is consumed exactly once:
+    /// later visibility drives replay the visibility path only and never
+    /// auto-retry a retained failed/empty. An accepted refresh runs before
+    /// the visibility routing; rejected re-taps never change the key.
     func drive(active: Bool, retryToken: Int) async {
+        if acceptedRefreshPending {
+            await runAcceptedRefresh()
+            return
+        }
         if retryToken != lastConsumedRetryToken {
             lastConsumedRetryToken = retryToken
             if active {
@@ -53,8 +75,9 @@ final class HomeViewModel {
     }
 
     /// Visibility half of the drive contract. `active` triggers the first
-    /// read from idle; `false` revokes the generation and restores the
-    /// retained state (or idle).
+    /// read from idle; `false` revokes the generation, closes the refresh
+    /// indicator and clears an un-run accepted refresh (returning to the page
+    /// never re-fires it), restoring the retained state (or idle).
     func handleVisibility(_ active: Bool) async {
         if active {
             await loadIfNeeded()
@@ -63,13 +86,52 @@ final class HomeViewModel {
         }
     }
 
-    /// User retry — allowed only from failed/empty; loading accepts no second
-    /// action, ready has no refresh in HOME-01.
+    /// Original user retry — allowed only from failed/empty; loading accepts
+    /// no second action, ready keeps no refresh entry in HOME-01 semantics.
     func retry() async {
         switch state {
         case .failed, .empty: await load()
         case .idle, .loading, .ready: break
         }
+    }
+
+    /// Synchronous re-tap entry from the App's read-only event counter.
+    /// Deduplicates by token; rejects while a first load or a refresh is in
+    /// flight (busy ⇒ scroll-to-top only, no stacking/restart/queueing); an
+    /// accepted intent clears the previous failure hint and bumps the ticket
+    /// the drive key mirrors.
+    func requestRefresh(_ token: UInt64) {
+        guard token != lastHandledReTapToken else { return }
+        lastHandledReTapToken = token
+        switch state {
+        case .ready, .empty, .failed:
+            break
+        case .idle, .loading:
+            return
+        }
+        guard !isRefreshing else { return }
+        refreshFailedHint = false
+        acceptedRefreshPending = true
+        refreshTicket &+= 1
+    }
+
+    /// Retry entry for the refresh-failure hint row — a NEW refresh action,
+    /// distinct from the original failed/empty retry; still the same model.
+    func requestRetryRefresh() {
+        guard refreshFailedHint, !isRefreshing else { return }
+        switch state {
+        case .ready, .empty: break
+        case .idle, .loading, .failed: return
+        }
+        refreshFailedHint = false
+        acceptedRefreshPending = true
+        refreshTicket &+= 1
+    }
+
+    private func runAcceptedRefresh() async {
+        guard acceptedRefreshPending else { return }
+        acceptedRefreshPending = false
+        await performRefresh()
     }
 
     private func loadIfNeeded() async {
@@ -95,16 +157,7 @@ final class HomeViewModel {
                 }
                 return
             }
-            let displayEmpty =
-                snapshot.banners.isEmpty
-                && snapshot.categories.isEmpty
-                && snapshot.featured.isEmpty
-                && snapshot.recommendations.isEmpty
-                && snapshot.goods.isEmpty
-                && snapshot.coupons.isEmpty
-            let next: State = displayEmpty ? .empty(snapshot) : .ready(snapshot)
-            state = next
-            retainedState = next
+            commitDisplayState(for: snapshot)
         } catch is CancellationError {
             // A cancelled read leaves the latest committed state in place; an
             // unfinished first read falls back to idle.
@@ -127,11 +180,82 @@ final class HomeViewModel {
         }
     }
 
-    /// Visibility lost: invalidate the in-flight generation and restore the
-    /// retained state (or idle); the cancelled task's stale commit is
-    /// rejected by the generation guard.
+    /// HOME-02-R1 refresh. With committed content (ready/empty) the snapshot
+    /// stays visible behind `isRefreshing`; without any committed result a
+    /// re-tap on the full-page failure simply reloads through the H0 first
+    /// -load UI. The old task can only settle its own generation: every flag
+    /// cleanup is generation-guarded so a superseded completion never clears
+    /// a newer refresh's state.
+    private func performRefresh() async {
+        generation += 1
+        let request = generation
+        let keepsOldContent: Bool
+        switch state {
+        case .ready, .empty:
+            keepsOldContent = true
+            isRefreshing = true
+        case .failed:
+            keepsOldContent = false
+            state = .loading
+        case .idle, .loading:
+            return
+        }
+        do {
+            let snapshot = try await home.loadHome()
+            guard request == generation, !Task.isCancelled else {
+                if request == generation {
+                    isRefreshing = false
+                }
+                return
+            }
+            commitDisplayState(for: snapshot)
+            isRefreshing = false
+        } catch is CancellationError {
+            // Cancelled (e.g. left the page): close the indicator, keep the
+            // old content; a cancellation is never shown as a failure.
+            if request == generation {
+                isRefreshing = false
+            }
+        } catch {
+            guard request == generation, !Task.isCancelled else {
+                if request == generation {
+                    isRefreshing = false
+                }
+                return
+            }
+            isRefreshing = false
+            if keepsOldContent {
+                // Old ready/empty stays; only the hint asks for a retry.
+                refreshFailedHint = true
+            } else {
+                let next = State.failed(error as? HomeLoadFailure ?? .networkUnavailable)
+                state = next
+                retainedState = next
+            }
+        }
+    }
+
+    private func commitDisplayState(for snapshot: HomeSnapshot) {
+        let displayEmpty =
+            snapshot.banners.isEmpty
+            && snapshot.categories.isEmpty
+            && snapshot.featured.isEmpty
+            && snapshot.recommendations.isEmpty
+            && snapshot.goods.isEmpty
+            && snapshot.coupons.isEmpty
+        let next: State = displayEmpty ? .empty(snapshot) : .ready(snapshot)
+        state = next
+        retainedState = next
+    }
+
+    /// Visibility lost: invalidate the in-flight generation, drop an un-run
+    /// accepted refresh and close the indicator (returning never re-fires
+    /// it), and restore the retained state (or idle); the cancelled task's
+    /// stale commit is rejected by the generation guard.
     private func suspend() {
         generation += 1
+        acceptedRefreshPending = false
+        isRefreshing = false
         if case .loading = state {
             state = retainedState ?? .idle
         }

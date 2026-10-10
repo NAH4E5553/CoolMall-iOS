@@ -380,4 +380,189 @@ struct HomeViewModelTests {
             return
         }
     }
+
+    // MARK: HOME-02-R1 re-tap refresh (H0 v0.3)
+
+    @Test func reTapRefreshFromReadyReplacesSnapshotAndClearsFlags() async {
+        let service = ScriptedService(steps: [
+            .value(Self.snapshot(goodsID: 1)), .value(Self.snapshot(goodsID: 2)),
+        ])
+        let viewModel = HomeViewModel(home: service)
+        await viewModel.handleVisibility(true)
+        guard case .ready = viewModel.state else {
+            Issue.record("expected ready after first load")
+            return
+        }
+        viewModel.requestRefresh(1)
+        #expect(viewModel.refreshTicket == 1)
+        await viewModel.drive(active: true, retryToken: 0)
+        #expect(service.calls == 2)
+        guard case .ready(let snapshot) = viewModel.state else {
+            Issue.record("expected ready after refresh")
+            return
+        }
+        #expect(snapshot.goods.first?.id == 2)
+        #expect(!viewModel.isRefreshing)
+        #expect(!viewModel.refreshFailedHint)
+        // Same token is deduplicated: no second ticket, nothing pending.
+        viewModel.requestRefresh(1)
+        #expect(viewModel.refreshTicket == 1)
+    }
+
+    @Test func reTapRefreshFromEmptyCanProduceReady() async {
+        let service = ScriptedService(steps: [
+            .value(Self.emptySnapshot), .value(Self.snapshot(goodsID: 3)),
+        ])
+        let viewModel = HomeViewModel(home: service)
+        await viewModel.handleVisibility(true)
+        guard case .empty = viewModel.state else {
+            Issue.record("expected empty after first load")
+            return
+        }
+        viewModel.requestRefresh(1)
+        await viewModel.drive(active: true, retryToken: 0)
+        #expect(service.calls == 2)
+        guard case .ready = viewModel.state else {
+            Issue.record("expected ready after refreshing an empty snapshot")
+            return
+        }
+    }
+
+    @Test func refreshFailureKeepsOldContentHintAndRetryRefreshSucceeds() async {
+        let service = ScriptedService(steps: [
+            .value(Self.snapshot(goodsID: 5)), .failure(.timeout),
+            .value(Self.snapshot(goodsID: 6)),
+        ])
+        let viewModel = HomeViewModel(home: service)
+        await viewModel.handleVisibility(true)
+        guard case .ready(let committed) = viewModel.state else { return }
+        viewModel.requestRefresh(1)
+        await viewModel.drive(active: true, retryToken: 0)
+        // Failure keeps the old snapshot visible plus the retryable hint.
+        #expect(viewModel.state == .ready(committed))
+        #expect(viewModel.refreshFailedHint)
+        #expect(!viewModel.isRefreshing)
+        viewModel.requestRetryRefresh()
+        #expect(viewModel.refreshTicket == 2)
+        await viewModel.drive(active: true, retryToken: 0)
+        #expect(service.calls == 3)
+        guard case .ready(let refreshed) = viewModel.state else {
+            Issue.record("expected ready after retrying the failed refresh")
+            return
+        }
+        #expect(refreshed.goods.first?.id == 6)
+        #expect(!viewModel.refreshFailedHint)
+    }
+
+    @Test func busyRefreshRejectsSecondReTapWithoutNewRequest() async {
+        let service = ScriptedService(steps: [
+            .value(Self.snapshot(goodsID: 7)), .gate, .value(Self.snapshot(goodsID: 8)),
+        ])
+        let viewModel = HomeViewModel(home: service)
+        await viewModel.handleVisibility(true)
+        viewModel.requestRefresh(1)
+        let refresh = Task { await viewModel.drive(active: true, retryToken: 0) }
+        await waitUntil({ service.calls == 2 })
+        #expect(viewModel.isRefreshing)
+        guard case .ready(let visible) = viewModel.state else {
+            Issue.record("old content must stay visible during refresh")
+            return
+        }
+        // Re-taps while the refresh hangs: rejected, no ticket change, the
+        // active request is neither cancelled nor queued.
+        viewModel.requestRefresh(2)
+        #expect(viewModel.refreshTicket == 1)
+        service.release(.success(Self.snapshot(goodsID: 8)))
+        await refresh.value
+        #expect(service.calls == 2)
+        #expect(viewModel.state != .ready(visible))
+    }
+
+    @Test func firstLoadBusyAndIdleRejectReTap() async {
+        let service = ScriptedService(steps: [.never])
+        let viewModel = HomeViewModel(home: service)
+        let load = Task { await viewModel.handleVisibility(true) }
+        await waitUntil({ service.calls == 1 })
+        viewModel.requestRefresh(1)
+        #expect(viewModel.refreshTicket == 0)
+        load.cancel()
+        await load.value
+        #expect(viewModel.state == .idle)
+        // Idle also rejects: the visibility path will read when active.
+        viewModel.requestRefresh(2)
+        #expect(viewModel.refreshTicket == 0)
+    }
+
+    @Test func reTapOnFullPageFailureReloadsThroughFirstLoadUI() async {
+        let service = ScriptedService(steps: [
+            .failure(.timeout), .value(Self.snapshot(goodsID: 9)),
+        ])
+        let viewModel = HomeViewModel(home: service)
+        await viewModel.handleVisibility(true)
+        guard case .failed(.timeout) = viewModel.state else { return }
+        viewModel.requestRefresh(1)
+        await viewModel.drive(active: true, retryToken: 0)
+        #expect(service.calls == 2)
+        guard case .ready = viewModel.state else {
+            Issue.record("expected ready after re-tap reload from full-page failure")
+            return
+        }
+    }
+
+    @Test func offPageCancelsRefreshKeepsContentAndDoesNotRefireOnReturn() async {
+        let service = ScriptedService(steps: [
+            .value(Self.snapshot(goodsID: 10)), .gate, .value(Self.snapshot(goodsID: 11)),
+        ])
+        let viewModel = HomeViewModel(home: service)
+        await viewModel.handleVisibility(true)
+        guard case .ready = viewModel.state else { return }
+        viewModel.requestRefresh(1)
+        let refresh = Task { await viewModel.drive(active: true, retryToken: 0) }
+        await waitUntil({ service.calls == 2 })
+        // Leaving the page suspends: generation revoked, indicator closed,
+        // late result discarded, old content retained.
+        await viewModel.handleVisibility(false)
+        #expect(!viewModel.isRefreshing)
+        service.release(.success(Self.snapshot(goodsID: 11)))
+        await refresh.value
+        guard case .ready(let kept) = viewModel.state else {
+            Issue.record("expected old content retained after cancelled refresh")
+            return
+        }
+        #expect(kept.goods.first?.id == 10)
+        // Returning must not re-fire the refresh.
+        await viewModel.handleVisibility(true)
+        #expect(service.calls == 2)
+    }
+
+    @Test func supersededRefreshCompletionCannotClearNewRefreshState() async {
+        let service = ScriptedService(steps: [
+            .value(Self.snapshot(goodsID: 20)), .gate, .gate,
+        ])
+        let viewModel = HomeViewModel(home: service)
+        await viewModel.handleVisibility(true)
+        guard case .ready = viewModel.state else { return }
+        viewModel.requestRefresh(1)
+        let firstRefresh = Task { await viewModel.drive(active: true, retryToken: 0) }
+        await waitUntil({ service.calls == 2 })
+        await viewModel.handleVisibility(false)
+        await viewModel.handleVisibility(true)
+        viewModel.requestRefresh(2)
+        #expect(viewModel.refreshTicket == 2)
+        let secondRefresh = Task { await viewModel.drive(active: true, retryToken: 0) }
+        await waitUntil({ service.calls == 3 })
+        // New refresh (B) settles first; the older suspended one (A) then
+        // returns late — it must not clear flags or overwrite the new state.
+        service.releaseLatest(.success(Self.snapshot(goodsID: 22)))
+        await secondRefresh.value
+        service.release(.success(Self.snapshot(goodsID: 21)))
+        await firstRefresh.value
+        guard case .ready(let snapshot) = viewModel.state else {
+            Issue.record("expected the newer refresh result to win")
+            return
+        }
+        #expect(snapshot.goods.first?.id == 22)
+        #expect(!viewModel.isRefreshing)
+        #expect(service.calls == 3)
+    }
 }

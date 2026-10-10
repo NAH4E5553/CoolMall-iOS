@@ -29,6 +29,16 @@
             /// unique ids, nil image URLs, clearly-test titles; the two
             /// recommendations cover short and long titles).
             case layoutMixed = "layout-mixed"
+            /// HOME-02-R1 (9.8.6): call 1 returns the valid base (A); call 2
+            /// returns B (goods = A+1); call 3+ returns C (goods = A+2) —
+            /// appended goods are synthetic legal entries.
+            case retapSequence = "retap-sequence"
+            /// HOME-02-R1 (9.8.6): call 1 = A; call 2 throws a known
+            /// HomeLoadFailure; call 3+ = B (goods = A+1).
+            case retapFailure = "retap-failure"
+            /// HOME-02-R1 (9.8.6): call 1 = A; every later call suspends
+            /// (cancellation-responsive sleeps) until cancelled.
+            case retapPending = "retap-pending"
         }
 
         let root: HomeRoot
@@ -99,6 +109,9 @@
                 case .retry: service = RetrySequenceService()
                 case .emptyCategory: service = OnlyCategoryAllSnapshotService()
                 case .layoutMixed: service = LayoutMixedSnapshotService()
+                case .retapSequence: service = RetapSequenceService()
+                case .retapFailure: service = RetapFailureService()
+                case .retapPending: service = RetapPendingService()
                 }
                 return
             }
@@ -170,6 +183,77 @@
                 ],
                 coupons: [HomeCouponSummary(id: 860_101, title: "合成优惠券（测试输入）")]
             )
+        }
+    }
+
+    /// HOME-02-R1 deterministic sequence (DEBUG only): A (valid base),
+    /// B (goods = A+1), then C (goods = A+2). Appended goods are synthetic
+    /// legal entries with ids outside the base fixture's ranges.
+    private actor RetapSequenceService: HomeLoading {
+        private var calls = 0
+        private let base = FixtureHomeService()
+
+        func loadHome() async throws -> HomeSnapshot {
+            calls += 1
+            let snapshot = try await base.loadHome()
+            let additions = min(calls - 1, 2)
+            let extra = (0..<additions).map { index in
+                HomeProductSummary(
+                    id: 999_001 + Int64(index),
+                    title: "合成重按商品\(index + 1)（测试输入）",
+                    subtitle: nil, imageURL: nil, priceYuan: Decimal(1))
+            }
+            return HomeSnapshot(
+                banners: snapshot.banners,
+                categories: snapshot.categories,
+                allCategories: snapshot.allCategories,
+                featured: snapshot.featured,
+                recommendations: snapshot.recommendations,
+                goods: snapshot.goods + extra,
+                coupons: snapshot.coupons)
+        }
+    }
+
+    /// HOME-02-R1 deterministic failure path (DEBUG only): A, then a known
+    /// HomeLoadFailure, then B (goods = A+1).
+    private actor RetapFailureService: HomeLoading {
+        private var calls = 0
+        private let base = FixtureHomeService()
+
+        func loadHome() async throws -> HomeSnapshot {
+            calls += 1
+            if calls == 2 { throw HomeLoadFailure.timeout }
+            let snapshot = try await base.loadHome()
+            if calls < 3 { return snapshot }
+            let extra = HomeProductSummary(
+                id: 999_011, title: "合成重按成功商品（测试输入）",
+                subtitle: nil, imageURL: nil, priceYuan: Decimal(1))
+            return HomeSnapshot(
+                banners: snapshot.banners,
+                categories: snapshot.categories,
+                allCategories: snapshot.allCategories,
+                featured: snapshot.featured,
+                recommendations: snapshot.recommendations,
+                goods: snapshot.goods + [extra],
+                coupons: snapshot.coupons)
+        }
+    }
+
+    /// HOME-02-R1 controlled suspension (DEBUG only): the first read returns
+    /// the valid base; every later read suspends on cancellation-responsive
+    /// sleeps until the surrounding task is cancelled.
+    private actor RetapPendingService: HomeLoading {
+        private var calls = 0
+        private let base = FixtureHomeService()
+
+        func loadHome() async throws -> HomeSnapshot {
+            calls += 1
+            if calls >= 2 {
+                while true {
+                    try await Task.sleep(nanoseconds: 50_000_000)
+                }
+            }
+            return try await base.loadHome()
         }
     }
 

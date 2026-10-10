@@ -254,45 +254,120 @@ extension HomeLoadTests {
         }
     }
 
-    /// AT-HOME-02-04 (re-tap): three re-taps of the current home tab keep the
-    /// committed content with no reload (no loading flash, no content change).
-    /// PLATFORM CONSTRAINT (disclosed in the handoff, PRD-016 precedent): iOS
-    /// also scrolls a tab's scroll view toward the top on a tab re-tap — the
-    /// same un-vetoable system behavior family as the iOS 18 re-tap auto-pop.
-    /// The scroll-position part of "重按不回顶" therefore cannot be asserted
-    /// here and is pending the maintainer's decision; the no-refresh part IS
-    /// enforced, and the zero-construction/zero-call evidence comes from a
-    /// temporary instrumented copy.
-    @MainActor func testReTapKeepsCommittedContentWithoutReload() {
+    /// PRD-019 migration of the old re-tap expectation (before/after
+    /// assertion table in the HOME-02-R1 handoff): a real re-tap of the
+    /// selected home tab now scrolls to the fixed top anchor AND refreshes
+    /// once — retap-sequence serves A (goods 10), B (11), then C (12).
+    @MainActor func testReTapScrollsToTopAndRefreshesWithNewSnapshot() {
         let app = XCUIApplication()
-        app.launchArguments += ["--ui-home-fixture", "valid"]
+        app.launchArguments += ["--ui-home-fixture", "retap-sequence"]
         app.launch()
-        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["home.source"].label, "工程夹具（retap-sequence）")
+        XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+        let bannerTitle = app.staticTexts["home.section.banner.title"]
         let lastRow = app.staticTexts["home.count.categoryAll"]
-        for _ in 0..<8 {
-            if lastRow.exists, lastRow.isHittable { break }
+        // The content only slightly overflows one screen, so "scrolled away
+        // from the top" is asserted by FRAME POSITION, not by visibility.
+        let atRestMinY = lastRow.frame.minY
+        for _ in 0..<10 where !(lastRow.exists && lastRow.isHittable) {
             app.swipeUp(velocity: .fast)
-            usleep(500_000)
-        }
-        XCTAssertTrue(lastRow.isHittable, "auxiliary last row must be reachable by scrolling")
-        let bannerLabelBefore = app.staticTexts["home.count.banner"].label
-        for _ in 1...3 {
-            app.tabBars.buttons["首页"].tap()
-            usleep(600_000)
-            // No reload: the committed ready state stays; no loading flash.
-            XCTAssertTrue(app.staticTexts["home.loaded"].exists, "re-tap must not re-enter loading")
-            XCTAssertFalse(app.staticTexts["home.loading"].exists)
-            XCTAssertEqual(
-                app.staticTexts["home.count.banner"].label, bannerLabelBefore,
-                "re-tap must not refresh content")
-        }
-        // The scrolled-to row stays reachable in the scrollable content after
-        // the system's re-tap scroll settles.
-        for _ in 0..<4 {
-            if lastRow.exists, lastRow.isHittable { break }
-            app.swipeUp(velocity: .fast)
-            usleep(500_000)
+            usleep(400_000)
         }
         XCTAssertTrue(lastRow.isHittable)
+        XCTAssertLessThan(
+            lastRow.frame.minY, atRestMinY - 20,
+            "precondition: actually scrolled to a non-zero position")
+        // Real re-tap #1: scrolls to the fixed top anchor (deterministic
+        // scrollTo alignment, recorded as the reference) + exactly one new
+        // read (B). The anchor is observable through the first section being
+        // back on screen at the recorded top position.
+        app.tabBars.buttons["首页"].tap()
+        let goods = app.staticTexts["home.count.goods"]
+        let bSeen = NSPredicate(format: "label CONTAINS %@", "全部商品：11")
+        expectation(for: bSeen, evaluatedWith: goods)
+        waitForExpectations(timeout: 10)
+        XCTAssertTrue(bannerTitle.isHittable, "the first section must be back on screen")
+        let scrollToTopMinY = lastRow.frame.minY
+        // The scrollTo anchor alignment sits slightly above the fully
+        // expanded large-title resting position (bar/inset dependent — ~68pt
+        // at large, ~101pt at AX), so only a loose bound is asserted here;
+        // the deterministic assertions are the banner visibility and the
+        // second re-tap landing on the SAME position.
+        XCTAssertGreaterThan(
+            scrollToTopMinY, atRestMinY - 160,
+            "re-tap must land near the resting (top) position")
+        // Real re-tap #2 while ALREADY AT TOP (AT: 停在顶部再按→C): a re-tap
+        // at the top also refreshes, and the position stays put.
+        app.tabBars.buttons["首页"].tap()
+        let cSeen = NSPredicate(format: "label CONTAINS %@", "全部商品：12")
+        expectation(for: cSeen, evaluatedWith: goods)
+        waitForExpectations(timeout: 10)
+        XCTAssertTrue(bannerTitle.isHittable)
+        XCTAssertEqual(
+            lastRow.frame.minY, scrollToTopMinY, accuracy: 6,
+            "an at-top re-tap must keep the same fixed top-anchor position")
+    }
+
+    /// Re-taps while a refresh hangs: only scroll-to-top, no second request,
+    /// no restart, no queued catch-up; leaving the page cancels the refresh;
+    /// returning keeps the old content without an implicit re-fire; a NEW
+    /// re-tap after returning is accepted again.
+    @MainActor func testReTapDuringPendingRefreshDoesNotStackAndLeaveCancels() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-home-fixture", "retap-pending"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+        let bannerTitle = app.staticTexts["home.section.banner.title"]
+        for _ in 0..<8 where bannerTitle.isHittable {
+            app.swipeUp(velocity: .fast)
+            usleep(400_000)
+        }
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+        for _ in 1...2 {
+            app.tabBars.buttons["首页"].tap()
+            usleep(800_000)
+            XCTAssertTrue(
+                app.staticTexts["home.refreshing"].exists,
+                "refresh must still be the single pending one")
+            XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+        }
+        XCTAssertTrue(bannerTitle.isHittable, "re-tap scrolls to top even while busy")
+        // Leave the page mid-refresh: the request is cancelled, the indicator
+        // closes, the old content stays and returning does not re-fire.
+        app.tabBars.buttons["分类"].tap()
+        usleep(800_000)
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["home.refreshing"].waitForExistence(timeout: 2))
+        XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+        // A new explicit re-tap is accepted (the pending service hangs again).
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 10))
+        app.tabBars.buttons["分类"].tap()
+        usleep(400_000)
+    }
+
+    /// A failed refresh keeps the old content and shows the retryable hint;
+    /// the hint's retry button submits the successful B snapshot.
+    @MainActor func testReTapRefreshFailureKeepsOldContentAndRetrySucceeds() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-home-fixture", "retap-failure"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["home.refresh.failed"].waitForExistence(timeout: 10))
+        XCTAssertEqual(
+            app.staticTexts["home.count.goods"].label, "全部商品：10", "old content must stay")
+        XCTAssertTrue(app.buttons["home.refresh.retry"].exists)
+        app.buttons["home.refresh.retry"].tap()
+        let bSeen = NSPredicate(format: "label CONTAINS %@", "全部商品：11")
+        expectation(for: bSeen, evaluatedWith: app.staticTexts["home.count.goods"])
+        waitForExpectations(timeout: 10)
+        XCTAssertFalse(app.staticTexts["home.refresh.failed"].exists)
     }
 }

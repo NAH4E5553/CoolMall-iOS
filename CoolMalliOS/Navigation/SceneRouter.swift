@@ -35,4 +35,23 @@ final class SceneRouter {
         case .me: mePath.append(route)
         }
     }
+
+    /// HOME-02-R1 (DEC-010/PRD-019): internal home re-tap event counter.
+    private var homeReTapCount: UInt64 = 0
+
+    /// Read-only re-tap event for the home entry. Monotonic per Scene; the
+    /// entry consumes it as a refresh request, never as a raw task key.
+    var homeReTapEvent: UInt64 { homeReTapCount }
+
+    /// App-side entry for TabView selection writes (RootView's binding). A
+    /// write that keeps the already-selected home tab selected at its root is
+    /// a user re-tap: bump the event counter. Writes that change the tab only
+    /// set `selectedTab`; programmatic switches write `selectedTab` directly
+    /// and can never fabricate the event.
+    func selectFromTabBar(_ tab: Tab) {
+        if tab == selectedTab, tab == .home, homePath.isEmpty {
+            homeReTapCount &+= 1
+        }
+        selectedTab = tab
+    }
 }

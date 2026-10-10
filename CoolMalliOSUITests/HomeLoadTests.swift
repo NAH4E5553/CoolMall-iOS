@@ -327,7 +327,7 @@ extension HomeLoadTests {
         app.tabBars.buttons["首页"].tap()
         XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
-        for _ in 1...2 {
+        for _ in 1...3 {
             app.tabBars.buttons["首页"].tap()
             usleep(800_000)
             XCTAssertTrue(

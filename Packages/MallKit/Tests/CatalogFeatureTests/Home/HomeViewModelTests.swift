@@ -565,4 +565,167 @@ struct HomeViewModelTests {
         #expect(!viewModel.isRefreshing)
         #expect(service.calls == 3)
     }
+
+    // MARK: HOME-02-R1 rework — accepted-slot, off-page and reload-cancel boundaries
+
+    /// R-HOME-02-R1-01: a refresh accepted but not yet started is dropped
+    /// when the page loses visibility — no hidden request, no catch-up read.
+    @Test func acceptedButUnstartedRefreshIsDroppedOnVisibilityLoss() async {
+        let service = ScriptedService(steps: [
+            .value(Self.snapshot(goodsID: 30)), .value(Self.snapshot(goodsID: 31)),
+        ])
+        let viewModel = HomeViewModel(home: service)
+        await viewModel.handleVisibility(true)
+        guard case .ready = viewModel.state else { return }
+        viewModel.requestRefresh(1)
+        #expect(viewModel.refreshTicket == 1)
+        // Visibility lost BEFORE the drive task could run the refresh.
+        await viewModel.drive(active: false, retryToken: 0)
+        #expect(service.calls == 1, "no hidden off-page request")
+        guard case .ready(let kept) = viewModel.state else {
+            Issue.record("committed content must be retained")
+            return
+        }
+        #expect(kept.goods.first?.id == 30)
+        // Returning does not replay the dropped refresh.
+        await viewModel.handleVisibility(true)
+        #expect(service.calls == 1)
+    }
+
+    /// R-HOME-02-R1-02: acceptance itself reserves the busy slot — a second
+    /// DIFFERENT token in the accepted-but-not-started window is rejected.
+    @Test func acceptanceSlotRejectsSecondTokenBeforeStart() async {
+        let service = ScriptedService(steps: [
+            .value(Self.snapshot(goodsID: 32)), .value(Self.snapshot(goodsID: 33)),
+        ])
+        let viewModel = HomeViewModel(home: service)
+        await viewModel.handleVisibility(true)
+        viewModel.requestRefresh(1)
+        viewModel.requestRefresh(2)
+        #expect(viewModel.refreshTicket == 1, "second token must not bump the ticket")
+        await viewModel.drive(active: true, retryToken: 0)
+        #expect(service.calls == 2, "exactly one refresh request runs")
+        guard case .ready(let snapshot) = viewModel.state else {
+            Issue.record("expected the first accepted refresh to commit")
+            return
+        }
+        #expect(snapshot.goods.first?.id == 33)
+    }
+
+    /// R-HOME-02-R1-02 (retry slot): the refresh-failure retry entry obeys
+    /// the same busy/acceptance-slot contract.
+    @Test func retryRefreshSlotRejectsSecondAcceptance() async {
+        let service = ScriptedService(steps: [
+            .value(Self.snapshot(goodsID: 34)), .failure(.timeout),
+            .value(Self.snapshot(goodsID: 35)), .value(Self.snapshot(goodsID: 36)),
+        ])
+        let viewModel = HomeViewModel(home: service)
+        await viewModel.handleVisibility(true)
+        viewModel.requestRefresh(1)
+        await viewModel.drive(active: true, retryToken: 0)
+        #expect(viewModel.refreshFailedHint)
+        viewModel.requestRetryRefresh()
+        #expect(viewModel.refreshTicket == 2)
+        // A second retry acceptance before the drive runs: rejected.
+        viewModel.requestRetryRefresh()
+        viewModel.requestRefresh(9)
+        #expect(viewModel.refreshTicket == 2)
+        await viewModel.drive(active: true, retryToken: 0)
+        #expect(service.calls == 3)
+        guard case .ready(let snapshot) = viewModel.state else {
+            Issue.record("expected the accepted retry refresh to commit")
+            return
+        }
+        #expect(snapshot.goods.first?.id == 35)
+    }
+
+    /// R-HOME-02-R1-03: cancelling the failed-page re-read (current
+    /// generation) restores the retained failure — never strands loading.
+    @Test func cancelledFailedPageReloadRestoresRetainedFailure() async {
+        // .never is cancellation-responsive, unlike .gate (which only resumes
+        // via release), so the cancelled reload settles through the
+        // CancellationError path here.
+        let service = ScriptedService(steps: [.failure(.timeout), .never])
+        let viewModel = HomeViewModel(home: service)
+        await viewModel.handleVisibility(true)
+        guard case .failed(.timeout) = viewModel.state else { return }
+        viewModel.requestRefresh(1)
+        let reload = Task { await viewModel.drive(active: true, retryToken: 0) }
+        await waitUntil({ service.calls == 2 })
+        #expect(viewModel.state == .loading)
+        reload.cancel()
+        await reload.value
+        guard case .failed(.timeout) = viewModel.state else {
+            Issue.record("cancelled reload must restore the retained failure")
+            return
+        }
+    }
+
+    /// R-HOME-02-R1-03: a service that IGNORES cancellation and then returns
+    /// a value (or a plain error) on the current generation must still
+    /// restore the retained failure, not commit or strand.
+    @Test func failedPageReloadIgnoringCancelRestoresRetainedFailure() async {
+        let service = ScriptedService(steps: [.failure(.timeout), .gate, .gate])
+        let viewModel = HomeViewModel(home: service)
+        await viewModel.handleVisibility(true)
+        guard case .failed(.timeout) = viewModel.state else { return }
+        viewModel.requestRefresh(1)
+        let reload = Task { await viewModel.drive(active: true, retryToken: 0) }
+        await waitUntil({ service.calls == 2 })
+        reload.cancel()
+        // Late value despite cancellation.
+        service.release(.success(Self.snapshot(goodsID: 40)))
+        await reload.value
+        guard case .failed(.timeout) = viewModel.state else {
+            Issue.record("ignored-cancel value must not commit over the retained failure")
+            return
+        }
+        // Same contract for a plain error arriving after cancellation.
+        viewModel.requestRefresh(2)
+        let secondReload = Task { await viewModel.drive(active: true, retryToken: 0) }
+        await waitUntil({ service.calls == 3 })
+        secondReload.cancel()
+        service.release(.failure(HomeLoadFailure.networkUnavailable))
+        await secondReload.value
+        guard case .failed(.timeout) = viewModel.state else {
+            Issue.record("ignored-cancel error must restore the retained failure")
+            return
+        }
+    }
+
+    /// Formal protection for the review's temporary control findings: a
+    /// refresh may commit a VALID EMPTY result over ready (wholesale
+    /// replacement), and a superseded old error/cancellation arriving after
+    /// a newer refresh committed must not disturb it.
+    @Test func refreshCanCommitValidEmptyAndLateOldOutcomesDoNotDisturbIt() async {
+        let service = ScriptedService(steps: [
+            .value(Self.snapshot(goodsID: 41)), .gate, .value(Self.emptySnapshot),
+        ])
+        let viewModel = HomeViewModel(home: service)
+        await viewModel.handleVisibility(true)
+        guard case .ready = viewModel.state else { return }
+        // Old refresh (superseded by leaving the page) still gated.
+        viewModel.requestRefresh(1)
+        let staleRefresh = Task { await viewModel.drive(active: true, retryToken: 0) }
+        await waitUntil({ service.calls == 2 })
+        await viewModel.handleVisibility(false)
+        await viewModel.handleVisibility(true)
+        // New refresh commits a valid EMPTY snapshot wholesale.
+        viewModel.requestRefresh(2)
+        await viewModel.drive(active: true, retryToken: 0)
+        #expect(service.calls == 3)
+        guard case .empty = viewModel.state else {
+            Issue.record("expected the new refresh to commit a valid empty snapshot")
+            return
+        }
+        // The superseded old refresh now fails late — must not disturb state.
+        service.release(.failure(HomeLoadFailure.httpStatus(503)))
+        await staleRefresh.value
+        guard case .empty = viewModel.state else {
+            Issue.record("late superseded error must not clear the committed empty")
+            return
+        }
+        #expect(!viewModel.refreshFailedHint)
+        #expect(!viewModel.isRefreshing)
+    }
 }

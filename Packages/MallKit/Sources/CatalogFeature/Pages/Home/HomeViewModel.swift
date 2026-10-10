@@ -53,22 +53,25 @@ final class HomeViewModel {
     /// visibility, the original retry trigger and the model-ACCEPTED refresh
     /// ticket, so ANY key change cancels the in-flight await — the first
     /// read and a refresh are cancelled alike by an explicit visibility loss,
-    /// never only by onDisappear. A retry token is consumed exactly once:
-    /// later visibility drives replay the visibility path only and never
-    /// auto-retry a retained failed/empty. An accepted refresh runs before
-    /// the visibility routing; rejected re-taps never change the key.
+    /// never only by onDisappear. Losing visibility is routed FIRST: an
+    /// accepted-but-unstarted refresh is dropped (no hidden off-page request)
+    /// and the indicator closes. A retry token is consumed exactly once;
+    /// rejected re-taps never change the key.
     func drive(active: Bool, retryToken: Int) async {
+        // R-HOME-02-R1-01: losing visibility always wins — an accepted but
+        // not-yet-started refresh is dropped here (suspend clears it), so an
+        // off-page drive can never issue a hidden request.
+        guard active else {
+            suspend()
+            return
+        }
         if acceptedRefreshPending {
             await runAcceptedRefresh()
             return
         }
         if retryToken != lastConsumedRetryToken {
             lastConsumedRetryToken = retryToken
-            if active {
-                await retry()
-            } else {
-                suspend()
-            }
+            await retry()
             return
         }
         await handleVisibility(active)
@@ -109,7 +112,10 @@ final class HomeViewModel {
         case .idle, .loading:
             return
         }
-        guard !isRefreshing else { return }
+        // R-HOME-02-R1-02: acceptance itself reserves the busy slot — a
+        // second token in the accepted-but-not-started window is rejected
+        // (ticket unchanged, nothing queued or restarted).
+        guard !isRefreshing, !acceptedRefreshPending else { return }
         refreshFailedHint = false
         acceptedRefreshPending = true
         refreshTicket &+= 1
@@ -118,11 +124,13 @@ final class HomeViewModel {
     /// Retry entry for the refresh-failure hint row — a NEW refresh action,
     /// distinct from the original failed/empty retry; still the same model.
     func requestRetryRefresh() {
-        guard refreshFailedHint, !isRefreshing else { return }
+        guard refreshFailedHint else { return }
         switch state {
         case .ready, .empty: break
         case .idle, .loading, .failed: return
         }
+        // Same busy/acceptance-slot contract as re-tap refreshes.
+        guard !isRefreshing, !acceptedRefreshPending else { return }
         refreshFailedHint = false
         acceptedRefreshPending = true
         refreshTicket &+= 1
@@ -203,24 +211,18 @@ final class HomeViewModel {
         do {
             let snapshot = try await home.loadHome()
             guard request == generation, !Task.isCancelled else {
-                if request == generation {
-                    isRefreshing = false
-                }
+                settleCancelledRefresh(request: request, keepsOldContent: keepsOldContent)
                 return
             }
             commitDisplayState(for: snapshot)
             isRefreshing = false
         } catch is CancellationError {
-            // Cancelled (e.g. left the page): close the indicator, keep the
-            // old content; a cancellation is never shown as a failure.
-            if request == generation {
-                isRefreshing = false
-            }
+            // Cancelled: close the indicator; a cancellation is never shown
+            // as a failure, and a cancelled reload restores retained state.
+            settleCancelledRefresh(request: request, keepsOldContent: keepsOldContent)
         } catch {
             guard request == generation, !Task.isCancelled else {
-                if request == generation {
-                    isRefreshing = false
-                }
+                settleCancelledRefresh(request: request, keepsOldContent: keepsOldContent)
                 return
             }
             isRefreshing = false
@@ -232,6 +234,20 @@ final class HomeViewModel {
                 state = next
                 retainedState = next
             }
+        }
+    }
+
+    /// Terminal settling for a cancelled refresh outcome — including a
+    /// service that ignored cancellation and returned a value or a plain
+    /// error. Only the request's OWN generation is settled (a superseded
+    /// completion must not touch a newer refresh's state or flags); a
+    /// reload-style refresh restores the retained state so the page can
+    /// never stay stranded in loading.
+    private func settleCancelledRefresh(request: Int, keepsOldContent: Bool) {
+        guard request == generation else { return }
+        isRefreshing = false
+        if !keepsOldContent {
+            state = retainedState ?? .idle
         }
     }
 

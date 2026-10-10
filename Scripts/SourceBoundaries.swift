@@ -64,13 +64,22 @@ final class BoundaryVisitor: SyntaxVisitor {
         if node.text == "unchecked" { fail("MOD-02", "unchecked concurrency conformance") }
         return .visitChildren
     }
+    /// Registered Feature public entries. Each name is a user-approved public
+    /// View entry: the original composition entry per target, plus
+    /// CatalogFeature.HomeEntryView (ENGINEERING 4.6.1 H0 v0.2, DEC-008 /
+    /// APPROVAL-HOME-01-H0-20261009). Anything else stays rejected.
+    static let registeredFeatureEntries: [String: [String]] = [
+        "CatalogFeature": ["CatalogEntryView", "HomeEntryView"],
+        "CartFeature": ["CartEntryView"],
+    ]
+
     func checkType(_ name: String, _ modifiers: DeclModifierListSyntax) {
         let exported = modifiers.contains { ["public", "open", "package"].contains($0.name.text) }
         if exported && (name.hasSuffix("ViewModel") || name.hasSuffix("DTO")) {
             fail("MOD-02", "implementation type must remain internal: \(name)")
         }
         if exported, job.target.hasSuffix("Feature"),
-            name != job.target.replacingOccurrences(of: "Feature", with: "EntryView")
+            !(Self.registeredFeatureEntries[job.target] ?? []).contains(name)
         {
             fail("MOD-02", "unregistered Feature public type \(name)")
         }

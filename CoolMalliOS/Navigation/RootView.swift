@@ -38,16 +38,21 @@ struct RootView: View {
     }
 
     private var tabs: some View {
-        TabView(selection: $router.selectedTab) {
+        // HOME-02-R1 (DEC-010): TabView selection writes go through the App
+        // entry so a re-tap of the selected home tab (an equal-value write,
+        // phase-A-verified) bumps the read-only event the home entry
+        // consumes; programmatic switches keep writing `selectedTab` directly.
+        TabView(
+            selection: Binding(
+                get: { router.selectedTab },
+                set: { router.selectFromTabBar($0) }
+            )
+        ) {
             NavigationStack(path: $router.homePath) {
-                CatalogEntryView(
-                    products: dependencies.products,
-                    openCart: router.openCart,
-                    openProduct: { id in router.append(.productDetail(goodsID: id), on: .home) }
-                )
-                .navigationDestination(for: SceneRouter.Route.self) { route in
-                    destination(for: route, on: .home)
-                }
+                homeRoot
+                    .navigationDestination(for: SceneRouter.Route.self) { route in
+                        destination(for: route, on: .home)
+                    }
             }
             .tabItem { Label("首页", systemImage: "house") }
             .tag(SceneRouter.Tab.home)
@@ -89,6 +94,57 @@ struct RootView: View {
             }
             .tabItem { Label("我的", systemImage: "person") }
             .tag(SceneRouter.Tab.me)
+        }
+    }
+
+    /// Home is visible only at its own tab root; pushed routes and other tabs
+    /// make the home read inactive (H0 visibility contract).
+    private var homeIsVisible: Bool {
+        router.selectedTab == .home && router.homePath.isEmpty
+    }
+
+    /// HOME-01 root selection. Normal Debug/Release show the real read UI with
+    /// the App-declared source marker; DEBUG launch arguments may keep the F0
+    /// catalog fixture root for the navigation suite or select a deterministic
+    /// home test service. Conflicting/illegal test arguments stop the read
+    /// with an explicit error instead of guessing a mode.
+    @ViewBuilder
+    private var homeRoot: some View {
+        #if DEBUG
+            switch dependencies.homeTesting.root {
+            case .catalogFixture:
+                CatalogEntryView(
+                    products: dependencies.products,
+                    openCart: router.openCart,
+                    openProduct: { id in router.append(.productDetail(goodsID: id), on: .home) }
+                )
+            case .testConfigError:
+                VStack(spacing: 12) {
+                    FixtureNoticeView(title: "测试配置错误", detail: "启动参数冲突或非法，已停止读取")
+                    Text("home.testConfigError")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("home.testConfigError")
+                }
+            case .home:
+                homeReadRoot
+            }
+        #else
+            homeReadRoot
+        #endif
+    }
+
+    private var homeReadRoot: some View {
+        VStack(spacing: 4) {
+            // App-declared source marker; proves assembly choice, not success.
+            Text(verbatim: dependencies.homeSourceDescription)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("home.source")
+            HomeEntryView(
+                home: dependencies.home,
+                isActive: homeIsVisible,
+                refreshRequest: router.homeReTapEvent)
         }
     }
 

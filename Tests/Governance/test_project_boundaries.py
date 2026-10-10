@@ -77,6 +77,9 @@ class ProjectBoundariesTests(unittest.TestCase):
     def test_public_viewmodel(self):
         self.append('public final class ProbeViewModel {}'); self.reject('MOD-02.*implementation type')
 
+    def test_unregistered_feature_public_type(self):
+        self.append('public struct RandomView {}'); self.reject('MOD-02.*unregistered Feature public type RandomView')
+
     def test_direct_api(self):
         self.append('import Foundation\nlet probe = Foundation.URLSession.shared'); self.reject('MOD-05.*direct API URLSession')
 

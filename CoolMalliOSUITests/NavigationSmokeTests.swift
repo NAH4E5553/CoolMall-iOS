@@ -400,6 +400,7 @@ final class NavigationSmokeTests: XCTestCase {
     @MainActor private func launchControlledApp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += [
+            "--uitest-nav-fixture",
             "--uitest-nav-control",
             "--uitest-nav-paths",
             "home=cart;category=probe;cart=probe;me=probe",
@@ -410,6 +411,9 @@ final class NavigationSmokeTests: XCTestCase {
 
     @MainActor private func launchApp() -> XCUIApplication {
         let app = XCUIApplication()
+        // HOME-01 moved the home root to the real read UI; the navigation
+        // suite keeps the F0 catalog fixture home via the DEBUG launch mode.
+        app.launchArguments += ["--uitest-nav-fixture"]
         app.launch()
         XCTAssertTrue(app.staticTexts["catalog.fixture"].waitForExistence(timeout: 10))
         return app

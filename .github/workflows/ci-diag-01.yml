@@ -1,0 +1,86 @@
+# LOCAL DRAFT v7. Registration/remote dispatch require separate approval.
+name: ci-diag-01
+on:
+  workflow_dispatch:
+    inputs:
+      tool_sha:
+        description: 'Exact 40-character commit of the seven registered diagnostic files'
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  diag:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      DIAG_ROOT: .build/ci-diag-${{ github.run_id }}-${{ github.run_attempt }}
+      TOOL_SHA: ${{ inputs.tool_sha }}
+    steps:
+      - name: Establish shared 780-second deadline before preparation
+        run: |
+          set -euo pipefail
+          mkdir -p "$DIAG_ROOT"
+          [[ "$TOOL_SHA" =~ ^[a-f0-9]{40}$ ]] || exit 64
+          echo "DIAG_DEADLINE_EPOCH=$(( $(date +%s) + 780 ))" >> "$GITHUB_ENV"
+      - name: Checkout diagnostic tools
+        timeout-minutes: 3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.tool_sha }}
+          path: toolsrc
+          persist-credentials: false
+      - name: Checkout frozen App source
+        timeout-minutes: 3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: a5b615520c41de1449842e05ac753fe87e46dc54
+          path: testsrc
+          persist-credentials: false
+      - name: Verify assembly and record toolchain identity
+        run: |
+          set -euo pipefail
+          [ "$(date +%s)" -lt "$DIAG_DEADLINE_EPOCH" ] || exit 124
+          TOOLDIR="$GITHUB_WORKSPACE/toolsrc/Scripts/diag"
+          PATCH="$GITHUB_WORKSPACE/toolsrc/d-patch/instrumented-copy.diff"
+          [ "$(git -C toolsrc rev-parse HEAD)" = "$TOOL_SHA" ] || { echo "tool SHA mismatch" >&2; exit 65; }
+          [ "$(git -C testsrc rev-parse HEAD)" = "a5b615520c41de1449842e05ac753fe87e46dc54" ] || { echo "test SHA mismatch" >&2; exit 65; }
+          [ "$(shasum -a 256 "$PATCH" | awk '{print $1}')" = "fb9f37823482c1811df01f868b3f9fe6d8bfd0b2b25867e45196c773199930aa" ] || { echo "patch SHA mismatch" >&2; exit 65; }
+          {
+            echo "tool-source-SHA $TOOL_SHA"
+            echo 'test-source-SHA a5b615520c41de1449842e05ac753fe87e46dc54'
+            shasum -a 256 "$PATCH" "$TOOLDIR/diagnostic.py" "$TOOLDIR/orchestrate.sh"               "$TOOLDIR/run-with-deadline.sh" "$TOOLDIR/validate-csv.py" "$TOOLDIR/validate-xcresult.py"
+          } > "$DIAG_ROOT/identity.log"
+          git -C testsrc apply --check "$PATCH"
+          git -C testsrc apply "$PATCH"
+          git -C testsrc diff > "$DIAG_ROOT/applied-diff.txt"
+          echo "TOOLDIR=$TOOLDIR" >> "$GITHUB_ENV"
+          REMAINING=$(( DIAG_DEADLINE_EPOCH - $(date +%s) ))
+          [ "$REMAINING" -gt 0 ] || exit 124
+          bash "$TOOLDIR/run-with-deadline.sh" "$REMAINING" "$DIAG_ROOT/metadata" metadata --             /bin/bash -c 'set -e; xcodebuild -version; swift --version; xcrun simctl list runtimes; sw_vers; sysctl -n hw.ncpu hw.memsize'
+          cat "$DIAG_ROOT/metadata/metadata.command.log" >> "$DIAG_ROOT/identity.log"
+      - name: One owned session (prepare, stream, three tests, export, cleanup)
+        run: |
+          set -euo pipefail
+          bash "$TOOLDIR/orchestrate.sh" session --project "$GITHUB_WORKSPACE/testsrc"             --root "$GITHUB_WORKSPACE/$DIAG_ROOT" --deadline-epoch "$DIAG_DEADLINE_EPOCH"
+      - name: Validate complete final state
+        if: always()
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/toolsrc/Scripts/diag/orchestrate.sh" gate "$DIAG_ROOT/runs/state.json"
+      - name: Upload bounded evidence (always)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ci-diag-01-evidence
+          path: |
+            ${{ env.DIAG_ROOT }}/runs/**
+            ${{ env.DIAG_ROOT }}/device-logs/**
+            ${{ env.DIAG_ROOT }}/metadata/**
+            ${{ env.DIAG_ROOT }}/identity.log
+            ${{ env.DIAG_ROOT }}/applied-diff.txt
+            ${{ env.DIAG_ROOT }}/app-identity.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7

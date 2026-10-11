@@ -80,24 +80,29 @@ final class HomeLoadTests: XCTestCase {
 
     /// R-HOME-01-04: a missing value, a flag-like next argument, or an unknown
     /// value must stop with the explicit test-configuration error — never fall
-    /// through to the real HTTP service.
-    @MainActor func testMissingOrUnknownFixtureValueStopsWithConfigError() {
-        let cases: [[String]] = [
-            ["--ui-home-fixture"],
-            ["--ui-home-fixture", "--uitest-nav-fixture"],
-            ["--ui-home-fixture", "bogus"],
-        ]
-        for arguments in cases {
-            let app = XCUIApplication()
-            app.launchArguments += arguments
-            app.launch()
-            XCTAssertTrue(
-                app.staticTexts["home.testConfigError"].waitForExistence(timeout: 10),
-                "expected config error for \(arguments)")
-            XCTAssertFalse(app.staticTexts["home.loaded"].waitForExistence(timeout: 2))
-            XCTAssertFalse(app.staticTexts["home.error"].waitForExistence(timeout: 2))
-            app.terminate()
-        }
+    /// through to the real HTTP service. One launch per test method
+    /// (CHANGE-04): a three-launch loop exceeded CI's 60s per-test allowance.
+    private func assertIllegalArgumentsStopWithConfigError(_ arguments: [String]) {
+        let app = XCUIApplication()
+        app.launchArguments += arguments
+        app.launch()
+        XCTAssertTrue(
+            app.staticTexts["home.testConfigError"].waitForExistence(timeout: 10),
+            "expected config error for \(arguments)")
+        XCTAssertFalse(app.staticTexts["home.loaded"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.staticTexts["home.error"].waitForExistence(timeout: 2))
+    }
+
+    @MainActor func testMissingFixtureValueStopsWithConfigError() {
+        assertIllegalArgumentsStopWithConfigError(["--ui-home-fixture"])
+    }
+
+    @MainActor func testFlagLikeNextArgumentStopsWithConfigError() {
+        assertIllegalArgumentsStopWithConfigError(["--ui-home-fixture", "--uitest-nav-fixture"])
+    }
+
+    @MainActor func testUnknownFixtureValueStopsWithConfigError() {
+        assertIllegalArgumentsStopWithConfigError(["--ui-home-fixture", "bogus"])
     }
 }
 
@@ -314,11 +319,11 @@ extension HomeLoadTests {
             "an at-top re-tap must keep the same fixed top-anchor position")
     }
 
-    /// Re-taps while a refresh hangs: only scroll-to-top, no second request,
-    /// no restart, no queued catch-up; leaving the page cancels the refresh;
-    /// returning keeps the old content without an implicit re-fire; a NEW
-    /// re-tap after returning is accepted again.
-    @MainActor func testReTapDuringPendingRefreshDoesNotStackAndLeaveCancels() {
+    /// AT-HOME-02-R1-04 slice 1 (one launch): while the refresh hangs,
+    /// re-taps only scroll to top — no second request, no restart, no queued
+    /// catch-up (three busy re-taps, CHANGE-04 split from the former single
+    /// chained scenario to stay inside CI's per-test allowance).
+    @MainActor func testBusyReTapsDuringPendingRefreshOnlyScrollToTop() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-home-fixture", "retap-pending"]
         app.launch()
@@ -334,26 +339,34 @@ extension HomeLoadTests {
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
         for _ in 1...3 {
             app.tabBars.buttons["首页"].tap()
-            usleep(800_000)
+            usleep(400_000)
             XCTAssertTrue(
                 app.staticTexts["home.refreshing"].exists,
                 "refresh must still be the single pending one")
             XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
         }
         XCTAssertTrue(bannerTitle.isHittable, "re-tap scrolls to top even while busy")
-        // Leave the page mid-refresh: the request is cancelled, the indicator
-        // closes, the old content stays and returning does not re-fire.
-        app.tabBars.buttons["分类"].tap()
-        usleep(800_000)
-        app.tabBars.buttons["首页"].tap()
-        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.staticTexts["home.refreshing"].waitForExistence(timeout: 2))
+    }
+
+    /// AT-HOME-02-R1-04 slice 2 (one launch): leaving mid-refresh cancels the
+    /// request and closes the indicator; returning keeps the old content
+    /// without an implicit re-fire; a NEW explicit re-tap is accepted again.
+    @MainActor func testLeaveCancelsPendingRefreshAndNewReTapIsAccepted() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-home-fixture", "retap-pending"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 15))
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
-        // A new explicit re-tap is accepted (the pending service hangs again).
         app.tabBars.buttons["首页"].tap()
         XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 10))
         app.tabBars.buttons["分类"].tap()
-        usleep(400_000)
+        usleep(500_000)
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["home.refreshing"].waitForExistence(timeout: 1.5))
+        XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 10))
     }
 
     /// A failed refresh keeps the old content and shows the retryable hint;

@@ -323,7 +323,14 @@ extension HomeLoadTests {
     /// re-taps only scroll to top — no second request, no restart, no queued
     /// catch-up (three busy re-taps, CHANGE-04 split from the former single
     /// chained scenario to stay inside CI's per-test allowance).
-    @MainActor func testBusyReTapsDuringPendingRefreshOnlyScrollToTop() {
+    /// R-PR08-COVERAGE-01: the full AT-HOME-02-R1-04 chain restored within
+    /// ONE launch — first read A → hanging refresh accepted → three real
+    /// busy re-taps (single pending request, scroll-to-top each time) →
+    /// leaving the page cancels the refresh → returning keeps A with no
+    /// re-fire → a NEW explicit re-tap starts another refresh. This is the
+    /// combined chain 9.8.6 asks for; the earlier CHANGE-04 split covered
+    /// each half in isolation and is merged back here.
+    @MainActor func testPendingRefreshFullChainInOneLaunch() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-home-fixture", "retap-pending"]
         app.launch()
@@ -334,9 +341,12 @@ extension HomeLoadTests {
             app.swipeUp(velocity: .fast)
             usleep(400_000)
         }
+        // Re-tap #1 starts the (hanging) refresh.
         app.tabBars.buttons["首页"].tap()
         XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+        // Busy re-taps #2–#4: no second request, content unchanged, and each
+        // re-tap scrolls back to the top even while busy.
         for _ in 1...3 {
             app.tabBars.buttons["首页"].tap()
             usleep(400_000)
@@ -346,25 +356,16 @@ extension HomeLoadTests {
             XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
         }
         XCTAssertTrue(bannerTitle.isHittable, "re-tap scrolls to top even while busy")
-    }
-
-    /// AT-HOME-02-R1-04 slice 2 (one launch): leaving mid-refresh cancels the
-    /// request and closes the indicator; returning keeps the old content
-    /// without an implicit re-fire; a NEW explicit re-tap is accepted again.
-    @MainActor func testLeaveCancelsPendingRefreshAndNewReTapIsAccepted() {
-        let app = XCUIApplication()
-        app.launchArguments += ["--ui-home-fixture", "retap-pending"]
-        app.launch()
-        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 15))
-        XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
-        app.tabBars.buttons["首页"].tap()
-        XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 10))
+        // Leaving the page mid-refresh cancels the request and closes the
+        // indicator; returning keeps the old content with no re-fire.
         app.tabBars.buttons["分类"].tap()
         usleep(500_000)
         app.tabBars.buttons["首页"].tap()
         XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["home.refreshing"].waitForExistence(timeout: 1.5))
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+        // A NEW explicit re-tap in the same launch is accepted again (the
+        // pending service hangs, so the indicator reappears).
         app.tabBars.buttons["首页"].tap()
         XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 10))
     }

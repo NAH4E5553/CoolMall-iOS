@@ -319,10 +319,6 @@ extension HomeLoadTests {
             "an at-top re-tap must keep the same fixed top-anchor position")
     }
 
-    /// AT-HOME-02-R1-04 slice 1 (one launch): while the refresh hangs,
-    /// re-taps only scroll to top — no second request, no restart, no queued
-    /// catch-up (three busy re-taps, CHANGE-04 split from the former single
-    /// chained scenario to stay inside CI's per-test allowance).
     /// R-PR08-COVERAGE-01: the full AT-HOME-02-R1-04 chain restored within
     /// ONE launch — first read A → hanging refresh accepted → three real
     /// busy re-taps (single pending request, scroll-to-top each time) →
@@ -337,10 +333,20 @@ extension HomeLoadTests {
         XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 15))
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
         let bannerTitle = app.staticTexts["home.section.banner.title"]
-        for _ in 0..<8 where bannerTitle.isHittable {
+        let lastRow = app.staticTexts["home.count.categoryAll"]
+        let atRestMinY = lastRow.frame.minY
+        var scrolledMinY = atRestMinY
+        // A short page can reach its bottom while the banner stays hittable.
+        // Stop on measured displacement, not on whether that title can be tapped.
+        for _ in 0..<3 {
             app.swipeUp(velocity: .fast)
             usleep(400_000)
+            scrolledMinY = lastRow.frame.minY
+            if scrolledMinY < atRestMinY - 20 { break }
         }
+        XCTAssertLessThan(
+            scrolledMinY, atRestMinY - 20,
+            "precondition: actually scrolled to a non-zero position")
         // Re-tap #1 starts the (hanging) refresh.
         app.tabBars.buttons["首页"].tap()
         XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 10))
@@ -356,6 +362,9 @@ extension HomeLoadTests {
             XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
         }
         XCTAssertTrue(bannerTitle.isHittable, "re-tap scrolls to top even while busy")
+        XCTAssertGreaterThan(
+            lastRow.frame.minY, scrolledMinY + 20,
+            "busy re-taps must move content back toward the fixed top anchor")
         // Leaving the page mid-refresh cancels the request and closes the
         // indicator; returning keeps the old content with no re-fire.
         app.tabBars.buttons["分类"].tap()

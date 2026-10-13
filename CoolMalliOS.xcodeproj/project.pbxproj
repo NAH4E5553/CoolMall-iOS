@@ -197,6 +197,7 @@
 				<string>2E75FE617E7BDED4CF045F98</string>
 				<string>22B49464A1727A89AEDEFEA3</string>
 				<string>F63E74DFE3180F17FE9D83A2</string>
+				<string>A10000000000000000000003</string>
 			</array>
 			<key>name</key>
 			<string>CoolMalliOS</string>
@@ -216,6 +217,7 @@
 				<string>21399D0A8818802D6A238FF5</string>
 				<string>9EDD97C6A12732C87B234FCD</string>
 				<string>8DA6D32F4AE4C57469515AF5</string>
+				<string>A10000000000000000000004</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>
@@ -233,6 +235,7 @@
 				<string>83A33746FE9F628D5DC7CD14</string>
 				<string>26C1C204C428D7590928B38A</string>
 				<string>274E3FF24D886BFC9736ED20</string>
+				<string>A10000000000000000000002</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>
@@ -390,6 +393,7 @@
 				<string>B77780C172480006B89F78BC</string>
 				<string>C29F7C05BF7C72588510E150</string>
 				<string>9C3551151EB0012AB46FDA96</string>
+				<string>A10000000000000000000001</string>
 			</array>
 			<key>productName</key>
 			<string>CoolMalliOS</string>
@@ -772,6 +776,38 @@
 			<string>Packages/MallKit</string>
 			<key>sourceTree</key>
 			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>A10000000000000000000001</key>
+		<dict>
+			<key>isa</key>
+			<string>XCSwiftPackageProductDependency</string>
+			<key>productName</key>
+			<string>MallImages</string>
+		</dict>
+		<key>A10000000000000000000002</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>productRef</key>
+			<string>A10000000000000000000001</string>
+		</dict>
+		<key>A10000000000000000000003</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOS/Testing/ImageUITestSupport.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>A10000000000000000000004</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>A10000000000000000000003</string>
 		</dict>
 	</dict>
 	<key>rootObject</key>

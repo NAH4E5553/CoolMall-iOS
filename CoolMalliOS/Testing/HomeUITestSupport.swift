@@ -16,6 +16,9 @@
         }
 
         enum FixtureMode: String {
+            case imageSuccess = "image-success"
+            case imageFailure = "image-failure"
+            case imagePending = "image-pending"
             case valid
             case empty
             case retry
@@ -104,6 +107,8 @@
                 root = .home
                 fixtureMode = mode
                 switch mode {
+                case .imageSuccess, .imageFailure, .imagePending:
+                    service = ImageHomeService(mode: mode)
                 case .valid: service = FixtureHomeService()
                 case .empty: service = EmptySnapshotService()
                 case .retry: service = RetrySequenceService()

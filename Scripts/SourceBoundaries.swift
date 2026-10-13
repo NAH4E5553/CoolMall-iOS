@@ -58,7 +58,31 @@ final class BoundaryVisitor: SyntaxVisitor {
             "SecItemAdd", "SecItemCopyMatching", "SecItemUpdate", "SecItemDelete",
             "NotificationCenter",
         ]
-        if job.restricted, dangerous.contains(node.text) {
+        let pipelineAPIs: Set<String> = ["URLSession", "URLRequest", "FileManager"]
+        let testAPIs: Set<String> = ["URLSession", "URLRequest", "URLProtocol"]
+        let pipelineAdapter =
+            job.target == "MallImages"
+            && job.path.hasSuffix("/Sources/MallImages/MallImagePipeline.swift")
+            && pipelineAPIs.contains(node.text)
+        var debugClause = false
+        var ancestor = node.parent
+        while let parent = ancestor {
+            if let clause = parent.as(IfConfigClauseSyntax.self),
+                clause.condition?.trimmedDescription == "DEBUG"
+            {
+                debugClause = true
+            }
+            ancestor = parent.parent
+        }
+        let imageTestAdapter =
+            job.target == "CoolMalliOS"
+            && job.path.hasSuffix("/CoolMalliOS/Testing/ImageUITestSupport.swift")
+            && debugClause && testAPIs.contains(node.text)
+        if job.restricted, dangerous.contains(node.text), !pipelineAdapter, !imageTestAdapter,
+            !(job.target == "MallImages"
+                && job.path.hasSuffix("/Sources/MallImages/MallImagePipeline.swift") && debugClause
+                && node.text == "URLProtocol")
+        {
             fail("MOD-05", "direct API \(node.text)")
         }
         if node.text == "unchecked" { fail("MOD-02", "unchecked concurrency conformance") }

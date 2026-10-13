@@ -424,3 +424,96 @@ extension HomeLoadTests {
         XCTAssertFalse(app.staticTexts["home.refresh.failed"].exists)
     }
 }
+
+extension HomeLoadTests {
+    @MainActor private func imageElement(_ app: XCUIApplication, _ state: String) -> XCUIElement {
+        app.descendants(matching: .any)["home.image.\(state)"].firstMatch
+    }
+
+    @MainActor private func imageMetrics(_ app: XCUIApplication, _ expected: String) {
+        let metrics = app.staticTexts["home.image.metrics"]
+        let predicate = NSPredicate(format: "label == %@", expected)
+        expectation(for: predicate, evaluatedWith: metrics)
+        waitForExpectations(timeout: 8)
+        XCTAssertEqual(metrics.label, expected)
+    }
+
+    @MainActor func testImageSuccessAndTabReturnUseOneCachedRequest() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-home-fixture", "image-success"]
+        app.launch()
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
+        let frame = imageElement(app, "success").frame
+        XCTAssertGreaterThan(frame.width, 0)
+        XCTAssertEqual(frame.width / frame.height, 2, accuracy: 0.02)
+        keepFeedbackScreenshot(app, name: "IMAGE01-success")
+        app.tabBars.buttons["分类"].tap()
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 8))
+        imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
+        XCTAssertEqual(app.staticTexts["home.count.banner"].label, "轮播：6")
+    }
+
+    @MainActor func testImageFailureKeepsHomeAndExplicitRefreshChangesURL() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-home-fixture", "image-failure"]
+        app.launch()
+        XCTAssertTrue(imageElement(app, "failure").waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
+        XCTAssertTrue(app.staticTexts["home.loaded"].exists)
+        XCTAssertEqual(app.staticTexts["home.count.banner"].label, "轮播：6")
+        keepFeedbackScreenshot(app, name: "IMAGE01-failure")
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：2；取消：0；首页读取：2")
+        XCTAssertFalse(imageElement(app, "failure").exists)
+    }
+
+    @MainActor func testImagePendingLeaveCancelsAndReturnRestoresWithoutHomeReload() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-home-fixture", "image-pending"]
+        app.launch()
+        XCTAssertTrue(imageElement(app, "loading").waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
+        keepFeedbackScreenshot(app, name: "IMAGE01-loading")
+        app.tabBars.buttons["分类"].tap()
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(imageElement(app, "loading").waitForExistence(timeout: 8))
+        imageMetrics(app, "图片请求：2；取消：1；首页读取：1")
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：3；取消：2；首页读取：2")
+        XCTAssertFalse(imageElement(app, "loading").exists)
+    }
+
+    @MainActor func testImageFastScrollKeepsOneRequestAndHomeSnapshot() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-home-fixture", "image-success"]
+        app.launch()
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        for _ in 0..<5 {
+            app.swipeUp(velocity: .fast)
+            app.swipeDown(velocity: .fast)
+        }
+        XCTAssertTrue(imageElement(app, "success").exists)
+        imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
+        XCTAssertEqual(app.staticTexts["home.count.banner"].label, "轮播：6")
+    }
+}
+
+extension HomeLoadTests {
+    @MainActor func testImageMissingAfterExplicitRefreshKeepsHome() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-home-fixture", "image-success"]
+        app.launch()
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        app.tabBars.buttons["首页"].tap()
+        imageMetrics(app, "图片请求：2；取消：0；首页读取：2")
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(imageElement(app, "missing").waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：2；取消：0；首页读取：3")
+        XCTAssertEqual(app.staticTexts["home.count.banner"].label, "轮播：6")
+        keepFeedbackScreenshot(app, name: "IMAGE01-missing")
+    }
+}

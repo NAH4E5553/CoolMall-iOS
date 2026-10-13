@@ -1,3 +1,4 @@
+import Foundation
 import MallCore
 import Observation
 
@@ -44,11 +45,12 @@ final class HomeViewModel {
     private var acceptedRefreshPending = false
     private var lastHandledReTapToken: UInt64 = 0
     private var lastHandledPullInteraction: UInt64?
-    private var refreshWaiters: [UInt64: [CheckedContinuation<Void, Never>]] = [:]
+    private var refreshWaiters: [UInt64: [UUID: CheckedContinuation<Void, Never>]] = [:]
 
     /// Reserves the same slot as a re-tap; only the single drive performs I/O.
     /// A rejected pull ends immediately. An accepted pull waits for its ticket.
     func pullToRefresh(interaction: UInt64? = nil) async {
+        guard !Task.isCancelled else { return }
         if let interaction {
             guard interaction != lastHandledPullInteraction else { return }
             // Consume even while busy: a callback repeated after the current
@@ -57,9 +59,18 @@ final class HomeViewModel {
         }
         guard acceptRefresh() else { return }
         let ticket = refreshTicket
-        await withCheckedContinuation { continuation in
-            // Registration is synchronous before this method first suspends.
-            refreshWaiters[ticket, default: []].append(continuation)
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                // Covers cancellation before registration, including a handler
+                // that already ran while this MainActor operation was pending.
+                guard !Task.isCancelled else { continuation.resume(); return }
+                refreshWaiters[ticket, default: [:]][waiterID] = continuation
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.cancelPullWaiter(ticket: ticket, waiterID: waiterID)
+            }
         }
     }
 
@@ -80,7 +91,21 @@ final class HomeViewModel {
     }
 
     private func finishRefresh(_ ticket: UInt64) {
-        for waiter in refreshWaiters.removeValue(forKey: ticket) ?? [] { waiter.resume() }
+        for waiter in (refreshWaiters.removeValue(forKey: ticket) ?? [:]).values { waiter.resume() }
+    }
+
+    private func cancelPullWaiter(ticket: UInt64, waiterID: UUID) {
+        guard var waiters = refreshWaiters[ticket],
+            let waiter = waiters.removeValue(forKey: waiterID)
+        else { return }
+        if waiters.isEmpty {
+            refreshWaiters.removeValue(forKey: ticket)
+        } else {
+            refreshWaiters[ticket] = waiters
+        }
+        // Cancellation ends this wait only. The single drive remains the
+        // request owner; an old waiter cannot clear a newer accepted ticket.
+        waiter.resume()
     }
 
     init(home: any HomeLoading) {

@@ -921,4 +921,69 @@ struct HomeViewModelTests {
         #expect(service.calls == 3)
     }
 
+    @Test func alreadyCancelledPullDoesNotAcceptOrRegister() async {
+        let service = ScriptedService(steps: [.value(Self.snapshot(goodsID: 1))])
+        let model = HomeViewModel(home: service)
+        await model.drive(active: true, retryToken: 0)
+        let pull = Task { await model.pullToRefresh(interaction: 1) }
+        // This MainActor test has not yielded, so cancellation precedes entry.
+        pull.cancel()
+        await pull.value
+        #expect(model.refreshTicket == 0)
+        #expect(service.calls == 1)
+    }
+
+    @Test func cancellingAcceptedUnstartedPullEndsOnlyItsWait() async {
+        let service = ScriptedService(steps: [.value(Self.snapshot(goodsID: 1))])
+        let model = HomeViewModel(home: service)
+        await model.drive(active: true, retryToken: 0)
+        var ended = false
+        let pull = Task {
+            await model.pullToRefresh(interaction: 1); ended = true
+        }
+        await waitUntil { model.refreshTicket == 1 }
+        pull.cancel()
+        await waitUntil { ended }
+        #expect(service.calls == 1, "cancelling the wait must not start HTTP")
+        #expect(model.refreshTicket == 1)
+        // Also closes the reservation if the page actually leaves. This
+        // cleanup makes the old broken implementation fail without leaking.
+        await model.drive(active: false, retryToken: 0)
+        await pull.value
+        #expect(!model.isRefreshing)
+    }
+
+    @Test func cancellingPullWaitDoesNotCancelDriveOrClearNextTicket() async {
+        let service = ScriptedService(steps: [.value(Self.snapshot(goodsID: 1)), .gate, .gate])
+        let model = HomeViewModel(home: service)
+        await model.drive(active: true, retryToken: 0)
+        var ended = false
+        let pull = Task {
+            await model.pullToRefresh(interaction: 1); ended = true
+        }
+        await waitUntil { model.refreshTicket == 1 }
+        let drive = Task { await model.drive(active: true, retryToken: 0) }
+        await waitUntil { service.calls == 2 }
+        pull.cancel()
+        await waitUntil { ended }
+        #expect(model.isRefreshing, "only the wait ended; drive still owns the read")
+        service.release(.success(Self.snapshot(goodsID: 2)))
+        await drive.value
+        await pull.value
+        var nextEnded = false
+        let next = Task {
+            await model.pullToRefresh(interaction: 2); nextEnded = true
+        }
+        await waitUntil { model.refreshTicket == 2 }
+        let nextDrive = Task { await model.drive(active: true, retryToken: 0) }
+        await waitUntil { service.calls == 3 }
+        pull.cancel()
+        #expect(!nextEnded)
+        #expect(model.isRefreshing)
+        service.release(.success(Self.snapshot(goodsID: 3)))
+        await nextDrive.value
+        await next.value
+        #expect(model.state == .ready(Self.snapshot(goodsID: 3)))
+    }
+
 }

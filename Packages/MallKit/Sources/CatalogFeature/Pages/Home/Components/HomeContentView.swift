@@ -12,9 +12,9 @@ struct HomeContentView: View {
         VStack(spacing: 16) {
             if !snapshot.banners.isEmpty {
                 HomeBannerCarouselView(
-                    banners: snapshot.banners, imagePipeline: imagePipeline, isActive: isActive
+                    banners: snapshot.banners, imagePipeline: imagePipeline, isActive: isActive,
+                    onUnavailableAction: onUnavailableAction
                 )
-                .onTapGesture(perform: onUnavailableAction)
             }
             if !snapshot.coupons.isEmpty {
                 HomeCouponSectionView(coupons: snapshot.coupons, action: onUnavailableAction)

@@ -454,7 +454,14 @@ extension HomeLoadTests {
 
 extension HomeLoadTests {
     @MainActor private func imageElement(_ app: XCUIApplication, _ state: String) -> XCUIElement {
-        app.descendants(matching: .any)["home.image.\(state)"].firstMatch
+        switch state {
+        case "success", "failure", "missing", "placeholder":
+            // The actionable banner is a Button; decorative product images
+            // are Other elements and may carry the adapter's same state IDs.
+            return app.buttons["home.image.\(state)"].firstMatch
+        default:
+            return app.descendants(matching: .any)["home.image.\(state)"].firstMatch
+        }
     }
 
     @MainActor private func imageMetrics(_ app: XCUIApplication, _ expected: String) {
@@ -653,8 +660,9 @@ extension HomeLoadTests {
         bannerPage(app, 2)
         XCTAssertEqual(app.staticTexts["home.count.banner"].label, "轮播：3")
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
-        app.swipeUp(velocity: .fast)
-        XCTAssertTrue(app.staticTexts["home.count.categoryAll"].isHittable)
+        let last = app.staticTexts["home.count.categoryAll"]
+        for _ in 0..<12 where !last.isHittable { app.swipeUp(velocity: .fast) }
+        XCTAssertTrue(last.isHittable)
     }
 
     @MainActor func testBannerReconciliationInOneRefreshSequence() {
@@ -853,5 +861,16 @@ extension HomeLoadTests {
         XCTAssertTrue(app.staticTexts["home.unavailable"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["home.loaded"].exists)
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+    }
+}
+
+extension HomeLoadTests {
+    @MainActor func testBannerUnavailableActionShowsAppFeedbackWithoutReadingAgain() {
+        let app = bannerApp("banner-multiple")
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        app.buttons["home.banner.current.910001"].tap()
+        XCTAssertTrue(app.staticTexts["home.unavailable"].waitForExistence(timeout: 2))
+        imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
+        bannerPage(app, 1)
     }
 }

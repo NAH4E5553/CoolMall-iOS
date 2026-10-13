@@ -42,8 +42,7 @@ public struct HomeEntryView: View {
                     if let viewModel {
                         switch viewModel.state {
                         case .idle, .loading:
-                            ProgressView()
-                                .accessibilityIdentifier("home.loading")
+                            loadingFeedback
                         case .ready(let snapshot):
                             // A dedicated status row carries the loaded marker: a
                             // container-level identifier would override the children's.
@@ -60,28 +59,28 @@ public struct HomeEntryView: View {
                             // not a seventh business section.
                             readVerification(snapshot)
                         case .empty(let snapshot):
-                            Text("首页暂无内容")
-                                .accessibilityIdentifier("home.empty")
+                            VStack(spacing: 16) {
+                                statusMessage("首页暂无内容", id: "home.empty")
+                                retryButton(disabled: viewModel.isRefreshing)
+                            }
+                            .padding(.vertical, 16)
                             refreshFeedback
                             // Valid empty still exposes the observable counts,
                             // including the auxiliary full-category number
                             // (R-HOME-01-03); empty semantics and retry stay.
                             counts(snapshot)
-                            retryButton(disabled: viewModel.isRefreshing)
                         case .failed(let failure):
-                            VStack(spacing: 4) {
-                                Text("首页加载失败，请重试")
-                                Text(failureDescription(failure))
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
+                            VStack(spacing: 16) {
+                                statusMessage(
+                                    "首页加载失败，请重试", detail: failureDescription(failure),
+                                    id: "home.error")
+                                retryButton(disabled: false)
                             }
-                            .accessibilityIdentifier("home.error")
-                            retryButton(disabled: false)
+                            .padding(.vertical, 16)
                         }
                     } else {
                         // One frame before the drive task creates the model.
-                        ProgressView()
-                            .accessibilityIdentifier("home.loading")
+                        loadingFeedback
                     }
                 }
                 // HOME-02 approved layout: 16pt on both sides of the safe-area
@@ -122,9 +121,37 @@ public struct HomeEntryView: View {
         let refreshTicket: UInt64
     }
 
-    /// HOME-02-R1 minimal refresh feedback: a small top indicator while the
-    /// committed content stays visible, and a retryable failure hint after a
-    /// failed refresh. No Toast framework, no layout redesign.
+    /// HOME-03 feedback is a read-only projection. Actions still use the
+    /// original drive/retry entries; these views own no request state.
+    private var loadingFeedback: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .accessibilityIdentifier("home.loading")
+            statusMessage("正在加载首页", id: "home.loading.message")
+        }
+        .padding(.vertical, 16)
+    }
+
+    private func statusMessage(_ title: String, detail: String? = nil, id: String) -> some View {
+        VStack(spacing: 8) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .accessibilityIdentifier(id)
+            if let detail {
+                Text(detail)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("\(id).reason")
+            }
+        }
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Refresh feedback stays above the retained snapshot. The vertical
+    /// failure layout lets the recovery button stay readable at large sizes.
     @ViewBuilder
     private var refreshFeedback: some View {
         if let viewModel {
@@ -135,15 +162,18 @@ public struct HomeEntryView: View {
                     // Identifiers sit on the leaf texts: a container-level
                     // identifier would override the children's.
                     Text("正在刷新")
-                        .font(.footnote)
+                        .font(.body)
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("home.refreshing")
                 }
+                .fixedSize(horizontal: false, vertical: true)
             } else if viewModel.refreshFailedHint {
-                HStack(spacing: 8) {
+                VStack(spacing: 8) {
                     Text("刷新失败，请重试")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("home.refresh.failed")
                     Button("重试") {
                         viewModel.requestRetryRefresh()
@@ -152,6 +182,7 @@ public struct HomeEntryView: View {
                     .disabled(viewModel.isRefreshing)
                     .accessibilityIdentifier("home.refresh.retry")
                 }
+                .frame(maxWidth: .infinity)
             }
         }
     }
@@ -159,6 +190,7 @@ public struct HomeEntryView: View {
     private func retryButton(disabled: Bool) -> some View {
         Button("重试") { retryTrigger += 1 }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             .disabled(disabled)
             .accessibilityIdentifier("home.retry")
     }

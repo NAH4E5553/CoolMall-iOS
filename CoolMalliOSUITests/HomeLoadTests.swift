@@ -27,6 +27,9 @@ final class HomeLoadTests: XCTestCase {
         app.launchArguments += ["--ui-home-fixture", "empty"]
         app.launch()
         XCTAssertTrue(app.staticTexts["home.empty"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["home.empty"].label, "首页暂无内容")
+        XCTAssertTrue(app.buttons["home.retry"].isHittable)
+        keepFeedbackScreenshot(app, name: "HOME03-empty")
         // R-HOME-01-03: valid empty still exposes the observable counts.
         XCTAssertEqual(app.staticTexts["home.count.banner"].label, "轮播：0")
         XCTAssertEqual(app.staticTexts["home.count.coupon"].label, "优惠券：0")
@@ -63,9 +66,20 @@ final class HomeLoadTests: XCTestCase {
         app.launchArguments += ["--ui-home-fixture", "retry"]
         app.launch()
         XCTAssertTrue(app.staticTexts["home.error"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["home.error"].label, "首页加载失败，请重试")
+        XCTAssertEqual(app.staticTexts["home.error.reason"].label, "网络不可用")
+        XCTAssertTrue(app.buttons["home.retry"].isHittable)
+        keepFeedbackScreenshot(app, name: "HOME03-first-failure")
         app.buttons["home.retry"].tap()
         XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["home.count.flashSale"].label, "限时精选：1")
+    }
+
+    @MainActor private func keepFeedbackScreenshot(_ app: XCUIApplication, name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     @MainActor func testConflictingTestArgumentsStopWithConfigError() {
@@ -377,6 +391,11 @@ extension HomeLoadTests {
         // pending service hangs, so the indicator reappears).
         app.tabBars.buttons["首页"].tap()
         XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["home.refreshing"].label, "正在刷新")
+        let refreshing = XCTAttachment(screenshot: app.screenshot())
+        refreshing.name = "HOME03-refreshing-retained-content"
+        refreshing.lifetime = .keepAlways
+        add(refreshing)
     }
 
     /// A failed refresh keeps the old content and shows the retryable hint;
@@ -392,6 +411,12 @@ extension HomeLoadTests {
         XCTAssertEqual(
             app.staticTexts["home.count.goods"].label, "全部商品：10", "old content must stay")
         XCTAssertTrue(app.buttons["home.refresh.retry"].exists)
+        XCTAssertTrue(app.buttons["home.refresh.retry"].isHittable)
+        XCTAssertEqual(app.staticTexts["home.refresh.failed"].label, "刷新失败，请重试")
+        let failure = XCTAttachment(screenshot: app.screenshot())
+        failure.name = "HOME03-refresh-failure-retained-content"
+        failure.lifetime = .keepAlways
+        add(failure)
         app.buttons["home.refresh.retry"].tap()
         let bSeen = NSPredicate(format: "label CONTAINS %@", "全部商品：11")
         expectation(for: bSeen, evaluatedWith: app.staticTexts["home.count.goods"])

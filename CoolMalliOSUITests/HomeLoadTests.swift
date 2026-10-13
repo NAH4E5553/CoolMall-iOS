@@ -475,6 +475,10 @@ extension HomeLoadTests {
         app.launchArguments += ["--ui-home-fixture", "image-pending"]
         app.launch()
         XCTAssertTrue(imageElement(app, "loading").waitForExistence(timeout: 10))
+        // The fixture confirms an actual 11-second pending interval. On a slow
+        // runner this may already be true when the first AX query returns.
+        XCTAssertTrue(app.staticTexts["home.image.pending-aged"].waitForExistence(timeout: 15))
+        XCTAssertTrue(imageElement(app, "loading").exists)
         imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
         keepFeedbackScreenshot(app, name: "IMAGE01-loading")
         app.tabBars.buttons["分类"].tap()
@@ -485,6 +489,29 @@ extension HomeLoadTests {
         XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
         imageMetrics(app, "图片请求：3；取消：2；首页读取：2")
         XCTAssertFalse(imageElement(app, "loading").exists)
+        app.buttons["home.image.release-old"].tap()
+        let late = NSPredicate(format: "label == %@", "超时：0；旧响应：2")
+        expectation(for: late, evaluatedWith: app.staticTexts["home.image.endings"])
+        waitForExpectations(timeout: 8)
+        XCTAssertTrue(imageElement(app, "success").exists)
+        XCTAssertFalse(imageElement(app, "loading").exists)
+        imageMetrics(app, "图片请求：3；取消：2；首页读取：2")
+        keepFeedbackScreenshot(app, name: "IMAGE01-pink-B-after-late-blue-A")
+    }
+
+    @MainActor func testImageControlledTimeoutIsFailureNotCancellation() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-home-fixture", "image-pending"]
+        app.launch()
+        XCTAssertTrue(imageElement(app, "loading").waitForExistence(timeout: 10))
+        app.buttons["home.image.timeout"].tap()
+        XCTAssertTrue(imageElement(app, "failure").waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
+        XCTAssertEqual(app.staticTexts["home.image.endings"].label, "超时：1；旧响应：0")
+        XCTAssertTrue(app.staticTexts["home.loaded"].exists)
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：2；取消：0；首页读取：2")
     }
 
     @MainActor func testImageFastScrollKeepsOneRequestAndHomeSnapshot() {

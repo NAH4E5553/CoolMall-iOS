@@ -2,6 +2,7 @@
     import Foundation
     import MallCore
     import MallData
+    import SwiftUI
 
     /// DEBUG-only UI-test input synthesis (H0 test-assembly contract). Parses the
     /// two mutually exclusive launch modes and builds the deterministic services;
@@ -24,6 +25,7 @@
             case imageSuccess = "image-success"
             case imageFailure = "image-failure"
             case imagePending = "image-pending"
+            case pageControlled = "page-controlled"
             case valid
             case empty
             case retry
@@ -67,7 +69,7 @@
             }
         }
 
-        init(arguments: [String] = ProcessInfo.processInfo.arguments) {
+        @MainActor init(arguments: [String] = ProcessInfo.processInfo.arguments) {
             let hasNavFixture = arguments.contains("--uitest-nav-fixture")
             let homeFlagIndex = arguments.firstIndex(of: "--ui-home-fixture")
             var homeValue: String?
@@ -116,6 +118,7 @@
                     .bannerSingle, .bannerMultiple, .bannerReconcile,
                     .bannerRefreshFailure, .bannerPending:
                     service = ImageHomeService(mode: mode)
+                case .pageControlled: service = PageControlledHomeService()
                 case .valid: service = FixtureHomeService()
                 case .empty: service = EmptySnapshotService()
                 case .retry: service = RetrySequenceService()
@@ -295,6 +298,85 @@
                 goods: [],
                 coupons: [HomeCouponSummary(id: 860_001, title: "重试成功券")]
             )
+        }
+    }
+
+    /// Test events release the real injected HomeLoading continuation; they
+    /// never mutate the page or fabricate request/cancellation counters.
+    @MainActor
+    final class PageControlledHomeService: HomeLoading {
+        static let events = PageHomeEvents()
+        private var call = 0
+        init() { Self.events.reset() }
+        func loadHome() async throws -> HomeSnapshot {
+            call += 1
+            Self.events.calls = call
+            if call == 1 { return try await FixtureHomeService().loadHome() }
+            let requestID = UUID()
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    Self.events.pendingID = requestID
+                    Self.events.pending = continuation
+                }
+            } onCancel: {
+                Task { @MainActor in
+                    guard Self.events.pendingID == requestID else { return }
+                    Self.events.cancellations += 1
+                    Self.events.release(.failure(CancellationError()))
+                }
+            }
+        }
+    }
+
+    @MainActor
+    final class PageHomeEvents: ObservableObject {
+        @Published var calls = 0
+        @Published var cancellations = 0
+        var pendingID: UUID?
+        var pending: CheckedContinuation<HomeSnapshot, Error>?
+        func reset() {
+            release(.failure(CancellationError()))
+            calls = 0
+            cancellations = 0
+        }
+        func release(_ result: Result<HomeSnapshot, Error>) {
+            let continuation = pending
+            pending = nil
+            pendingID = nil
+            continuation?.resume(with: result)
+        }
+        func succeed() async {
+            guard let requestID = pendingID else { return }
+            do {
+                let base = try await FixtureHomeService().loadHome()
+                guard pendingID == requestID else { return }
+                let extra = HomeProductSummary(
+                    id: 990_001, title: "刷新商品", subtitle: nil, imageURL: nil, priceYuan: Decimal(88)
+                )
+                release(
+                    .success(
+                        HomeSnapshot(
+                            banners: base.banners, categories: base.categories,
+                            allCategories: base.allCategories, featured: base.featured,
+                            recommendations: base.recommendations, goods: base.goods + [extra],
+                            coupons: base.coupons)))
+            } catch {
+                if pendingID == requestID { release(.failure(error)) }
+            }
+        }
+    }
+
+    struct PageHomeTestControlsView: View {
+        @ObservedObject private var events = PageControlledHomeService.events
+        var body: some View {
+            HStack {
+                Text("读取：\(events.calls)；取消：\(events.cancellations)")
+                    .accessibilityIdentifier("home.page.requests")
+                Button("返回成功") { Task { await events.succeed() } }
+                    .accessibilityIdentifier("home.page.success")
+                Button("返回失败") { events.release(.failure(HomeLoadFailure.timeout)) }
+                    .accessibilityIdentifier("home.page.failure")
+            }.font(.caption2)
         }
     }
 #endif

@@ -38,6 +38,7 @@ struct HomeBannerCarouselView: View {
     let banners: [HomeBanner]
     let imagePipeline: MallImagePipeline?
     let isActive: Bool
+    var onUnavailableAction: () -> Void = {}
     @State private var selection = HomeBannerSelection()
 
     private var ids: [Int64] { banners.map(\.id) }
@@ -119,6 +120,9 @@ struct HomeBannerCarouselView: View {
                 .accessibilityIdentifier("home.banner.current.\(banner.id)")
                 .accessibilityHidden(banner.id != currentID)
         }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onUnavailableAction)
+        .accessibilityAction { onUnavailableAction() }
         .frame(width: size.width, height: size.height)
         .clipped()
     }

@@ -3,37 +3,34 @@ import MallImages
 import MallDesignSystem
 import SwiftUI
 
-/// The real home entry: HOME-01's minimal read UI, HOME-02's section
-/// skeletons and HOME-02-R1's re-tap behavior — a re-tap of the selected
-/// home tab scrolls to the fixed top anchor and offers one refresh. The App
-/// injects the only read capability, the read-only visibility flag and the
-/// read-only re-tap event; this view owns no routing and keeps no second
-/// copy of results.
-///
-/// Model lifetime (R-HOME-01-02): the model is created exactly once per
-/// Scene/home-root `@State` identity, inside the drive task — tab switches
-/// re-evaluate `init`/`body` freely without constructing and discarding
-/// replacement models. The single `.task(id:)` key covers visibility, the
-/// original retry trigger AND the model-ACCEPTED refresh ticket; the RAW
-/// re-tap counter never enters the key, so re-taps rejected while busy
-/// cannot cancel the active request (H0 v0.3).
+/// Scene/home-root entry over one internal model. The App supplies the
+/// read capability, visibility, images, test-only read markers and actions.
+/// Re-tap and pull refresh share a synchronously reserved ticket; the single
+/// drive task performs every accepted request, and a pull waits for its own
+/// ticket to finish. Busy events cannot change the task key or queue a read.
 @MainActor
 public struct HomeEntryView: View {
     @State private var viewModel: HomeViewModel?
+    @GestureState private var isPullDragging = false
+    @State private var pullInteraction: UInt64 = 0
     private let home: any HomeLoading
     private let isActive: Bool
     private let refreshRequest: UInt64
     private let imagePipeline: MallImagePipeline?
-    @State private var retryTrigger = 0
+    private let showsReadVerification: Bool
+    private let onUnavailableAction: () -> Void
 
     public init(
         home: any HomeLoading, isActive: Bool, refreshRequest: UInt64 = 0,
-        imagePipeline: MallImagePipeline? = nil
+        imagePipeline: MallImagePipeline? = nil,
+        showsReadVerification: Bool = false, onUnavailableAction: @escaping () -> Void = {}
     ) {
         self.home = home
         self.isActive = isActive
         self.refreshRequest = refreshRequest
         self.imagePipeline = imagePipeline
+        self.showsReadVerification = showsReadVerification
+        self.onUnavailableAction = onUnavailableAction
     }
 
     public var body: some View {
@@ -42,7 +39,7 @@ public struct HomeEntryView: View {
                 VStack(spacing: 16) {
                     // Fixed top anchor for the public re-tap scroll-to-top;
                     // also the observable "scrolled to top" marker.
-                    FixtureNoticeView(title: "首页", detail: "首页数据读取已接入，正式栏目布局待接入")
+                    Color.clear.frame(height: 1)
                         .id("home.contentTop")
                         .accessibilityIdentifier("home.contentTop")
                     if let viewModel {
@@ -52,20 +49,24 @@ public struct HomeEntryView: View {
                         case .ready(let snapshot):
                             // A dedicated status row carries the loaded marker: a
                             // container-level identifier would override the children's.
-                            Text("读取成功")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .accessibilityIdentifier("home.loaded")
+                            if showsReadVerification {
+                                Text("读取成功")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .accessibilityIdentifier("home.loaded")
+                            }
                             refreshFeedback
-                            // HOME-02: read-only section skeletons; empty sections
-                            // hide together with their titles.
+                            // Read-only sections hide with their own empty arrays.
                             HomeContentView(
-                                snapshot: snapshot, imagePipeline: imagePipeline, isActive: isActive
+                                snapshot: snapshot, imagePipeline: imagePipeline,
+                                isActive: isActive,
+                                onUnavailableAction: onUnavailableAction
                             )
+
                             // The H0 seven counts stay observable inside an
                             // explicitly-labeled engineering verification block —
                             // not a seventh business section.
-                            readVerification(snapshot)
+                            if showsReadVerification { readVerification(snapshot) }
                         case .empty(let snapshot):
                             VStack(spacing: 16) {
                                 statusMessage("首页暂无内容", id: "home.empty")
@@ -76,7 +77,7 @@ public struct HomeEntryView: View {
                             // Valid empty still exposes the observable counts,
                             // including the auxiliary full-category number
                             // (R-HOME-01-03); empty semantics and retry stay.
-                            counts(snapshot)
+                            if showsReadVerification { counts(snapshot) }
                         case .failed(let failure):
                             VStack(spacing: 16) {
                                 statusMessage(
@@ -96,7 +97,20 @@ public struct HomeEntryView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16)
             }
+            .accessibilityIdentifier("home.scroll")
             .navigationTitle("首页")
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 1).updating($isPullDragging) { _, dragging, _ in
+                    dragging = true
+                }
+            )
+            .onChange(of: isPullDragging) { _, dragging in
+                if dragging { pullInteraction &+= 1 }
+            }
+            .refreshable {
+                await viewModel?.pullToRefresh(interaction: pullInteraction)
+            }
+            .accessibilityAction(named: "刷新") { viewModel?.requestAccessibleRefresh() }
             .onChange(of: refreshRequest) { _, _ in
                 // A real home re-tap (App-verified event): always scroll to the
                 // fixed top anchor through the public API, then OFFER the
@@ -109,7 +123,7 @@ public struct HomeEntryView: View {
                 if viewModel == nil {
                     viewModel = HomeViewModel(home: home)
                 }
-                await viewModel?.drive(active: isActive, retryToken: retryTrigger)
+                await viewModel?.drive(active: isActive, retryToken: 0)
             }
         }
     }
@@ -117,7 +131,6 @@ public struct HomeEntryView: View {
     private var driveKey: DriveKey {
         DriveKey(
             active: isActive,
-            retryTrigger: retryTrigger,
             // Only the model-ACCEPTED refresh ticket drives the task; raw
             // re-tap tokens that were rejected never change it.
             refreshTicket: viewModel?.refreshTicket ?? 0)
@@ -125,7 +138,6 @@ public struct HomeEntryView: View {
 
     private struct DriveKey: Equatable {
         let active: Bool
-        let retryTrigger: Int
         let refreshTicket: UInt64
     }
 
@@ -196,7 +208,7 @@ public struct HomeEntryView: View {
     }
 
     private func retryButton(disabled: Bool) -> some View {
-        Button("重试") { retryTrigger += 1 }
+        Button("重试") { viewModel?.requestUserRetry() }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .disabled(disabled)

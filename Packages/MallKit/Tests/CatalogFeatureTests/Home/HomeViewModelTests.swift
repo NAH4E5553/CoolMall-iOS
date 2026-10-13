@@ -779,4 +779,146 @@ struct HomeViewModelTests {
             return
         }
     }
+    @Test func pullWaitsForOwnedDriveAndBusyPullDoesNotQueue() async {
+        let service = ScriptedService(steps: [.value(Self.snapshot(goodsID: 1)), .gate])
+        let model = HomeViewModel(home: service)
+        await model.drive(active: true, retryToken: 0)
+        var ended = false
+        let pull = Task {
+            await model.pullToRefresh(); ended = true
+        }
+        await waitUntil { model.refreshTicket == 1 }
+        #expect(service.calls == 1)
+        #expect(!ended)
+        model.requestRefresh(1)
+        await model.pullToRefresh()
+        #expect(model.refreshTicket == 1)
+        let drive = Task { await model.drive(active: true, retryToken: 0) }
+        await waitUntil { service.calls == 2 }
+        #expect(!ended)
+        service.release(.success(Self.snapshot(goodsID: 2)))
+        await drive.value
+        await pull.value
+        #expect(ended)
+        #expect(model.state == .ready(Self.snapshot(goodsID: 2)))
+    }
+
+    @Test func acceptedUnstartedPullEndsOnLeaveWithoutReading() async {
+        let service = ScriptedService(steps: [.value(Self.snapshot(goodsID: 1))])
+        let model = HomeViewModel(home: service)
+        await model.drive(active: true, retryToken: 0)
+        let pull = Task { await model.pullToRefresh() }
+        await waitUntil { model.refreshTicket == 1 }
+        await model.drive(active: false, retryToken: 0)
+        await pull.value
+        await model.drive(active: true, retryToken: 0)
+        #expect(service.calls == 1)
+        #expect(!model.isRefreshing)
+    }
+
+    @Test func failedPullEndsAndKeepsCommittedContent() async {
+        let service = ScriptedService(steps: [.value(Self.snapshot(goodsID: 1)), .gate])
+        let model = HomeViewModel(home: service)
+        await model.drive(active: true, retryToken: 0)
+        let pull = Task { await model.pullToRefresh() }
+        await waitUntil { model.refreshTicket == 1 }
+        let drive = Task { await model.drive(active: true, retryToken: 0) }
+        await waitUntil { service.calls == 2 }
+        service.release(.failure(HomeLoadFailure.timeout))
+        await drive.value
+        await pull.value
+        #expect(model.refreshFailedHint)
+        #expect(!model.isRefreshing)
+        #expect(model.state == .ready(Self.snapshot(goodsID: 1)))
+    }
+
+    @Test func oldDriveCannotEndNewPullWaiter() async {
+        let service = ScriptedService(steps: [.value(Self.snapshot(goodsID: 1)), .gate, .gate])
+        let model = HomeViewModel(home: service)
+        await model.drive(active: true, retryToken: 0)
+        let oldPull = Task { await model.pullToRefresh() }
+        await waitUntil { model.refreshTicket == 1 }
+        let oldDrive = Task { await model.drive(active: true, retryToken: 0) }
+        await waitUntil { service.calls == 2 }
+        await model.drive(active: false, retryToken: 0)
+        await oldPull.value
+        await model.drive(active: true, retryToken: 0)
+        var newEnded = false
+        let newPull = Task {
+            await model.pullToRefresh(); newEnded = true
+        }
+        await waitUntil { model.refreshTicket == 2 }
+        let newDrive = Task { await model.drive(active: true, retryToken: 0) }
+        await waitUntil { service.calls == 3 }
+        service.release(.success(Self.snapshot(goodsID: 99)))
+        await oldDrive.value
+        #expect(!newEnded)
+        #expect(model.isRefreshing)
+        service.releaseLatest(.success(Self.snapshot(goodsID: 2)))
+        await newDrive.value
+        await newPull.value
+        #expect(model.state == .ready(Self.snapshot(goodsID: 2)))
+    }
+
+    @Test func failedRecoveryAndPullShareOneAcceptedSlot() async {
+        let service = ScriptedService(steps: [.failure(.timeout), .gate])
+        let model = HomeViewModel(home: service)
+        await model.drive(active: true, retryToken: 0)
+        model.requestUserRetry()
+        #expect(model.refreshTicket == 1)
+        model.requestUserRetry()
+        model.requestRefresh(1)
+        await model.pullToRefresh()
+        #expect(model.refreshTicket == 1)
+        #expect(service.calls == 1)
+        let drive = Task { await model.drive(active: true, retryToken: 0) }
+        await waitUntil { service.calls == 2 }
+        model.requestUserRetry()
+        #expect(model.refreshTicket == 1)
+        service.release(.success(Self.snapshot(goodsID: 1)))
+        await drive.value
+        #expect(model.state == .ready(Self.snapshot(goodsID: 1)))
+    }
+
+    @Test func duplicatePullInteractionCannotReadAgainAfterCompletion() async {
+        let service = ScriptedService(steps: [
+            .value(Self.snapshot(goodsID: 1)), .value(Self.snapshot(goodsID: 2)),
+            .value(Self.snapshot(goodsID: 3)),
+        ])
+        let model = HomeViewModel(home: service)
+        await model.drive(active: true, retryToken: 0)
+        let first = Task { await model.pullToRefresh(interaction: 1) }
+        await waitUntil { model.refreshTicket == 1 }
+        await model.drive(active: true, retryToken: 0)
+        await first.value
+        await model.pullToRefresh(interaction: 1)
+        #expect(service.calls == 2)
+        #expect(model.refreshTicket == 1)
+        let second = Task { await model.pullToRefresh(interaction: 2) }
+        await waitUntil { model.refreshTicket == 2 }
+        await model.drive(active: true, retryToken: 0)
+        await second.value
+        #expect(service.calls == 3)
+        #expect(model.state == .ready(Self.snapshot(goodsID: 3)))
+    }
+
+    @Test func rejectedBusyPullInteractionDoesNotReplayAfterBusyReadEnds() async {
+        let service = ScriptedService(steps: [
+            .value(Self.snapshot(goodsID: 1)), .gate, .value(Self.snapshot(goodsID: 3)),
+        ])
+        let model = HomeViewModel(home: service)
+        await model.drive(active: true, retryToken: 0)
+        model.requestRefresh(1)
+        let drive = Task { await model.drive(active: true, retryToken: 0) }
+        await waitUntil { service.calls == 2 }
+        await model.pullToRefresh(interaction: 1)
+        service.release(.success(Self.snapshot(goodsID: 2)))
+        await drive.value
+        await model.pullToRefresh(interaction: 1)
+        #expect(service.calls == 2)
+        model.requestAccessibleRefresh()
+        await model.drive(active: true, retryToken: 0)
+        #expect(service.calls == 3)
+    }
+
 }

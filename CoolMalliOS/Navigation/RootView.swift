@@ -8,6 +8,7 @@ import SwiftUI
 struct RootView: View {
     let dependencies: AppDependencies
     @State private var router = SceneRouter()
+    @State private var unavailableNotice: UUID?
     #if DEBUG
         private let navTestControl: NavigationTestControl
     #endif
@@ -137,11 +138,16 @@ struct RootView: View {
     private var homeReadRoot: some View {
         VStack(spacing: 4) {
             // App-declared source marker; proves assembly choice, not success.
-            Text(verbatim: dependencies.homeSourceDescription)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("home.source")
+            if dependencies.showsHomeReadVerification {
+                Text(verbatim: dependencies.homeSourceDescription)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("home.source")
+            }
             #if DEBUG
+                if dependencies.homeTesting.fixtureMode == .pageControlled {
+                    PageHomeTestControlsView()
+                }
                 if dependencies.homeTesting.fixtureMode == .imageSuccess
                     || dependencies.homeTesting.fixtureMode == .imageFailure
                     || dependencies.homeTesting.fixtureMode == .imagePending
@@ -157,10 +163,40 @@ struct RootView: View {
             HomeEntryView(
                 home: dependencies.home,
                 isActive: homeIsVisible,
-                refreshRequest: router.homeReTapEvent, imagePipeline: dependencies.homeImagePipeline
+                refreshRequest: router.homeReTapEvent,
+                imagePipeline: dependencies.homeImagePipeline,
+                showsReadVerification: dependencies.showsHomeReadVerification,
+                onUnavailableAction: showUnavailable
             )
         }
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("CoolMall", action: showUnavailable).accessibilityIdentifier("home.about")
+            }
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button(action: showUnavailable) { Image(systemName: "magnifyingglass") }
+                    .accessibilityLabel("搜索").accessibilityIdentifier("home.search")
+                Button(action: showUnavailable) {
+                    Image(systemName: "chevron.left.forwardslash.chevron.right")
+                }
+                .accessibilityLabel("项目").accessibilityIdentifier("home.project")
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if unavailableNotice != nil {
+                Text("暂未开放").font(.body).padding(12)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding().accessibilityIdentifier("home.unavailable")
+            }
+        }
+        .task(id: unavailableNotice) {
+            guard let notice = unavailableNotice else { return }
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            if unavailableNotice == notice { unavailableNotice = nil }
+        }
     }
+
+    private func showUnavailable() { unavailableNotice = UUID() }
 
     /// Pushed routes cover the tab bar (the PRD-016 pattern from NAV-01), so
     /// re-tapping the current tab stays reachable only at tab roots, where the

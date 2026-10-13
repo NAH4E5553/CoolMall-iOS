@@ -145,6 +145,11 @@ struct RootView: View {
                 if dependencies.homeTesting.fixtureMode == .imageSuccess
                     || dependencies.homeTesting.fixtureMode == .imageFailure
                     || dependencies.homeTesting.fixtureMode == .imagePending
+                    || dependencies.homeTesting.fixtureMode == .bannerSingle
+                    || dependencies.homeTesting.fixtureMode == .bannerMultiple
+                    || dependencies.homeTesting.fixtureMode == .bannerReconcile
+                    || dependencies.homeTesting.fixtureMode == .bannerRefreshFailure
+                    || dependencies.homeTesting.fixtureMode == .bannerPending
                 {
                     ImageUITestMetricsView()
                 }

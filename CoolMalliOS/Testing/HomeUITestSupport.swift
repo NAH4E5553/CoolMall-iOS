@@ -16,6 +16,11 @@
         }
 
         enum FixtureMode: String {
+            case bannerSingle = "banner-single"
+            case bannerMultiple = "banner-multiple"
+            case bannerReconcile = "banner-reconcile"
+            case bannerRefreshFailure = "banner-refresh-failure"
+            case bannerPending = "banner-pending"
             case imageSuccess = "image-success"
             case imageFailure = "image-failure"
             case imagePending = "image-pending"
@@ -107,7 +112,9 @@
                 root = .home
                 fixtureMode = mode
                 switch mode {
-                case .imageSuccess, .imageFailure, .imagePending:
+                case .imageSuccess, .imageFailure, .imagePending,
+                    .bannerSingle, .bannerMultiple, .bannerReconcile,
+                    .bannerRefreshFailure, .bannerPending:
                     service = ImageHomeService(mode: mode)
                 case .valid: service = FixtureHomeService()
                 case .empty: service = EmptySnapshotService()

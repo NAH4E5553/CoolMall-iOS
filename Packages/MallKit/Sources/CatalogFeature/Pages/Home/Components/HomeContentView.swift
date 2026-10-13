@@ -72,30 +72,16 @@ struct HomeContentView: View {
         // eager composition keeps empty-section hiding structural.
         VStack(spacing: 16) {
             ForEach(Section.allCases.filter { $0.isVisible(in: snapshot) }, id: \.self) { section in
-                HomeSectionView(
-                    title: section.title,
-                    pendingText: section.pendingText,
-                    titleAccessibilityID: "home.section.\(section.accessibilityKey).title",
-                    pendingAccessibilityID: "home.section.\(section.accessibilityKey).pending"
-                )
-                if section == .banner, let banner = snapshot.banners.first {
-                    Color.clear.aspectRatio(2, contentMode: .fit)
-                        .overlay {
-                            GeometryReader { geometry in
-                                if let imagePipeline {
-                                    RemoteImage(
-                                        url: banner.imageURL, targetSize: geometry.size,
-                                        pipeline: imagePipeline, isEnabled: isActive)
-                                } else {
-                                    Rectangle().fill(.quaternary)
-                                        .overlay {
-                                            Image(systemName: "photo").foregroundStyle(.secondary)
-                                        }
-                                        .accessibilityIdentifier("home.image.unavailable")
-                                        .accessibilityHidden(true)
-                                }
-                            }
-                        }
+                if section == .banner {
+                    HomeBannerCarouselView(
+                        banners: snapshot.banners, imagePipeline: imagePipeline, isActive: isActive)
+                } else {
+                    HomeSectionView(
+                        title: section.title,
+                        pendingText: section.pendingText,
+                        titleAccessibilityID: "home.section.\(section.accessibilityKey).title",
+                        pendingAccessibilityID: "home.section.\(section.accessibilityKey).pending"
+                    )
                 }
             }
         }

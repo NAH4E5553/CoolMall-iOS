@@ -141,9 +141,15 @@ extension HomeLoadTests {
             XCTAssertTrue(
                 app.staticTexts["home.section.\(section.key).title"].exists,
                 "\(section.key) title must exist for valid input")
-            XCTAssertTrue(
-                app.staticTexts["home.section.\(section.key).pending"].exists,
-                "\(section.key) placeholder must exist for valid input")
+            if section.key == "banner" {
+                XCTAssertTrue(
+                    app.staticTexts["home.banner.page"].exists,
+                    "banner must show the real manual carousel for valid input")
+            } else {
+                XCTAssertTrue(
+                    app.staticTexts["home.section.\(section.key).pending"].exists,
+                    "\(section.key) placeholder must exist for valid input")
+            }
         }
         // Read through the whole content (last row reachable), then verify the
         // PRD-015 order by frame positions — viewport-independent, unlike a
@@ -545,5 +551,192 @@ extension HomeLoadTests {
         imageMetrics(app, "图片请求：2；取消：0；首页读取：3")
         XCTAssertEqual(app.staticTexts["home.count.banner"].label, "轮播：6")
         keepFeedbackScreenshot(app, name: "IMAGE01-missing")
+    }
+}
+
+extension HomeLoadTests {
+    @MainActor private func bannerApp(_ mode: String) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-home-fixture", mode]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
+        return app
+    }
+
+    @MainActor private func bannerPage(_ app: XCUIApplication, _ index: Int, count: Int = 3) {
+        let page = app.staticTexts["home.banner.page"]
+        let expected = "第\(index)张，共\(count)张"
+        expectation(for: NSPredicate(format: "label == %@", expected), evaluatedWith: page)
+        waitForExpectations(timeout: 8)
+        XCTAssertEqual(page.label, expected)
+    }
+
+    /// Keep the entire image AND controls in the viewport for visual evidence.
+    /// Vertical drags start beside the horizontal pager to avoid stealing its gesture.
+    @MainActor private func revealBanner(_ app: XCUIApplication) {
+        let next = app.buttons["home.banner.next"]
+        for _ in 0..<4 {
+            if next.isHittable && next.frame.maxY < app.tabBars.firstMatch.frame.minY { return }
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.75))
+            let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.42))
+            start.press(forDuration: 0.01, thenDragTo: end)
+        }
+        XCTAssertTrue(next.isHittable)
+    }
+
+    @MainActor func testBannerSingleHidesControlsAndUpdatesSameIDURL() {
+        let app = bannerApp("banner-single")
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["home.banner.page"].exists)
+        XCTAssertFalse(app.buttons["home.banner.previous"].exists)
+        XCTAssertFalse(app.buttons["home.banner.next"].exists)
+        imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
+        let before = imageElement(app, "success").screenshot()
+        keepFeedbackScreenshot(app, name: "HOME04-single-A")
+        app.tabBars.buttons["首页"].tap()
+        imageMetrics(app, "图片请求：2；取消：0；首页读取：2")
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        XCTAssertNotEqual(
+            before.pngRepresentation, imageElement(app, "success").screenshot().pngRepresentation)
+        XCTAssertFalse(app.buttons["home.banner.next"].exists)
+        keepFeedbackScreenshot(app, name: "HOME04-single-same-ID-new-image")
+    }
+
+    @MainActor func testBannerManualPagingBoundariesFailureAndMissing() {
+        let app = bannerApp("banner-multiple")
+        revealBanner(app)
+        bannerPage(app, 1)
+        XCTAssertFalse(app.buttons["home.banner.previous"].isEnabled)
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        keepFeedbackScreenshot(app, name: "HOME04-success-complete")
+        app.buttons["home.banner.next"].tap()
+        bannerPage(app, 2)
+        XCTAssertTrue(imageElement(app, "failure").waitForExistence(timeout: 10))
+        keepFeedbackScreenshot(app, name: "HOME04-failure-complete")
+        imageMetrics(app, "图片请求：2；取消：0；首页读取：1")
+        app.buttons["home.banner.next"].tap()
+        bannerPage(app, 3)
+        XCTAssertFalse(app.buttons["home.banner.next"].isEnabled)
+        XCTAssertTrue(imageElement(app, "missing").exists)
+        keepFeedbackScreenshot(app, name: "HOME04-missing-complete")
+        app.buttons["home.banner.previous"].tap()
+        bannerPage(app, 2)
+        XCTAssertTrue(imageElement(app, "failure").waitForExistence(timeout: 10))
+        // A failed image is not automatically retried by metrics/body changes.
+        imageMetrics(app, "图片请求：3；取消：0；首页读取：1")
+        let pager = imageElement(app, "failure")
+        pager.swipeRight()
+        bannerPage(app, 1)
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        imageElement(app, "success").swipeLeft()
+        bannerPage(app, 2)
+        XCTAssertEqual(app.staticTexts["home.count.banner"].label, "轮播：3")
+        XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+        app.swipeUp(velocity: .fast)
+        XCTAssertTrue(app.staticTexts["home.count.categoryAll"].isHittable)
+    }
+
+    @MainActor func testBannerReconciliationInOneRefreshSequence() {
+        let app = bannerApp("banner-reconcile")
+        revealBanner(app)
+        app.buttons["home.banner.next"].tap()
+        bannerPage(app, 2)
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        app.tabBars.buttons["首页"].tap()
+        imageMetrics(app, "图片请求：2；取消：0；首页读取：2")
+        bannerPage(app, 2)
+        XCTAssertTrue(app.descendants(matching: .any)["home.banner.current.910002"].exists)
+        app.tabBars.buttons["首页"].tap()
+        imageMetrics(app, "图片请求：3；取消：0；首页读取：3")
+        bannerPage(app, 1, count: 2)
+        XCTAssertTrue(app.descendants(matching: .any)["home.banner.current.910003"].exists)
+        app.tabBars.buttons["首页"].tap()
+        imageMetrics(app, "图片请求：3；取消：0；首页读取：4")
+        XCTAssertFalse(app.staticTexts["home.section.banner.title"].exists)
+        XCTAssertFalse(app.buttons["home.banner.next"].exists)
+        app.tabBars.buttons["首页"].tap()
+        imageMetrics(app, "图片请求：3；取消：0；首页读取：5")
+        XCTAssertTrue(app.staticTexts["home.section.banner.title"].exists)
+        XCTAssertFalse(app.staticTexts["home.banner.page"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["home.banner.current.910001"].exists)
+    }
+
+    @MainActor func testBannerRefreshFailurePreservesSelectedPageAndRetry() {
+        let app = bannerApp("banner-refresh-failure")
+        revealBanner(app)
+        app.buttons["home.banner.next"].tap()
+        bannerPage(app, 2)
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["home.refresh.failed"].waitForExistence(timeout: 10))
+        bannerPage(app, 2)
+        imageMetrics(app, "图片请求：2；取消：0；首页读取：2")
+        XCTAssertEqual(app.staticTexts["home.count.banner"].label, "轮播：3")
+        app.buttons["home.refresh.retry"].tap()
+        imageMetrics(app, "图片请求：2；取消：0；首页读取：3")
+        bannerPage(app, 2)
+        XCTAssertFalse(app.staticTexts["home.refresh.failed"].exists)
+    }
+
+    @MainActor func testBannerPendingPageCancellationAndTabRetention() {
+        let app = bannerApp("banner-pending")
+        revealBanner(app)
+        XCTAssertTrue(imageElement(app, "loading").waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
+        keepFeedbackScreenshot(app, name: "HOME04-loading-complete")
+        app.buttons["home.banner.next"].tap()
+        bannerPage(app, 2)
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：2；取消：1；首页读取：1")
+        XCTAssertFalse(imageElement(app, "loading").exists)
+        keepFeedbackScreenshot(app, name: "HOME04-B-after-late-A")
+        app.buttons["home.banner.previous"].tap()
+        bannerPage(app, 1)
+        XCTAssertTrue(imageElement(app, "loading").waitForExistence(timeout: 10))
+        app.tabBars.buttons["分类"].tap()
+        app.tabBars.buttons["首页"].tap()
+        bannerPage(app, 1)
+        imageMetrics(app, "图片请求：4；取消：2；首页读取：1")
+    }
+
+    @MainActor func testBannerFastPageRoundTripsAreBounded() {
+        let app = bannerApp("banner-pending")
+        revealBanner(app)
+        for _ in 0..<5 {
+            app.buttons["home.banner.next"].tap()
+            app.buttons["home.banner.previous"].tap()
+        }
+        bannerPage(app, 1)
+        XCTAssertTrue(imageElement(app, "loading").waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：7；取消：5；首页读取：1")
+        XCTAssertTrue(
+            app.staticTexts["home.image.urlMetrics"].label.contains("/banner-pending-a=6/5"))
+        XCTAssertTrue(
+            app.staticTexts["home.image.urlMetrics"].label.contains("/banner-success-b=1/0"))
+        XCTAssertTrue(app.staticTexts["home.image.urlMetrics"].label.contains("迟到尝试：5"))
+    }
+}
+
+extension HomeLoadTests {
+    @MainActor func testBannerSelectedPageSurvivesBusyRetapsAndCancelledRefresh() {
+        let app = bannerApp("banner-pending")
+        revealBanner(app)
+        app.buttons["home.banner.next"].tap()
+        bannerPage(app, 2)
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 10))
+        for _ in 0..<3 { app.tabBars.buttons["首页"].tap() }
+        imageMetrics(app, "图片请求：2；取消：1；首页读取：2")
+        bannerPage(app, 2)
+        XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+        app.tabBars.buttons["分类"].tap()
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertFalse(app.staticTexts["home.refreshing"].waitForExistence(timeout: 1.5))
+        imageMetrics(app, "图片请求：2；取消：1；首页读取：2")
+        bannerPage(app, 2)
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：2；取消：1；首页读取：3")
+        bannerPage(app, 2)
     }
 }

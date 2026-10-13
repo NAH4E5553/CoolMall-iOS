@@ -471,6 +471,9 @@ extension HomeLoadTests {
     }
 
     @MainActor func testImagePendingLeaveCancelsAndReturnRestoresWithoutHomeReload() {
+        // CI completed this unchanged full chain in ~90s; its only failure
+        // was the default 60s cutoff. Use the existing Test Plan maximum.
+        executionTimeAllowance = 120
         let app = XCUIApplication()
         app.launchArguments += ["--ui-home-fixture", "image-pending"]
         app.launch()

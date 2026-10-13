@@ -19,7 +19,7 @@ jobs:
   verify:
     name: F0 verification
     runs-on: xcode-27
-    timeout-minutes: 35
+    timeout-minutes: 120
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
       MALL_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}

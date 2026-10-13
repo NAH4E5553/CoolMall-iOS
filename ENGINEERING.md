@@ -81,16 +81,17 @@ Android 与 iOS 复用的是设计思想和业务合同；具体 API、任务取
 
 ### 2.1 模块职责与依赖组装
 
-**决定：第一条商品→购物车链路就建立 Feature Target 隔离，取消原方案的单一 MallUI Target。** 一个本地 Swift Package `MallKit`，首期五个生产库 Target，加一个 App Target。不是每个页面一个 Package，也不提前建立空的账号、订单和支付模块。决策依据、代价和后续拆分触发器见第 3 章。
+**决定：第一条商品→购物车链路就建立 Feature Target 隔离，取消原方案的单一 MallUI Target。** 一个本地 Swift Package `MallKit`，首期五个生产库 Target；IMAGE-01按批准新增第六库MallImages，加一个 App Target。不是每个页面一个 Package，也不提前建立空的账号、订单和支付模块。决策依据、代价和后续拆分触发器见第 3 章。
 
 | 模块 | 拥有内容 | 允许的直接项目依赖 | 不允许承担 |
 | --- | --- | --- | --- |
 | `MallCore` | 商品、金额、购物车快照等业务值；纯规则；`ProductLoading`、`CartCommands`、`CartObserving` 等窄能力协议 | 无 | SwiftUI、HTTP DTO、数据库模型、导航、全局可变容器 |
 | `MallData` | APIClient、DTO 映射、存储适配、CartStore、SessionCoordinator；业务能力的真实实现 | MallCore | 页面、展示模型、导航和提示文案 |
 | `MallDesignSystem` | 设计语义、无业务依赖的控件和展示组件 | 无 | 商品/订单实体、业务服务、会话、购物车单例 |
-| `CatalogFeature` | 首页商品入口、分类/搜索、商品列表与详情；页面模型和专用组件 | MallCore、MallDesignSystem | CartFeature 内部模型、MallData、HTTP/数据库/凭据 API |
+| `CatalogFeature` | 首页商品入口、分类/搜索、商品列表与详情；页面模型和专用组件 | MallCore、MallDesignSystem、MallImages | CartFeature 内部模型、MallData、HTTP/数据库/凭据 API |
 | `CartFeature` | 购物车页面、编辑交互、只读快照投影 | MallCore、MallDesignSystem | 自建第二个购物车事实源、CatalogFeature、MallData |
-| `CoolMalliOS` App | 依赖创建与生命周期、Scene 根导航、跨功能路由、系统回调、根 UI 投影 | 上述五个库 | 业务规则、逐页实现、自己执行数据库事务 |
+| `MallImages` | 图片管线、缓存与RemoteImage薄包装（IMAGE-01） | 精确Nuke/NukeUI13.2.0 | 业务HTTP/会话/商城凭据、商品事实源 |
+| `CoolMalliOS` App | 依赖创建与生命周期、Scene 根导航、跨功能路由、系统回调、根 UI 投影 | 上述六个库 | 业务规则、逐页实现、自己执行数据库事务 |
 
 ```mermaid
 flowchart TD
@@ -369,16 +370,55 @@ let package = Package(
   "package": "MallKit",
   "targets": {
     "MallCore": [],
-    "MallData": ["MallCore"],
+    "MallData": [
+      "MallCore"
+    ],
     "MallDesignSystem": [],
-    "CatalogFeature": ["MallCore", "MallDesignSystem"],
-    "CartFeature": ["MallCore", "MallDesignSystem"]
+    "CatalogFeature": [
+      "MallCore",
+      "MallDesignSystem",
+      "MallImages"
+    ],
+    "CartFeature": [
+      "MallCore",
+      "MallDesignSystem"
+    ],
+    "MallImages": [
+      "Nuke",
+      "NukeUI"
+    ]
   },
   "tests": {
-    "MallCoreTests": ["MallCore"],
-    "MallDataTests": ["MallData", "MallCore"],
-    "CatalogFeatureTests": ["CatalogFeature", "MallCore"],
-    "CartFeatureTests": ["CartFeature", "MallCore"]
+    "MallCoreTests": [
+      "MallCore"
+    ],
+    "MallDataTests": [
+      "MallData",
+      "MallCore"
+    ],
+    "CatalogFeatureTests": [
+      "CatalogFeature",
+      "MallCore"
+    ],
+    "CartFeatureTests": [
+      "CartFeature",
+      "MallCore"
+    ],
+    "MallImagesTests": [
+      "MallImages",
+      "Nuke"
+    ]
+  },
+  "externalPackages": {
+    "nuke": {
+      "url": "https://github.com/kean/Nuke.git",
+      "version": "13.2.0",
+      "products": [
+        "Nuke",
+        "NukeUI"
+      ],
+      "revision": "30f7a7e72e0607d304fbf69c799474bd5fb6d1ce"
+    }
   }
 }
 ```
@@ -459,6 +499,17 @@ F0 系统模块允许列表如下；项目模块依赖仍只读取上方精确�
       "Swift",
       "Foundation",
       "XCTest"
+    ],
+    "MallImages": [
+      "Swift",
+      "Foundation",
+      "SwiftUI"
+    ],
+    "MallImagesTests": [
+      "Swift",
+      "Foundation",
+      "SwiftUI",
+      "Testing"
     ]
   }
 }
@@ -1257,3 +1308,7 @@ F0-01/F0-02 已有真实代码和本地验证，F0-03 已接入并有远程正�
 同一规则只在其所属章节定义；其他章节引用它，不复制一套可能漂移的规则。AGENTS.md 提供 AI 的开工检查、规则索引、验证和交接流程；具体工程规则引用本文，不是第二份架构手册；清单矩阵由脚本直接读取本文，代码测试只验证检查器机制。修改接口、依赖或状态机制时，同时检查对应验收是否需要调整。代码实现后以实际构建、测试和设备结果更新状态，不把规划写成已完成能力。
 
 仅当后续出现一份有独立维护价值的接口合同、复杂迁移方案或发布操作指南时，才另建专题文档，并从本手册链接。专题文档描述具体事实和操作，不复制架构规则；优先在任务/PR 保存短期实现计划。当前不新建 DEVELOPMENT.md，也不恢复 ARCHITECTURE.md/CONTRIBUTING.md 两份正文。
+
+### IMAGE-01 approved adapter contract (2026-10-13)
+
+APPROVAL-IMAGE01-I02-20261013 approves MallImages with Nuke/NukeUI exact13.2.0, revision30f7a7e72e0607d304fbf69c799474bd5fb6d1ce. CatalogFeature is the sole Feature consumer; App owns the shared adapter. Public interfaces use only own/Foundation/SwiftUI types. MallImagePipeline.swift alone adapts URLSession/URLRequest/FileManager; ImageUITestSupport.swift alone adapts URLSession/URLRequest/URLProtocol under DEBUG. APPROVAL-IMAGE01-DEBUG-SEAM-20261013 additionally approves the DEBUG-only init(configuration:testingProtocolClasses:[URLProtocol.Type]); Release has no test injection. Unknown versions/products/imports and missing or modified resolution pins remain rejected. MallImagesTests is required and nonempty; existing timeouts and tests remain required. Private image authentication is out of scope; ordinary homepage CDN assets remain placeholders pending resource permission.

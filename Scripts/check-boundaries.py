@@ -29,7 +29,7 @@ def read_policy(handbook):
     block = text.split(start)[1].split(end)[0].strip()
     require(block.startswith("```json\n") and block.endswith("```"), "MOD-01: invalid policy fence")
     policy = json.loads(block[len("```json\n") : -3])
-    require(set(policy) == {"schemaVersion", "package", "targets", "tests"}, "MOD-01: unknown policy fields")
+    require(set(policy) == {"schemaVersion", "package", "targets", "tests", "externalPackages"}, "MOD-01: unknown policy fields")
     require(policy.get("schemaVersion") == 1, "MOD-01: unsupported policy schema")
     require(isinstance(policy.get("package"), str) and policy["package"], "MOD-01: missing package name")
     for group in ("targets", "tests"):
@@ -39,9 +39,20 @@ def read_policy(handbook):
             require(isinstance(deps, list) and all(isinstance(d, str) for d in deps), "MOD-01: invalid dependencies")
             require(len(deps) == len(set(deps)), f"MOD-01: duplicate policy dependencies: {name}")
     require(not (policy["targets"].keys() & policy["tests"].keys()), "MOD-01: test/production name collision")
-    graph = {**policy["targets"], **policy["tests"]}
+    packages = policy["externalPackages"]
+    require(isinstance(packages, dict), "MOD-06: invalid external packages policy")
+    external = set()
+    for identity, package in packages.items():
+        require(isinstance(identity, str) and identity == identity.lower(), "MOD-06: invalid package identity")
+        require(set(package) == {"url", "version", "products", "revision"}, "MOD-06: invalid external package fields")
+        require(isinstance(package["url"], str) and package["url"].startswith("https://") and isinstance(package["version"], str), "MOD-06: invalid external package pin")
+        require(isinstance(package["products"], list) and package["products"] and all(isinstance(x, str) for x in package["products"]), "MOD-06: invalid external products")
+        require(not external.intersection(package["products"]) and len(set(package["products"])) == len(package["products"]), "MOD-06: duplicate external product")
+        external.update(package["products"])
+    require(not external.intersection(policy["targets"]), "MOD-06: external/local product collision")
+    graph = {**policy["targets"], **policy["tests"], **{name: [] for name in external}}
     for name, deps in graph.items():
-        require(set(deps) <= policy["targets"].keys(), f"MOD-01: {name} has unknown/test dependency in policy")
+        require(set(deps) <= (policy["targets"].keys() | external), f"MOD-01: {name} has unknown/test dependency in policy")
     check_cycles(graph)
     return policy
 
@@ -64,12 +75,18 @@ def check_cycles(graph):
         visit(name)
 
 
-def dependency_name(dependency):
+def dependency_name(dependency, policy=None):
     require(isinstance(dependency, dict) and len(dependency) == 1, "MOD-01: unrecognized dependency encoding")
     kind, value = next(iter(dependency.items()))
+    if kind == "product":
+        require(isinstance(value, list) and len(value) == 4 and value[2:] == [None, None], "MOD-06: conditional/unknown external product")
+        package = (policy or {}).get("externalPackages", {}).get(str(value[1]).lower())
+        require(package is not None and value[0] in package["products"], "MOD-06: external product is not approved")
+        return value[0]
     require(kind in ("byName", "target"), "MOD-06: external product/unknown dependency requires policy support")
     require(isinstance(value, list) and len(value) == 2 and isinstance(value[0], str), "MOD-01: unsupported dependency shape")
     require(value[1] is None, "MOD-06: conditional dependency requires explicit review and checker support")
+    require(value[0] not in {product for p in (policy or {}).get("externalPackages", {}).values() for product in p["products"]}, "MOD-06: external product requires explicit package mapping")
     return value[0]
 
 
@@ -77,7 +94,11 @@ def validate_manifest(manifest, policy):
     require(manifest.get("name") == policy["package"], "MOD-01: wrong package name")
     require(manifest.get("platforms") == [{"options": [], "platformName": "ios", "version": "17.0"}], "MOD-06: Package deployment baseline must be iOS 17")
     require(manifest.get("swiftLanguageVersions") == ["6"], "MOD-06: Package language mode must be Swift 6")
-    require(manifest.get("dependencies") == [], "MOD-06: external packages are not approved")
+    expected_packages = [
+        {"sourceControl": [{"identity": identity, "location": {"remote": [{"urlString": package["url"]}]}, "productFilter": None, "requirement": {"exact": [package["version"]]}, "traits": [{"name": "default"}]}]}
+        for identity, package in policy["externalPackages"].items()
+    ]
+    require(manifest.get("dependencies") == expected_packages, "MOD-06: external packages URL/version/shape not approved")
     require(not manifest.get("traits"), "MOD-06: package traits are not approved")
     targets = manifest.get("targets")
     require(isinstance(targets, list) and all(isinstance(t, dict) for t in targets), "MOD-01: targets missing or invalid")
@@ -95,7 +116,7 @@ def validate_manifest(manifest, policy):
             require(not target.get(key), f"MOD-06: unapproved {key}: {name}")
         dependencies = target.get("dependencies")
         require(isinstance(dependencies, list), f"MOD-01: missing dependencies: {name}")
-        names = [dependency_name(d) for d in dependencies]
+        names = [dependency_name(d, policy) for d in dependencies]
         require(len(names) == len(set(names)), f"MOD-01: duplicate dependencies: {name}")
         require(set(names) == set(expected[name]), f"MOD-01: forbidden/missing dependency for {name}: actual={names}, expected={expected[name]}")
         graph[name] = names
@@ -104,6 +125,7 @@ def validate_manifest(manifest, policy):
         for resource in resources:
             path = Path(resource["path"])
             require(not path.is_absolute() and ".." not in path.parts, f"MOD-03: resource escapes target: {name}")
+    graph.update({product: [] for package in policy["externalPackages"].values() for product in package["products"]})
     check_cycles(graph)
     products = manifest.get("products")
     require(isinstance(products, list) and all(isinstance(p, dict) for p in products), "MOD-01: products missing or invalid")
@@ -128,6 +150,11 @@ def main():
         )
         require(result.returncode == 0, "MOD-01: dump-package failed:\n" + result.stderr[-6000:])
         validate_manifest(json.loads(result.stdout), policy)
+        lock_path = args.root / "CoolMalliOS.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+        require(lock_path.is_file(), "MOD-06: dependency lock missing")
+        lock = json.loads(lock_path.read_text())
+        expected_pins = [{"identity": identity, "kind": "remoteSourceControl", "location": p["url"], "state": {"revision": p["revision"], "version": p["version"]}} for identity,p in policy["externalPackages"].items()]
+        require(lock.get("version") == 3 and lock.get("pins") == expected_pins, "MOD-06: dependency lock version/revision/product mismatch")
     except (BoundaryError, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as error:
         print(f"FAIL: {error}", file=sys.stderr)
         return 1

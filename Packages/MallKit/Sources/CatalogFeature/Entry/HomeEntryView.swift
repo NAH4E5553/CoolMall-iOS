@@ -1,4 +1,5 @@
 import MallCore
+import MallImages
 import MallDesignSystem
 import SwiftUI
 
@@ -22,12 +23,17 @@ public struct HomeEntryView: View {
     private let home: any HomeLoading
     private let isActive: Bool
     private let refreshRequest: UInt64
+    private let imagePipeline: MallImagePipeline?
     @State private var retryTrigger = 0
 
-    public init(home: any HomeLoading, isActive: Bool, refreshRequest: UInt64 = 0) {
+    public init(
+        home: any HomeLoading, isActive: Bool, refreshRequest: UInt64 = 0,
+        imagePipeline: MallImagePipeline? = nil
+    ) {
         self.home = home
         self.isActive = isActive
         self.refreshRequest = refreshRequest
+        self.imagePipeline = imagePipeline
     }
 
     public var body: some View {
@@ -53,7 +59,9 @@ public struct HomeEntryView: View {
                             refreshFeedback
                             // HOME-02: read-only section skeletons; empty sections
                             // hide together with their titles.
-                            HomeContentView(snapshot: snapshot)
+                            HomeContentView(
+                                snapshot: snapshot, imagePipeline: imagePipeline, isActive: isActive
+                            )
                             // The H0 seven counts stay observable inside an
                             // explicitly-labeled engineering verification block —
                             // not a seventh business section.

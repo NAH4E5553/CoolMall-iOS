@@ -46,6 +46,14 @@
     },
     {
       "target": {
+        "containerPath": "container:Packages/MallKit",
+        "identifier": "MallImagesTests",
+        "name": "MallImagesTests"
+      },
+      "parallelizable": true
+    },
+    {
+      "target": {
         "containerPath": "container:CoolMalliOS.xcodeproj",
         "identifier": "70806D7A1BF37458E51362EF",
         "name": "CoolMalliOSUITests"

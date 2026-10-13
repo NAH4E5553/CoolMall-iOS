@@ -141,10 +141,19 @@ struct RootView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("home.source")
+            #if DEBUG
+                if dependencies.homeTesting.fixtureMode == .imageSuccess
+                    || dependencies.homeTesting.fixtureMode == .imageFailure
+                    || dependencies.homeTesting.fixtureMode == .imagePending
+                {
+                    ImageUITestMetricsView()
+                }
+            #endif
             HomeEntryView(
                 home: dependencies.home,
                 isActive: homeIsVisible,
-                refreshRequest: router.homeReTapEvent)
+                refreshRequest: router.homeReTapEvent, imagePipeline: dependencies.homeImagePipeline
+            )
         }
     }
 

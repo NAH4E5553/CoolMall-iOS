@@ -1,6 +1,7 @@
 """Exercise rejected manifest changes, including attempts to bypass the graph."""
 
 import copy
+import json
 import importlib.util
 from pathlib import Path
 import subprocess
@@ -19,11 +20,13 @@ class BoundariesTests(unittest.TestCase):
     def setUp(self):
         self.policy = CHECK.read_policy(ROOT / "ENGINEERING.md")
         self.manifest = {
-            "name": self.policy["package"], "dependencies": [],
+            "name": self.policy["package"], "dependencies": [
+                {"sourceControl": [{"identity": identity, "location": {"remote": [{"urlString": p["url"]}]}, "productFilter": None, "requirement": {"exact": [p["version"]]}, "traits": [{"name": "default"}]}]}
+                for identity,p in self.policy["externalPackages"].items()],
             "platforms": [{"options": [], "platformName": "ios", "version": "17.0"}],
             "swiftLanguageVersions": ["6"],
             "targets": [
-                {"name": name, "type": kind, "dependencies": [{"byName": [d, None]} for d in deps]}
+                {"name": name, "type": kind, "dependencies": [{"product": [d, "Nuke", None, None]} if d in ("Nuke", "NukeUI") else {"byName": [d, None]} for d in deps]}
                 for group, kind in (("targets", "regular"), ("tests", "test"))
                 for name, deps in self.policy[group].items()
             ],
@@ -106,6 +109,18 @@ class BoundariesTests(unittest.TestCase):
     def test_plugin_rejected(self):
         self.target("CartFeature")["pluginUsages"] = [{"plugin": ["Generator", None]}]
         self.rejected("unapproved pluginUsages")
+
+    def test_external_version_rejected(self):
+        self.manifest["dependencies"][0]["sourceControl"][0]["requirement"] = {"exact": ["13.1.0"]}
+        self.rejected("external packages")
+
+    def test_external_url_rejected(self):
+        self.manifest["dependencies"][0]["sourceControl"][0]["location"]["remote"][0]["urlString"] = "https://example.com/Nuke.git"
+        self.rejected("external packages")
+
+    def test_sdk_product_on_feature_rejected(self):
+        self.target("CatalogFeature")["dependencies"].append({"product": ["Nuke", "Nuke", None, None]})
+        self.rejected("forbidden/missing dependency")
 
     def test_external_package_rejected(self):
         self.manifest["dependencies"] = [{"sourceControl": ["unapproved"]}]

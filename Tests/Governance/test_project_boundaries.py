@@ -80,6 +80,26 @@ class ProjectBoundariesTests(unittest.TestCase):
     def test_unregistered_feature_public_type(self):
         self.append('public struct RandomView {}'); self.reject('MOD-02.*unregistered Feature public type RandomView')
 
+    def test_feature_cannot_import_nuke(self):
+        self.append('import Nuke'); self.reject('MOD-01.*forbidden import Nuke')
+
+    def test_inactive_feature_cannot_import_nukeui(self):
+        self.append('#if NEVER_ENABLED\nimport NukeUI\n#endif'); self.reject('MOD-01.*forbidden import NukeUI')
+
+    def test_image_adapter_exception_is_file_scoped(self):
+        self.append('import Foundation\nlet probe = URLSession.shared', 'MallImages')
+        self.reject('MOD-05.*direct API URLSession')
+
+    def test_pipeline_protocol_type_requires_debug(self):
+        p = self.root / 'Packages/MallKit/Sources/MallImages/MallImagePipeline.swift'
+        p.write_text(p.read_text() + '\nlet invalidTestType: URLProtocol.Type? = nil\n')
+        self.reject('MOD-05.*direct API URLProtocol')
+
+    def test_image_app_exception_requires_debug(self):
+        p = self.root / 'CoolMalliOS/Testing/ImageUITestSupport.swift'
+        p.write_text('import Foundation\nlet probe = URLSession.shared')
+        self.reject('MOD-05.*direct API URLSession')
+
     def test_direct_api(self):
         self.append('import Foundation\nlet probe = Foundation.URLSession.shared'); self.reject('MOD-05.*direct API URLSession')
 
@@ -154,12 +174,21 @@ class ProjectBoundariesTests(unittest.TestCase):
         self.assertNotEqual(result.returncode,0)
         self.assertIn('format-probe.swift',result.stderr)
 
+    def test_dependency_lock_wrong_revision(self):
+        p=self.root/'CoolMalliOS.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved'
+        data=json.loads(p.read_text());data['pins'][0]['state']['revision']='0'*40;p.write_text(json.dumps(data))
+        self.assert_manifest_failure('MOD-06: dependency lock')
+
+    def test_dependency_lock_missing(self):
+        (self.root/'CoolMalliOS.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved').unlink()
+        self.assert_manifest_failure('MOD-06: dependency lock missing')
+
     def test_real_manifest_unknown_target(self):
         p=self.root/'Packages/MallKit/Package.swift';s=p.read_text();p.write_text(s.replace('targets: [\n        .target', 'targets: [\n        .target(name: "Hidden"),\n        .target',1))
         self.assert_manifest_failure('MOD-01: target set mismatch')
 
     def test_real_manifest_external_package(self):
-        p=self.root/'Packages/MallKit/Package.swift';s=p.read_text();p.write_text(s.replace('    targets: [\n', '    dependencies: [.package(url: "https://example.invalid/unapproved.git", from: "1.0.0")],\n    targets: [\n',1))
+        p=self.root/'Packages/MallKit/Package.swift';s=p.read_text();p.write_text(s.replace('https://github.com/kean/Nuke.git', 'https://example.invalid/Nuke.git',1))
         self.assert_manifest_failure('MOD-06: external packages')
 
     def assert_manifest_failure(self, diagnostic):

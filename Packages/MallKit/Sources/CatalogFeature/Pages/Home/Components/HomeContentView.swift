@@ -1,4 +1,5 @@
 import MallCore
+import MallImages
 import SwiftUI
 
 /// HOME-02 content container: composes the six PRD-015 section skeletons from
@@ -57,9 +58,13 @@ struct HomeContentView: View {
     }
 
     private let snapshot: HomeSnapshot
+    private let imagePipeline: MallImagePipeline?
+    private let isActive: Bool
 
-    init(snapshot: HomeSnapshot) {
+    init(snapshot: HomeSnapshot, imagePipeline: MallImagePipeline? = nil, isActive: Bool = true) {
         self.snapshot = snapshot
+        self.imagePipeline = imagePipeline
+        self.isActive = isActive
     }
 
     var body: some View {
@@ -73,6 +78,25 @@ struct HomeContentView: View {
                     titleAccessibilityID: "home.section.\(section.accessibilityKey).title",
                     pendingAccessibilityID: "home.section.\(section.accessibilityKey).pending"
                 )
+                if section == .banner, let banner = snapshot.banners.first {
+                    Color.clear.aspectRatio(2, contentMode: .fit)
+                        .overlay {
+                            GeometryReader { geometry in
+                                if let imagePipeline {
+                                    RemoteImage(
+                                        url: banner.imageURL, targetSize: geometry.size,
+                                        pipeline: imagePipeline, isEnabled: isActive)
+                                } else {
+                                    Rectangle().fill(.quaternary)
+                                        .overlay {
+                                            Image(systemName: "photo").foregroundStyle(.secondary)
+                                        }
+                                        .accessibilityIdentifier("home.image.unavailable")
+                                        .accessibilityHidden(true)
+                                }
+                            }
+                        }
+                }
             }
         }
     }

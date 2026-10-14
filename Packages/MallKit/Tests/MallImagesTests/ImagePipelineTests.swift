@@ -262,3 +262,185 @@ struct ImagePipelineTests {
         }
     }
 }
+
+#if DEBUG
+    private final class ControlledProtocolProbe: URLProtocol {
+        @MainActor static var starts: Set<String> = []
+        @MainActor static var stopCounts: [String: Int] = [:]
+        private let lock = NSLock()
+        private var stopCount = 0
+        var stops: Int { lock.withLock { stopCount } }
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func startLoading() {
+            guard let path = request.url?.path else { return }
+            MainActor.assumeIsolated { _ = Self.starts.insert(path) }
+            if path.hasPrefix("/sync-") { sendSuccess() }
+        }
+        override func stopLoading() {
+            lock.withLock { stopCount += 1 }
+            guard let path = request.url?.path else { return }
+            MainActor.assumeIsolated { Self.stopCounts[path, default: 0] += 1 }
+        }
+        func sendSuccess() {
+            guard let url = request.url,
+                let response = HTTPURLResponse(
+                    url: url, statusCode: 200, httpVersion: nil, headerFields: nil)
+            else { return }
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data([1, 2, 3]))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+        func sendError() { client?.urlProtocol(self, didFailWithError: URLError(.timedOut)) }
+    }
+
+    @MainActor
+    private final class ControlledCallbackProbe {
+        var bytes = Data()
+        var endings: [Int] = []
+        func ticket() -> ControlledImageProtocolTicket {
+            ControlledImageProtocolTicket(
+                data: { [self] data, _ in MainActor.assumeIsolated { self.bytes.append(data) } },
+                completion: { [self] error in
+                    MainActor.assumeIsolated {
+                        self.endings.append((error as? URLError)?.errorCode ?? 0)
+                    }
+                })
+        }
+    }
+
+    @MainActor
+    private func drainControlledCallbacks() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+    }
+
+    extension ImagePipelineTests {
+        @Test func controlledAssemblyObservesRealNukeTaskCancellation() async throws {
+            let path = "/sdk-pending-" + UUID().uuidString
+            defer {
+                ControlledProtocolProbe.starts.remove(path)
+                ControlledProtocolProbe.stopCounts[path] = nil
+            }
+            let adapter = try MallImagePipeline(
+                configuration: .init(diskLimitBytes: 0, cacheNamespace: UUID().uuidString),
+                testingProtocolClasses: [ControlledProtocolProbe.self])
+            let task = adapter.pipeline.imageTask(with: try request(adapter, path: path))
+            try await awaitImageEvent {
+                await MainActor.run { ControlledProtocolProbe.starts.contains(path) }
+            }
+            task.cancel()
+            task.cancel()
+            try await awaitImageEvent {
+                await MainActor.run { ControlledProtocolProbe.stopCounts[path] == 1 }
+            }
+            await #expect(throws: (any Error).self) { try await task.response }
+            #expect(ControlledProtocolProbe.stopCounts[path] == 1)
+        }
+
+        @Test func controlledSourceSynchronousResponsePreservesOrderAndSingleEnd() async throws {
+            let path = "/sync-" + UUID().uuidString
+            defer {
+                ControlledProtocolProbe.starts.remove(path)
+                ControlledProtocolProbe.stopCounts[path] = nil
+            }
+            let record = ControlledCallbackProbe()
+            let ticket = record.ticket()
+            ticket.start(
+                URLRequest(url: try #require(URL(string: "https://image-tests.invalid" + path))),
+                protocolClasses: [ControlledProtocolProbe.self])
+            try await awaitImageEvent { await MainActor.run { record.endings.count == 1 } }
+            #expect(record.bytes == Data([1, 2, 3]))
+            #expect(ControlledProtocolProbe.stopCounts[path] == 1)
+            let lateSource = ControlledProtocolProbe(
+                request: URLRequest(
+                    url: try #require(URL(string: "https://image-tests.invalid" + path))),
+                cachedResponse: nil, client: ticket)
+            lateSource.sendSuccess()
+            lateSource.sendError()
+            ticket.cancel()
+            ticket.cancel()
+            await drainControlledCallbacks()
+            #expect(record.endings == [0])
+            #expect(record.bytes == Data([1, 2, 3]))
+            #expect(ControlledProtocolProbe.stopCounts[path] == 1)
+        }
+
+        @Test func controlledSourceCancelBeforeStartNeverStartsOrCompletes() async throws {
+            let path = "/early-" + UUID().uuidString
+            defer {
+                ControlledProtocolProbe.starts.remove(path)
+                ControlledProtocolProbe.stopCounts[path] = nil
+            }
+            let record = ControlledCallbackProbe()
+            let ticket = record.ticket()
+            ticket.cancel()
+            ticket.start(
+                URLRequest(url: try #require(URL(string: "https://image-tests.invalid" + path))),
+                protocolClasses: [ControlledProtocolProbe.self])
+            ticket.cancel()
+            await drainControlledCallbacks()
+            #expect(ticket.source == nil)
+            #expect(!ControlledProtocolProbe.starts.contains(path))
+            #expect(record.endings.isEmpty)
+            #expect(record.bytes.isEmpty)
+        }
+
+        @Test func controlledSourceActualCancellationRejectsLateCallbacks() async throws {
+            let path = "/pending-" + UUID().uuidString
+            defer {
+                ControlledProtocolProbe.starts.remove(path)
+                ControlledProtocolProbe.stopCounts[path] = nil
+            }
+            let record = ControlledCallbackProbe()
+            let ticket = record.ticket()
+            ticket.start(
+                URLRequest(url: try #require(URL(string: "https://image-tests.invalid" + path))),
+                protocolClasses: [ControlledProtocolProbe.self])
+            try await awaitImageEvent {
+                await MainActor.run { ticket.source as? ControlledProtocolProbe != nil }
+            }
+            let source = try #require(ticket.source as? ControlledProtocolProbe)
+            ticket.cancel()
+            ticket.cancel()
+            try await awaitImageEvent {
+                await MainActor.run { ControlledProtocolProbe.stopCounts[path] == 1 }
+            }
+            source.sendSuccess()
+            source.sendError()
+            await drainControlledCallbacks()
+            #expect(source.stops == 1)
+            #expect(record.bytes.isEmpty)
+            #expect(record.endings.isEmpty)
+        }
+
+        @Test func controlledSourceTimeoutCompletesAsErrorAndCleanupOnlyOnce() async throws {
+            let path = "/error-" + UUID().uuidString
+            defer {
+                ControlledProtocolProbe.starts.remove(path)
+                ControlledProtocolProbe.stopCounts[path] = nil
+            }
+            let record = ControlledCallbackProbe()
+            let ticket = record.ticket()
+            ticket.start(
+                URLRequest(url: try #require(URL(string: "https://image-tests.invalid" + path))),
+                protocolClasses: [ControlledProtocolProbe.self])
+            try await awaitImageEvent {
+                await MainActor.run { ticket.source as? ControlledProtocolProbe != nil }
+            }
+            let source = try #require(ticket.source as? ControlledProtocolProbe)
+            source.sendError()
+            try await awaitImageEvent {
+                await MainActor.run { record.endings == [URLError.timedOut.rawValue] }
+            }
+            ticket.cancel()
+            source.sendSuccess()
+            source.sendError()
+            await drainControlledCallbacks()
+            #expect(record.endings == [URLError.timedOut.rawValue])
+            #expect(record.bytes.isEmpty)
+            #expect(source.stops == 1)
+        }
+    }
+#endif

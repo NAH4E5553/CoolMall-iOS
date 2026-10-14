@@ -17,13 +17,16 @@ public final class MallImagePipeline {
     }
 
     #if DEBUG
-        /// Explicitly approved App UI-test assembly; absent from Release.
+        /// Event-controlled App UI-test source; absent from Release.
+        /// Protocols run directly, without URLSession timers. Production and
+        /// internal URLSession transport tests retain the real 10/30s deadlines.
         public convenience init(
             configuration: MallImageConfiguration, testingProtocolClasses: [URLProtocol.Type]
         ) throws {
             try self.init(
                 configuration: configuration, cacheRoot: nil,
-                protocolClasses: testingProtocolClasses)
+                protocolClasses: nil,
+                dataLoader: ControlledImageProtocolLoader(protocolClasses: testingProtocolClasses))
         }
     #endif
 
@@ -122,3 +125,119 @@ final class PublicImageTransportPolicy: NSObject, URLSessionTaskDelegate {
                 ? .performDefaultHandling : .cancelAuthenticationChallenge, nil)
     }
 }
+
+#if DEBUG
+    /// DEBUG fixture bridge only. Nuke owns and cancels this returned ticket;
+    /// UI actions never synthesize transport cancellation. No network fallback.
+    struct ControlledImageProtocolLoader: DataLoading {
+        let protocolClasses: [URLProtocol.Type]
+
+        func loadData(
+            with request: URLRequest,
+            didReceiveData: @escaping @Sendable (Data, URLResponse) -> Void,
+            completion: @escaping @Sendable (Error?) -> Void
+        ) -> any Cancellable {
+            let ticket = ControlledImageProtocolTicket(
+                data: didReceiveData, completion: completion)
+            ticket.start(request, protocolClasses: protocolClasses)
+            return ticket
+        }
+    }
+
+    /// One MainActor owns the protocol, response and single terminal state.
+    /// SDK callbacks enqueue Sendable values on the serial main queue, preserving
+    /// response/data/finish ordering even for synchronous source callbacks.
+    @MainActor
+    final class ControlledImageProtocolTicket: NSObject, URLProtocolClient, Cancellable {
+        private(set) var source: URLProtocol?
+        private var response: URLResponse?
+        private var ended = false
+        private let data: @Sendable (Data, URLResponse) -> Void
+        private let completion: @Sendable (Error?) -> Void
+
+        nonisolated init(
+            data: @escaping @Sendable (Data, URLResponse) -> Void,
+            completion: @escaping @Sendable (Error?) -> Void
+        ) {
+            self.data = data
+            self.completion = completion
+        }
+
+        nonisolated func start(_ request: URLRequest, protocolClasses: [URLProtocol.Type]) {
+            DispatchQueue.main.async {
+                guard !self.ended else { return }
+                guard let type = protocolClasses.first(where: { $0.canInit(with: request) }) else {
+                    self.finish(URLError(.unsupportedURL))
+                    return
+                }
+                let source = type.init(request: request, cachedResponse: nil, client: self)
+                self.source = source
+                source.startLoading()
+            }
+        }
+
+        nonisolated func cancel() {
+            DispatchQueue.main.async {
+                guard !self.ended else { return }
+                self.ended = true
+                let source = self.source
+                self.source = nil
+                source?.stopLoading()
+            }
+        }
+
+        private func finish(_ error: Error?) {
+            guard !ended else { return }
+            ended = true
+            let source = source
+            self.source = nil
+            completion(error)
+            source?.stopLoading()
+        }
+
+        nonisolated func urlProtocol(
+            _ protocol: URLProtocol, didReceive response: URLResponse,
+            cacheStoragePolicy policy: URLCache.StoragePolicy
+        ) {
+            DispatchQueue.main.async {
+                guard !self.ended else { return }
+                if let error = DataLoader.validate(response: response) {
+                    self.finish(error)
+                } else {
+                    self.response = response
+                }
+            }
+        }
+
+        nonisolated func urlProtocol(_ protocol: URLProtocol, didLoad bytes: Data) {
+            DispatchQueue.main.async {
+                guard !self.ended, let response = self.response else { return }
+                self.data(bytes, response)
+            }
+        }
+
+        nonisolated func urlProtocolDidFinishLoading(_ protocol: URLProtocol) {
+            DispatchQueue.main.async { self.finish(nil) }
+        }
+
+        nonisolated func urlProtocol(_ protocol: URLProtocol, didFailWithError error: Error) {
+            DispatchQueue.main.async { self.finish(error) }
+        }
+
+        nonisolated func urlProtocol(
+            _ protocol: URLProtocol, wasRedirectedTo request: URLRequest,
+            redirectResponse: URLResponse
+        ) { urlProtocol(`protocol`, didFailWithError: URLError(.unsupportedURL)) }
+        nonisolated func urlProtocol(
+            _ protocol: URLProtocol, cachedResponseIsValid cachedResponse: CachedURLResponse
+        ) {}
+        nonisolated func urlProtocol(
+            _ protocol: URLProtocol, didReceive challenge: URLAuthenticationChallenge
+        ) {
+            urlProtocol(`protocol`, didFailWithError: URLError(.userAuthenticationRequired))
+        }
+        nonisolated func urlProtocol(
+            _ protocol: URLProtocol, didCancel challenge: URLAuthenticationChallenge
+        ) {}
+    }
+#endif

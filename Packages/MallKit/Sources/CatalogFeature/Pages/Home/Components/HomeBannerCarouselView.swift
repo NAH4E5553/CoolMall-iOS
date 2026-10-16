@@ -39,6 +39,7 @@ struct HomeBannerCarouselView: View {
     let imagePipeline: MallImagePipeline?
     let isActive: Bool
     var onUnavailableAction: () -> Void = {}
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var selection = HomeBannerSelection()
 
     private var ids: [Int64] { banners.map(\.id) }
@@ -63,20 +64,11 @@ struct HomeBannerCarouselView: View {
                         }
                     }
                 if banners.count > 1 {
-                    Text("第\(currentIndex + 1)张，共\(banners.count)张")
-                        .font(.body)
-                        .accessibilityIdentifier("home.banner.page")
-                    HStack {
-                        Button("上一张") { move(offset: -1) }
-                            .disabled(selection.adjacentID(offset: -1, in: ids) == nil)
-                            .accessibilityIdentifier("home.banner.previous")
-                        Spacer(minLength: 8)
-                        Button("下一张") { move(offset: 1) }
-                            .disabled(selection.adjacentID(offset: 1, in: ids) == nil)
-                            .accessibilityIdentifier("home.banner.next")
+                    if typeSize.isAccessibilitySize {
+                        VStack(alignment: .leading, spacing: 4) { pageControls }
+                    } else {
+                        HStack(spacing: 12) { pageControls }
                     }
-                    .buttonStyle(.bordered)
-                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -84,6 +76,24 @@ struct HomeBannerCarouselView: View {
                 selection.reconcile(with: newIDs)
             }
         }
+    }
+
+    @ViewBuilder private var pageControls: some View {
+        Text("第\(currentIndex + 1)张，共\(banners.count)张")
+            .font(.caption)
+            .accessibilityIdentifier("home.banner.page")
+        HStack {
+            Button("上一张") { move(offset: -1) }
+                .disabled(selection.adjacentID(offset: -1, in: ids) == nil)
+                .accessibilityIdentifier("home.banner.previous")
+            Spacer(minLength: 8)
+            Button("下一张") { move(offset: 1) }
+                .disabled(selection.adjacentID(offset: 1, in: ids) == nil)
+                .accessibilityIdentifier("home.banner.next")
+        }
+        .font(.caption)
+        .buttonStyle(.bordered)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var pagerSelection: Binding<Int64> {

@@ -160,6 +160,17 @@ struct RootView: View {
                     ImageUITestMetricsView()
                 }
             #endif
+            Button(action: showUnavailable) {
+                Label("搜索商品", systemImage: "magnifyingglass")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(.quinary, in: RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("搜索")
+            .accessibilityIdentifier("home.search")
+            .padding(.horizontal, 16)
             HomeEntryView(
                 home: dependencies.home,
                 isActive: homeIsVisible,
@@ -174,14 +185,14 @@ struct RootView: View {
                 Button("CoolMall", action: showUnavailable).accessibilityIdentifier("home.about")
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
-                Button(action: showUnavailable) { Image(systemName: "magnifyingglass") }
-                    .accessibilityLabel("搜索").accessibilityIdentifier("home.search")
                 Button(action: showUnavailable) {
                     Image(systemName: "chevron.left.forwardslash.chevron.right")
                 }
                 .accessibilityLabel("项目").accessibilityIdentifier("home.project")
             }
         }
+        .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+        .toolbarBackground(.regularMaterial, for: .navigationBar, .tabBar)
         .overlay(alignment: .bottom) {
             if unavailableNotice != nil {
                 Text("暂未开放").font(.body).padding(12)

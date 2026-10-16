@@ -7,6 +7,7 @@ struct HomeContentView: View {
     let snapshot: HomeSnapshot
     var imagePipeline: MallImagePipeline? = nil
     var isActive = true
+    @Environment(\.colorScheme) private var colorScheme
     var onUnavailableAction: () -> Void = {}
     var body: some View {
         VStack(spacing: 16) {
@@ -18,17 +19,23 @@ struct HomeContentView: View {
             }
             if !snapshot.coupons.isEmpty {
                 HomeCouponSectionView(coupons: snapshot.coupons, action: onUnavailableAction)
+                    .padding(.vertical, 12)
+                    .background(surface, in: RoundedRectangle(cornerRadius: 12))
             }
             if !snapshot.categories.isEmpty {
                 HomeCategorySectionView(
                     categories: snapshot.categories, pipeline: imagePipeline, isActive: isActive,
-                    action: onUnavailableAction)
+                    action: onUnavailableAction
+                )
+                .padding(.vertical, 12)
+                .background(surface, in: RoundedRectangle(cornerRadius: 12))
             }
             HomeProductSectionsView(
                 snapshot: snapshot, pipeline: imagePipeline, isActive: isActive,
                 action: onUnavailableAction)
         }
     }
+    private var surface: Color { colorScheme == .dark ? Color(white: 0.12) : .white }
 }
 
 #if DEBUG

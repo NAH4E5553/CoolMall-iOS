@@ -10,6 +10,7 @@ import SwiftUI
 /// ticket to finish. Busy events cannot change the task key or queue a read.
 @MainActor
 public struct HomeEntryView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @State private var viewModel: HomeViewModel?
     @GestureState private var isPullDragging = false
     @State private var pullInteraction: UInt64 = 0
@@ -107,6 +108,8 @@ public struct HomeEntryView: View {
                 }
             }
             .navigationTitle("首页")
+            .navigationBarTitleDisplayMode(.inline)
+            .background(Color(white: colorScheme == .dark ? 0.06 : 0.95))
             .simultaneousGesture(
                 DragGesture(minimumDistance: 1).updating($isPullDragging) { _, dragging, _ in
                     dragging = true

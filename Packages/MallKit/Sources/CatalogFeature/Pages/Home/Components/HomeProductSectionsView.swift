@@ -33,14 +33,24 @@ struct HomeProductSectionsView: View {
             }
             if !snapshot.goods.isEmpty {
                 HomeSectionView(title: "全部商品", key: "goods") {
-                    LazyVGrid(
-                        columns: Array(
-                            repeating: GridItem(.flexible(), spacing: 12),
-                            count: typeSize.isAccessibilitySize ? 1 : 2), alignment: .leading,
-                        spacing: 12
-                    ) {
-                        ForEach(snapshot.goods, id: \.id) { product in
-                            card(product, key: "goods", horizontal: false)
+                    if typeSize.isAccessibilitySize {
+                        // Measure these finite single-column rows together so
+                        // Tab transitions retain the same content height.
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(snapshot.goods, id: \.id) { product in
+                                card(product, key: "goods", horizontal: false)
+                            }
+                        }
+                    } else {
+                        LazyVGrid(
+                            columns: Array(
+                                repeating: GridItem(.flexible(), spacing: 12),
+                                count: typeSize.isAccessibilitySize ? 1 : 2), alignment: .leading,
+                            spacing: 12
+                        ) {
+                            ForEach(snapshot.goods, id: \.id) { product in
+                                card(product, key: "goods", horizontal: false)
+                            }
                         }
                     }
                 }

@@ -82,6 +82,49 @@ final class HomeLoadTests: XCTestCase {
         add(attachment)
     }
 
+    /// Reach the same auxiliary row through the actual vertical viewport.
+    /// A stalled gesture stops the driver; the caller still asserts reachability.
+    @MainActor private func reachAuxiliaryRow(
+        _ app: XCUIApplication, row: XCUIElement, maximumDrags: Int
+    ) {
+        if row.exists && row.isHittable { return }
+        let scroll = app.scrollViews["home.scroll"]
+        let frame = scroll.frame.intersection(app.frame)
+        let navigationBottom = app.navigationBars.firstMatch.frame.maxY
+        let top = max(frame.minY, navigationBottom)
+        let bottom = min(frame.maxY, app.tabBars.firstMatch.frame.minY)
+        guard !frame.isNull, frame.width > 0, bottom > top else {
+            XCTFail("home.scroll has no usable vertical viewport: \(frame)")
+            return
+        }
+        let viewport = CGRect(
+            x: frame.minX, y: top, width: frame.width, height: bottom - top)
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        // In these two settled fixture flows, the initial touch stays inside
+        // the scroll region across title collapse and the observed HUD layout.
+        // The right-side content padding avoids nested horizontal cards.
+        let x = viewport.minX + viewport.width * 0.98
+        let start = origin.withOffset(
+            CGVector(dx: x, dy: viewport.minY + viewport.height * 0.9))
+        // Start inside the scroll view, then continue the same touch
+        // below the navigation bar even when the DEBUG viewport is small.
+        let end = origin.withOffset(
+            CGVector(dx: x, dy: navigationBottom + viewport.height * 0.1))
+        var before = row.frame.minY
+        var stalledDrags = 0
+        for index in 0..<maximumDrags {
+            if index > 0, row.exists && row.isHittable { return }
+            start.press(
+                forDuration: 0.01, thenDragTo: end, withVelocity: 10_000,
+                thenHoldForDuration: 0)
+            let after = row.frame.minY
+            print("home.scroll drag \(index + 1): viewport=\(viewport), rowY=\(before)→\(after)")
+            stalledDrags = after < before - 1 ? 0 : stalledDrags + 1
+            if stalledDrags == 2 { return }
+            before = after
+        }
+    }
+
     @MainActor func testConflictingTestArgumentsStopWithConfigError() {
         let app = XCUIApplication()
         app.launchArguments += ["--uitest-nav-fixture", "--ui-home-fixture", "valid"]
@@ -318,13 +361,10 @@ extension HomeLoadTests {
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
         let bannerTitle = app.staticTexts["home.section.banner.title"]
         let lastRow = app.staticTexts["home.count.categoryAll"]
-        // The content only slightly overflows one screen, so "scrolled away
-        // from the top" is asserted by FRAME POSITION, not by visibility.
+        // Reach the full page's auxiliary row, including at accessibility
+        // sizes, then prove the re-tap starts from a non-zero content position.
         let atRestMinY = lastRow.frame.minY
-        for _ in 0..<10 where !(lastRow.exists && lastRow.isHittable) {
-            app.swipeUp(velocity: .fast)
-            usleep(400_000)
-        }
+        reachAuxiliaryRow(app, row: lastRow, maximumDrags: 10)
         XCTAssertTrue(lastRow.isHittable)
         XCTAssertLessThan(
             lastRow.frame.minY, atRestMinY - 20,
@@ -738,7 +778,7 @@ extension HomeLoadTests {
         XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
         imageMetrics(app, "图片请求：2；取消：1；首页读取：1")
         let lastRow = app.staticTexts["home.count.categoryAll"]
-        for _ in 0..<8 where !lastRow.isHittable { app.swipeUp(velocity: .fast) }
+        reachAuxiliaryRow(app, row: lastRow, maximumDrags: 8)
         XCTAssertTrue(lastRow.isHittable, "the auxiliary last row must be reached")
         let referenceMinY = lastRow.frame.minY
         for round in 1...2 {

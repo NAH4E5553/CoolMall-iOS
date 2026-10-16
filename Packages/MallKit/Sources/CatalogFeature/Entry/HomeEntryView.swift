@@ -37,10 +37,10 @@ public struct HomeEntryView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 16) {
-                    // Fixed top anchor for the public re-tap scroll-to-top;
-                    // also the observable "scrolled to top" marker.
+                    // Leaf AX marker; the scroll target is the complete padded
+                    // content container below, so manual and native re-taps
+                    // use the same outer content edge.
                     Color.clear.frame(height: 1)
-                        .id("home.contentTop")
                         .accessibilityIdentifier("home.contentTop")
                     if let viewModel {
                         switch viewModel.state {
@@ -96,8 +96,16 @@ public struct HomeEntryView: View {
                 // content; 16pt vertical spacing comes from the container stacks.
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16)
+                .id("home.contentTop")
             }
             .accessibilityIdentifier("home.scroll")
+            // Keep the viewport across visibility transactions; ordinary
+            // content updates retain SwiftUI's default offset adjustment.
+            .transaction(value: isActive) { transaction in
+                if #available(iOS 18.0, *) {
+                    transaction.scrollContentOffsetAdjustmentBehavior = .disabled
+                }
+            }
             .navigationTitle("首页")
             .simultaneousGesture(
                 DragGesture(minimumDistance: 1).updating($isPullDragging) { _, dragging, _ in

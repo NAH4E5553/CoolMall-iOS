@@ -358,6 +358,7 @@ extension HomeLoadTests {
         XCTAssertEqual(
             bannerTitle.frame.minY, scrollToTopMinY, accuracy: 6,
             "an at-top re-tap must keep the same fixed top-anchor position")
+        keepFeedbackScreenshot(app, name: "PR13-repeat-top")
     }
 
     /// R-PR08-COVERAGE-01: the full AT-HOME-02-R1-04 chain restored within
@@ -725,6 +726,34 @@ extension HomeLoadTests {
         app.tabBars.buttons["首页"].tap()
         bannerPage(app, 1)
         imageMetrics(app, "图片请求：4；取消：2；首页读取：1")
+    }
+
+    /// Non-first selection and the exact bottom viewport survive ordinary
+    /// tab changes together; no home re-tap or implicit read is involved.
+    @MainActor func testSelectedBannerAndBottomPositionRetainedAcrossTabs() {
+        let app = bannerApp("banner-pending")
+        revealBanner(app)
+        app.buttons["home.banner.next"].tap()
+        bannerPage(app, 2)
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：2；取消：1；首页读取：1")
+        let lastRow = app.staticTexts["home.count.categoryAll"]
+        for _ in 0..<8 where !lastRow.isHittable { app.swipeUp(velocity: .fast) }
+        XCTAssertTrue(lastRow.isHittable, "the auxiliary last row must be reached")
+        let referenceMinY = lastRow.frame.minY
+        for round in 1...2 {
+            for tab in ["分类", "购物车"] {
+                app.tabBars.buttons[tab].tap()
+                app.tabBars.buttons["首页"].tap()
+                XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 5))
+                XCTAssertTrue(
+                    lastRow.isHittable, "bottom row must stay visible after \(tab), round \(round)")
+                XCTAssertEqual(lastRow.frame.minY, referenceMinY, accuracy: 1)
+            }
+            bannerPage(app, 2)
+            imageMetrics(app, "图片请求：2；取消：1；首页读取：1")
+        }
+        keepFeedbackScreenshot(app, name: "PR13-selected-bottom-retained")
     }
 
     @MainActor func testBannerFastPageRoundTripsAreBounded() {

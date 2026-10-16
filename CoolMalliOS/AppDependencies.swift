@@ -29,14 +29,19 @@ struct AppDependencies {
         #endif
     }
 
-    /// Original CDN resource permission is deferred (PRD-009). Keep the
-    /// ordinary homepage placeholder; controlled self-authored images are
-    /// enabled only by the explicitly registered DEBUG test assembly.
+    /// Fixed home fixtures never use production CDN transport.
     var homeImagePipeline: MallImagePipeline? {
         #if DEBUG
-            imageTesting?.pipeline
+            if homeTesting.fixtureMode != nil { return imageTesting?.pipeline }
+        #endif
+        return imagePipeline
+    }
+
+    var showsHomeReadVerification: Bool {
+        #if DEBUG
+            homeTesting.fixtureMode != nil
         #else
-            nil
+            false
         #endif
     }
 

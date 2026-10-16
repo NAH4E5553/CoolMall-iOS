@@ -1,8 +1,8 @@
+import Foundation
 import MallCore
 import Observation
 
-/// Page state for the HOME-01 minimal read UI plus the HOME-02-R1 re-tap
-/// refresh. The Scene/home-root view identity owns this model; SwiftUI's task
+/// Page state for the integrated home and its shared refresh/recovery slot. The Scene/home-root view identity owns this model; SwiftUI's task
 /// owns every await call.
 ///
 /// Request validity: `generation` bumps on every accepted read and on every
@@ -44,14 +44,78 @@ final class HomeViewModel {
     private(set) var refreshTicket: UInt64 = 0
     private var acceptedRefreshPending = false
     private var lastHandledReTapToken: UInt64 = 0
+    private var lastHandledPullInteraction: UInt64?
+    private var refreshWaiters: [UInt64: [UUID: CheckedContinuation<Void, Never>]] = [:]
+
+    /// Reserves the same slot as a re-tap; only the single drive performs I/O.
+    /// A rejected pull ends immediately. An accepted pull waits for its ticket.
+    func pullToRefresh(interaction: UInt64? = nil) async {
+        guard !Task.isCancelled else { return }
+        if let interaction {
+            guard interaction != lastHandledPullInteraction else { return }
+            // Consume even while busy: a callback repeated after the current
+            // request ends still belongs to the same rejected interaction.
+            lastHandledPullInteraction = interaction
+        }
+        guard acceptRefresh() else { return }
+        let ticket = refreshTicket
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                // Covers cancellation before registration, including a handler
+                // that already ran while this MainActor operation was pending.
+                guard !Task.isCancelled else { continuation.resume(); return }
+                refreshWaiters[ticket, default: [:]][waiterID] = continuation
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.cancelPullWaiter(ticket: ticket, waiterID: waiterID)
+            }
+        }
+    }
+
+    /// Non-drag accessibility intent, still owned by the one drive task.
+    func requestAccessibleRefresh() { acceptRefresh() }
+
+    @discardableResult
+    private func acceptRefresh() -> Bool {
+        switch state {
+        case .ready, .empty, .failed: break
+        case .idle, .loading: return false
+        }
+        guard !isRefreshing, !acceptedRefreshPending else { return false }
+        refreshFailedHint = false
+        acceptedRefreshPending = true
+        refreshTicket &+= 1
+        return true
+    }
+
+    private func finishRefresh(_ ticket: UInt64) {
+        for waiter in (refreshWaiters.removeValue(forKey: ticket) ?? [:]).values { waiter.resume() }
+    }
+
+    private func cancelPullWaiter(ticket: UInt64, waiterID: UUID) {
+        guard var waiters = refreshWaiters[ticket],
+            let waiter = waiters.removeValue(forKey: waiterID)
+        else { return }
+        if waiters.isEmpty {
+            refreshWaiters.removeValue(forKey: ticket)
+        } else {
+            refreshWaiters[ticket] = waiters
+        }
+        // Cancellation ends this wait only. The single drive remains the
+        // request owner; an old waiter cannot clear a newer accepted ticket.
+        waiter.resume()
+    }
 
     init(home: any HomeLoading) {
         self.home = home
     }
 
-    /// Single drive entry for the view's one `.task(id:)`. The key covers
-    /// visibility, the original retry trigger and the model-ACCEPTED refresh
-    /// ticket, so ANY key change cancels the in-flight await — the first
+    /// Single drive entry for the view's one `.task(id:)`, keyed by visibility
+    /// and the model-accepted ticket. Recovery buttons share that slot; the
+    /// original retry token remains supported for internal callers. Visibility
+    /// changes cancel the in-flight await — the first
     /// read and a refresh are cancelled alike by an explicit visibility loss,
     /// never only by onDisappear. Losing visibility is routed FIRST: an
     /// accepted-but-unstarted refresh is dropped (no hidden off-page request)
@@ -111,39 +175,30 @@ final class HomeViewModel {
     func requestRefresh(_ token: UInt64) {
         guard token != lastHandledReTapToken else { return }
         lastHandledReTapToken = token
+        acceptRefresh()
+    }
+
+    /// Failed/empty recovery reserves the same synchronous slot as pulls
+    /// and re-taps; a second recovery cannot change the drive key while busy.
+    func requestUserRetry() {
         switch state {
-        case .ready, .empty, .failed:
-            break
-        case .idle, .loading:
-            return
+        case .failed, .empty: acceptRefresh()
+        case .idle, .loading, .ready: break
         }
-        // R-HOME-02-R1-02: acceptance itself reserves the busy slot — a
-        // second token in the accepted-but-not-started window is rejected
-        // (ticket unchanged, nothing queued or restarted).
-        guard !isRefreshing, !acceptedRefreshPending else { return }
-        refreshFailedHint = false
-        acceptedRefreshPending = true
-        refreshTicket &+= 1
     }
 
     /// Retry entry for the refresh-failure hint row — a NEW refresh action,
     /// distinct from the original failed/empty retry; still the same model.
     func requestRetryRefresh() {
         guard refreshFailedHint else { return }
-        switch state {
-        case .ready, .empty: break
-        case .idle, .loading, .failed: return
-        }
-        // Same busy/acceptance-slot contract as re-tap refreshes.
-        guard !isRefreshing, !acceptedRefreshPending else { return }
-        refreshFailedHint = false
-        acceptedRefreshPending = true
-        refreshTicket &+= 1
+        acceptRefresh()
     }
 
     private func runAcceptedRefresh() async {
         guard acceptedRefreshPending else { return }
+        let ticket = refreshTicket
         acceptedRefreshPending = false
+        defer { finishRefresh(ticket) }
         await performRefresh()
     }
 
@@ -275,6 +330,7 @@ final class HomeViewModel {
     /// stale commit is rejected by the generation guard.
     private func suspend() {
         generation += 1
+        finishRefresh(refreshTicket)
         acceptedRefreshPending = false
         isRefreshing = false
         if case .loading = state {

@@ -16,6 +16,23 @@
         @Published var pendingPastDeadline = false
         var timeoutCommand: UInt64 = 0
         var lateCommand: UInt64 = 0
+        @Published var urlStarts: [String: Int] = [:]
+        @Published var urlCancellations: [String: Int] = [:]
+        @Published var lateAttempts = 0
+
+        func reset() {
+            starts = 0
+            cancellations = 0
+            homeCalls = 0
+            timeouts = 0
+            lateResponses = 0
+            pendingPastDeadline = false
+            timeoutCommand = 0
+            lateCommand = 0
+            urlStarts = [:]
+            urlCancellations = [:]
+            lateAttempts = 0
+        }
     }
 
     @MainActor
@@ -24,9 +41,14 @@
         let pipeline: MallImagePipeline?
 
         init?(mode: HomeUITestSupport.FixtureMode?) {
-            guard mode == .imageSuccess || mode == .imageFailure || mode == .imagePending else {
+            guard
+                mode == .imageSuccess || mode == .imageFailure || mode == .imagePending
+                    || mode == .bannerSingle || mode == .bannerMultiple || mode == .bannerReconcile
+                    || mode == .bannerRefreshFailure || mode == .bannerPending
+            else {
                 return nil
             }
+            Self.metrics.reset()
             do {
                 pipeline = try MallImagePipeline(
                     configuration: .init(diskLimitBytes: 0, cacheNamespace: "image-ui-test"),
@@ -57,6 +79,15 @@
                     Button("返回旧图") { metrics.lateCommand += 1 }
                         .accessibilityIdentifier("home.image.release-old")
                 }
+                if !metrics.urlStarts.isEmpty {
+                    Text(
+                        metrics.urlStarts.keys.sorted().map { key in
+                            "\(key)=\(metrics.urlStarts[key, default: 0])/\(metrics.urlCancellations[key, default: 0])"
+                        }.joined(separator: "；") + "；迟到尝试：\(metrics.lateAttempts)"
+                    )
+                    .font(.caption2).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("home.image.urlMetrics")
+                }
             }
         }
     }
@@ -83,9 +114,15 @@
         override func startLoading() {
             lock.lock()
             defer { lock.unlock() }
-            Task { @MainActor in ImageUITestSupport.metrics.starts += 1 }
+            let path = request.url?.path ?? ""
+            Task { @MainActor in
+                ImageUITestSupport.metrics.starts += 1
+                if path.hasPrefix("/banner-") {
+                    ImageUITestSupport.metrics.urlStarts[path, default: 0] += 1
+                }
+            }
             guard let url = request.url else { return }
-            if url.path == "/pending" {
+            if url.path == "/pending" || url.path == "/banner-pending-a" {
                 startedAt = ProcessInfo.processInfo.systemUptime
                 (timeoutCommand, lateCommand) = MainActor.assumeIsolated {
                     (
@@ -99,7 +136,7 @@
                     timeInterval: 0.05, target: self, selector: #selector(readCommands),
                     userInfo: id, repeats: true)
             } else {
-                respond(status: url.path == "/failure" ? 404 : 200)
+                respond(status: url.path.contains("failure") ? 404 : 200)
             }
         }
 
@@ -108,7 +145,18 @@
             defer { lock.unlock() }
             guard end == nil else { return }
             end = .cancellation
-            Task { @MainActor in ImageUITestSupport.metrics.cancellations += 1 }
+            let path = request.url?.path ?? ""
+            Task { @MainActor in
+                ImageUITestSupport.metrics.cancellations += 1
+                if path.hasPrefix("/banner-") {
+                    ImageUITestSupport.metrics.urlCancellations[path, default: 0] += 1
+                    ImageUITestSupport.metrics.lateAttempts += 1
+                }
+            }
+            if path == "/banner-pending-a" {
+                removeEvents()
+                respond(status: 200)
+            }
         }
 
         @objc private func readCommands() {
@@ -148,7 +196,7 @@
                     url: url, statusCode: status,
                     httpVersion: nil, headerFields: ["Content-Type": "image/png"]),
                 let bytes = Data(
-                    base64Encoded: url.path == "/success-b"
+                    base64Encoded: url.path.hasSuffix("-b")
                         // Self-authored pink B; late pending A stays blue.
                         ? "iVBORw0KGgoAAAANSUhEUgAAACAAAAAQCAIAAAD4YuoOAAAAHUlEQVR4nGO4aBROU8QwasGoBaMWjFowasFQsAAAFQ20HxvYnNUAAAAASUVORK5CYII="
                         : "iVBORw0KGgoAAAANSUhEUgAAACAAAAAQCAIAAAD4YuoOAAAAHUlEQVR4nGOQS3lGU8QwasGoBaMWjFowasFQsAAAddvQHxXJaVoAAAAASUVORK5CYII="
@@ -171,7 +219,14 @@
             calls += 1
             let call = calls
             await MainActor.run { ImageUITestSupport.metrics.homeCalls += 1 }
+            if mode == .bannerRefreshFailure && call == 2 { throw HomeLoadFailure.timeout }
+            if mode == .bannerPending && call >= 2 {
+                while true { try await Task.sleep(nanoseconds: 50_000_000) }
+            }
             let base = try await FixtureHomeService().loadHome()
+            if mode.rawValue.hasPrefix("banner-") {
+                return bannerSnapshot(base: base, call: call)
+            }
             let path: String
             switch mode {
             case .imagePending where call == 1: path = "/pending"
@@ -188,6 +243,38 @@
                 banners: banners, categories: base.categories,
                 allCategories: base.allCategories, featured: base.featured,
                 recommendations: base.recommendations, goods: base.goods, coupons: base.coupons)
+        }
+
+        private func bannerSnapshot(base: HomeSnapshot, call: Int) -> HomeSnapshot {
+            var order = [0, 1, 2]
+            if mode == .bannerSingle { order = [1] }
+            if mode == .bannerReconcile {
+                switch call {
+                case 2: order = [2, 1, 0]
+                case 3: order = [2, 0]
+                case 4: order = []
+                case 5...: order = [0]
+                default: break
+                }
+            }
+            let banners = order.map { index in
+                let path: String?
+                switch (mode, index) {
+                case (.bannerMultiple, 1): path = "/banner-failure-b"
+                case (.bannerMultiple, 2), (.bannerPending, 2): path = nil
+                case (.bannerPending, 0): path = "/banner-pending-a"
+                case (.bannerSingle, _):
+                    path = call == 1 ? "/banner-success-b" : "/banner-success-a"
+                default: path = "/banner-success-\(["a", "b", "c"][index])"
+                }
+                return HomeBanner(
+                    id: 910_001 + Int64(index), description: "受控轮播\(["A", "B", "C"][index])",
+                    imageURL: path.flatMap { URL(string: "https://image-tests.invalid\($0)") })
+            }
+            return HomeSnapshot(
+                banners: banners, categories: base.categories, allCategories: base.allCategories,
+                featured: base.featured, recommendations: base.recommendations,
+                goods: base.goods, coupons: base.coupons)
         }
     }
 #endif

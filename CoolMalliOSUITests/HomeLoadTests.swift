@@ -82,6 +82,49 @@ final class HomeLoadTests: XCTestCase {
         add(attachment)
     }
 
+    /// Reach the same auxiliary row through the actual vertical viewport.
+    /// A stalled gesture stops the driver; the caller still asserts reachability.
+    @MainActor private func reachAuxiliaryRow(
+        _ app: XCUIApplication, row: XCUIElement, maximumDrags: Int
+    ) {
+        if row.exists && row.isHittable { return }
+        let scroll = app.scrollViews["home.scroll"]
+        let frame = scroll.frame.intersection(app.frame)
+        let navigationBottom = app.navigationBars.firstMatch.frame.maxY
+        let top = max(frame.minY, navigationBottom)
+        let bottom = min(frame.maxY, app.tabBars.firstMatch.frame.minY)
+        guard !frame.isNull, frame.width > 0, bottom > top else {
+            XCTFail("home.scroll has no usable vertical viewport: \(frame)")
+            return
+        }
+        let viewport = CGRect(
+            x: frame.minX, y: top, width: frame.width, height: bottom - top)
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        // In these two settled fixture flows, the initial touch stays inside
+        // the scroll region across title collapse and the observed HUD layout.
+        // The right-side content padding avoids nested horizontal cards.
+        let x = viewport.minX + viewport.width * 0.98
+        let start = origin.withOffset(
+            CGVector(dx: x, dy: viewport.minY + viewport.height * 0.9))
+        // Start inside the scroll view, then continue the same touch
+        // below the navigation bar even when the DEBUG viewport is small.
+        let end = origin.withOffset(
+            CGVector(dx: x, dy: navigationBottom + viewport.height * 0.1))
+        var before = row.frame.minY
+        var stalledDrags = 0
+        for index in 0..<maximumDrags {
+            if index > 0, row.exists && row.isHittable { return }
+            start.press(
+                forDuration: 0.01, thenDragTo: end, withVelocity: 10_000,
+                thenHoldForDuration: 0)
+            let after = row.frame.minY
+            print("home.scroll drag \(index + 1): viewport=\(viewport), rowY=\(before)→\(after)")
+            stalledDrags = after < before - 1 ? 0 : stalledDrags + 1
+            if stalledDrags == 2 { return }
+            before = after
+        }
+    }
+
     @MainActor func testConflictingTestArgumentsStopWithConfigError() {
         let app = XCUIApplication()
         app.launchArguments += ["--uitest-nav-fixture", "--ui-home-fixture", "valid"]
@@ -124,6 +167,25 @@ final class HomeLoadTests: XCTestCase {
 /// scroll through the content and record when each title first becomes
 /// hittable; empty-section hiding is structural (the elements never exist).
 extension HomeLoadTests {
+    @MainActor private func revealSectionContent(_ app: XCUIApplication, key: String) {
+        for _ in 0..<12 {
+            if sectionContent(app, key: key).exists { return }
+            app.swipeUp(velocity: .fast)
+        }
+    }
+
+    /// Real content replaces each former placeholder without weakening its
+    /// nonempty/empty section condition. Source-specific leaf IDs stay visible.
+    @MainActor private func sectionContent(_ app: XCUIApplication, key: String) -> XCUIElement {
+        let prefix = "home.\(key == "category" ? "category" : key)."
+        return app.staticTexts.matching(
+            NSPredicate(
+                format:
+                    "identifier BEGINSWITH %@ AND (identifier ENDSWITH %@ OR identifier ENDSWITH %@)",
+                prefix, ".title", ".name")
+        ).firstMatch
+    }
+
     private static let orderedSections: [(key: String, title: String)] = [
         ("banner", "轮播"), ("coupon", "优惠券"), ("category", "分类"),
         ("flashSale", "限时精选"), ("recommend", "推荐商品"), ("goods", "全部商品"),
@@ -141,9 +203,16 @@ extension HomeLoadTests {
             XCTAssertTrue(
                 app.staticTexts["home.section.\(section.key).title"].exists,
                 "\(section.key) title must exist for valid input")
-            XCTAssertTrue(
-                app.staticTexts["home.section.\(section.key).pending"].exists,
-                "\(section.key) placeholder must exist for valid input")
+            if section.key == "banner" {
+                XCTAssertTrue(
+                    app.staticTexts["home.banner.page"].exists,
+                    "banner must show the real manual carousel for valid input")
+            } else {
+                revealSectionContent(app, key: section.key)
+                XCTAssertTrue(
+                    sectionContent(app, key: section.key).exists,
+                    "\(section.key) placeholder must exist for valid input")
+            }
         }
         // Read through the whole content (last row reachable), then verify the
         // PRD-015 order by frame positions — viewport-independent, unlike a
@@ -187,12 +256,13 @@ extension HomeLoadTests {
                 app.staticTexts["home.section.\(key).title"].exists,
                 "\(key) is empty and its title must be hidden")
             XCTAssertFalse(
-                app.staticTexts["home.section.\(key).pending"].exists,
+                sectionContent(app, key: key).exists,
                 "\(key) placeholder and reserved area must be hidden")
         }
         for key in ["coupon", "flashSale", "recommend", "goods"] {
             XCTAssertTrue(app.staticTexts["home.section.\(key).title"].exists)
-            XCTAssertTrue(app.staticTexts["home.section.\(key).pending"].exists)
+            revealSectionContent(app, key: key)
+            XCTAssertTrue(sectionContent(app, key: key).exists)
         }
         // The counts come from the same snapshot — each visible section has
         // its own non-zero count, hidden ones zero.
@@ -209,7 +279,7 @@ extension HomeLoadTests {
     /// H0 empty evidence (counts, auxiliary, retry) stays observable.
     /// One launch per test method (CHANGE-04 precedent): a two-launch loop
     /// exceeded CI's 60s per-test allowance on a cold simulator.
-    private func assertEmptyInputShowsNoSections(
+    @MainActor private func assertEmptyInputShowsNoSections(
         _ app: XCUIApplication, mode: String, auxiliary: String
     ) {
         app.launchArguments += ["--ui-home-fixture", mode]
@@ -220,7 +290,7 @@ extension HomeLoadTests {
                 app.staticTexts["home.section.\(section.key).title"].exists,
                 "\(section.key) title must not appear for \(mode)")
             XCTAssertFalse(
-                app.staticTexts["home.section.\(section.key).pending"].exists,
+                sectionContent(app, key: section.key).exists,
                 "\(section.key) placeholder must not appear for \(mode)")
         }
         XCTAssertEqual(
@@ -291,13 +361,10 @@ extension HomeLoadTests {
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
         let bannerTitle = app.staticTexts["home.section.banner.title"]
         let lastRow = app.staticTexts["home.count.categoryAll"]
-        // The content only slightly overflows one screen, so "scrolled away
-        // from the top" is asserted by FRAME POSITION, not by visibility.
+        // Reach the full page's auxiliary row, including at accessibility
+        // sizes, then prove the re-tap starts from a non-zero content position.
         let atRestMinY = lastRow.frame.minY
-        for _ in 0..<10 where !(lastRow.exists && lastRow.isHittable) {
-            app.swipeUp(velocity: .fast)
-            usleep(400_000)
-        }
+        reachAuxiliaryRow(app, row: lastRow, maximumDrags: 10)
         XCTAssertTrue(lastRow.isHittable)
         XCTAssertLessThan(
             lastRow.frame.minY, atRestMinY - 20,
@@ -312,14 +379,14 @@ extension HomeLoadTests {
         expectation(for: bSeen, evaluatedWith: goods)
         waitForExpectations(timeout: 10)
         XCTAssertTrue(bannerTitle.isHittable, "the first section must be back on screen")
-        let scrollToTopMinY = lastRow.frame.minY
+        let scrollToTopMinY = bannerTitle.frame.minY
         // The scrollTo anchor alignment sits slightly above the fully
         // expanded large-title resting position (bar/inset dependent — ~68pt
         // at large, ~101pt at AX), so only a loose bound is asserted here;
         // the deterministic assertions are the banner visibility and the
         // second re-tap landing on the SAME position.
         XCTAssertGreaterThan(
-            scrollToTopMinY, atRestMinY - 160,
+            scrollToTopMinY, app.navigationBars.firstMatch.frame.maxY - 160,
             "re-tap must land near the resting (top) position")
         // Real re-tap #2 while ALREADY AT TOP (AT: 停在顶部再按→C): a re-tap
         // at the top also refreshes, and the position stays put.
@@ -329,8 +396,9 @@ extension HomeLoadTests {
         waitForExpectations(timeout: 10)
         XCTAssertTrue(bannerTitle.isHittable)
         XCTAssertEqual(
-            lastRow.frame.minY, scrollToTopMinY, accuracy: 6,
+            bannerTitle.frame.minY, scrollToTopMinY, accuracy: 6,
             "an at-top re-tap must keep the same fixed top-anchor position")
+        keepFeedbackScreenshot(app, name: "PR13-repeat-top")
     }
 
     /// R-PR08-COVERAGE-01: the full AT-HOME-02-R1-04 chain restored within
@@ -427,7 +495,14 @@ extension HomeLoadTests {
 
 extension HomeLoadTests {
     @MainActor private func imageElement(_ app: XCUIApplication, _ state: String) -> XCUIElement {
-        app.descendants(matching: .any)["home.image.\(state)"].firstMatch
+        switch state {
+        case "success", "failure", "missing", "placeholder":
+            // The actionable banner is a Button; decorative product images
+            // are Other elements and may carry the adapter's same state IDs.
+            return app.buttons["home.image.\(state)"].firstMatch
+        default:
+            return app.descendants(matching: .any)["home.image.\(state)"].firstMatch
+        }
     }
 
     @MainActor private func imageMetrics(_ app: XCUIApplication, _ expected: String) {
@@ -545,5 +620,326 @@ extension HomeLoadTests {
         imageMetrics(app, "图片请求：2；取消：0；首页读取：3")
         XCTAssertEqual(app.staticTexts["home.count.banner"].label, "轮播：6")
         keepFeedbackScreenshot(app, name: "IMAGE01-missing")
+    }
+}
+
+extension HomeLoadTests {
+    @MainActor private func bannerApp(_ mode: String) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-home-fixture", mode]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
+        return app
+    }
+
+    @MainActor private func bannerPage(_ app: XCUIApplication, _ index: Int, count: Int = 3) {
+        let page = app.staticTexts["home.banner.page"]
+        let expected = "第\(index)张，共\(count)张"
+        expectation(for: NSPredicate(format: "label == %@", expected), evaluatedWith: page)
+        waitForExpectations(timeout: 8)
+        XCTAssertEqual(page.label, expected)
+    }
+
+    /// Keep the entire image AND controls in the viewport for visual evidence.
+    /// Vertical drags start beside the horizontal pager to avoid stealing its gesture.
+    @MainActor private func revealBanner(_ app: XCUIApplication) {
+        let next = app.buttons["home.banner.next"]
+        for _ in 0..<4 {
+            if next.isHittable && next.frame.maxY < app.tabBars.firstMatch.frame.minY { return }
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.75))
+            let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.42))
+            start.press(forDuration: 0.01, thenDragTo: end)
+        }
+        XCTAssertTrue(next.isHittable)
+    }
+
+    @MainActor func testBannerSingleHidesControlsAndUpdatesSameIDURL() {
+        let app = bannerApp("banner-single")
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["home.banner.page"].exists)
+        XCTAssertFalse(app.buttons["home.banner.previous"].exists)
+        XCTAssertFalse(app.buttons["home.banner.next"].exists)
+        imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
+        let before = imageElement(app, "success").screenshot()
+        keepFeedbackScreenshot(app, name: "HOME04-single-A")
+        app.tabBars.buttons["首页"].tap()
+        imageMetrics(app, "图片请求：2；取消：0；首页读取：2")
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        XCTAssertNotEqual(
+            before.pngRepresentation, imageElement(app, "success").screenshot().pngRepresentation)
+        XCTAssertFalse(app.buttons["home.banner.next"].exists)
+        keepFeedbackScreenshot(app, name: "HOME04-single-same-ID-new-image")
+    }
+
+    @MainActor func testBannerManualPagingBoundariesFailureAndMissing() {
+        let app = bannerApp("banner-multiple")
+        revealBanner(app)
+        bannerPage(app, 1)
+        XCTAssertFalse(app.buttons["home.banner.previous"].isEnabled)
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        keepFeedbackScreenshot(app, name: "HOME04-success-complete")
+        app.buttons["home.banner.next"].tap()
+        bannerPage(app, 2)
+        XCTAssertTrue(imageElement(app, "failure").waitForExistence(timeout: 10))
+        keepFeedbackScreenshot(app, name: "HOME04-failure-complete")
+        imageMetrics(app, "图片请求：2；取消：0；首页读取：1")
+        app.buttons["home.banner.next"].tap()
+        bannerPage(app, 3)
+        XCTAssertFalse(app.buttons["home.banner.next"].isEnabled)
+        XCTAssertTrue(imageElement(app, "missing").exists)
+        keepFeedbackScreenshot(app, name: "HOME04-missing-complete")
+        app.buttons["home.banner.previous"].tap()
+        bannerPage(app, 2)
+        XCTAssertTrue(imageElement(app, "failure").waitForExistence(timeout: 10))
+        // A failed image is not automatically retried by metrics/body changes.
+        imageMetrics(app, "图片请求：3；取消：0；首页读取：1")
+        let pager = imageElement(app, "failure")
+        pager.swipeRight()
+        bannerPage(app, 1)
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        imageElement(app, "success").swipeLeft()
+        bannerPage(app, 2)
+        XCTAssertEqual(app.staticTexts["home.count.banner"].label, "轮播：3")
+        XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+        let last = app.staticTexts["home.count.categoryAll"]
+        for _ in 0..<12 where !last.isHittable { app.swipeUp(velocity: .fast) }
+        XCTAssertTrue(last.isHittable)
+    }
+
+    @MainActor func testBannerReconciliationInOneRefreshSequence() {
+        let app = bannerApp("banner-reconcile")
+        revealBanner(app)
+        app.buttons["home.banner.next"].tap()
+        bannerPage(app, 2)
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        app.tabBars.buttons["首页"].tap()
+        imageMetrics(app, "图片请求：2；取消：0；首页读取：2")
+        bannerPage(app, 2)
+        XCTAssertTrue(app.descendants(matching: .any)["home.banner.current.910002"].exists)
+        app.tabBars.buttons["首页"].tap()
+        imageMetrics(app, "图片请求：3；取消：0；首页读取：3")
+        bannerPage(app, 1, count: 2)
+        XCTAssertTrue(app.descendants(matching: .any)["home.banner.current.910003"].exists)
+        app.tabBars.buttons["首页"].tap()
+        imageMetrics(app, "图片请求：3；取消：0；首页读取：4")
+        XCTAssertFalse(app.staticTexts["home.section.banner.title"].exists)
+        XCTAssertFalse(app.buttons["home.banner.next"].exists)
+        app.tabBars.buttons["首页"].tap()
+        imageMetrics(app, "图片请求：3；取消：0；首页读取：5")
+        XCTAssertTrue(app.staticTexts["home.section.banner.title"].exists)
+        XCTAssertFalse(app.staticTexts["home.banner.page"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["home.banner.current.910001"].exists)
+    }
+
+    @MainActor func testBannerRefreshFailurePreservesSelectedPageAndRetry() {
+        let app = bannerApp("banner-refresh-failure")
+        revealBanner(app)
+        app.buttons["home.banner.next"].tap()
+        bannerPage(app, 2)
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["home.refresh.failed"].waitForExistence(timeout: 10))
+        bannerPage(app, 2)
+        imageMetrics(app, "图片请求：2；取消：0；首页读取：2")
+        XCTAssertEqual(app.staticTexts["home.count.banner"].label, "轮播：3")
+        app.buttons["home.refresh.retry"].tap()
+        imageMetrics(app, "图片请求：2；取消：0；首页读取：3")
+        bannerPage(app, 2)
+        XCTAssertFalse(app.staticTexts["home.refresh.failed"].exists)
+    }
+
+    @MainActor func testBannerPendingPageCancellationAndTabRetention() {
+        let app = bannerApp("banner-pending")
+        revealBanner(app)
+        XCTAssertTrue(imageElement(app, "loading").waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
+        keepFeedbackScreenshot(app, name: "HOME04-loading-complete")
+        app.buttons["home.banner.next"].tap()
+        bannerPage(app, 2)
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：2；取消：1；首页读取：1")
+        XCTAssertFalse(imageElement(app, "loading").exists)
+        keepFeedbackScreenshot(app, name: "HOME04-B-after-late-A")
+        app.buttons["home.banner.previous"].tap()
+        bannerPage(app, 1)
+        XCTAssertTrue(imageElement(app, "loading").waitForExistence(timeout: 10))
+        app.tabBars.buttons["分类"].tap()
+        app.tabBars.buttons["首页"].tap()
+        bannerPage(app, 1)
+        imageMetrics(app, "图片请求：4；取消：2；首页读取：1")
+    }
+
+    /// Non-first selection and the exact bottom viewport survive ordinary
+    /// tab changes together; no home re-tap or implicit read is involved.
+    @MainActor func testSelectedBannerAndBottomPositionRetainedAcrossTabs() {
+        let app = bannerApp("banner-pending")
+        revealBanner(app)
+        app.buttons["home.banner.next"].tap()
+        bannerPage(app, 2)
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：2；取消：1；首页读取：1")
+        let lastRow = app.staticTexts["home.count.categoryAll"]
+        reachAuxiliaryRow(app, row: lastRow, maximumDrags: 8)
+        XCTAssertTrue(lastRow.isHittable, "the auxiliary last row must be reached")
+        let referenceMinY = lastRow.frame.minY
+        for round in 1...2 {
+            for tab in ["分类", "购物车"] {
+                app.tabBars.buttons[tab].tap()
+                app.tabBars.buttons["首页"].tap()
+                XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 5))
+                XCTAssertTrue(
+                    lastRow.isHittable, "bottom row must stay visible after \(tab), round \(round)")
+                XCTAssertEqual(lastRow.frame.minY, referenceMinY, accuracy: 1)
+            }
+            bannerPage(app, 2)
+            imageMetrics(app, "图片请求：2；取消：1；首页读取：1")
+        }
+        keepFeedbackScreenshot(app, name: "PR13-selected-bottom-retained")
+    }
+
+    @MainActor func testBannerFastPageRoundTripsAreBounded() {
+        let app = bannerApp("banner-pending")
+        revealBanner(app)
+        for _ in 0..<5 {
+            app.buttons["home.banner.next"].tap()
+            app.buttons["home.banner.previous"].tap()
+        }
+        bannerPage(app, 1)
+        XCTAssertTrue(imageElement(app, "loading").waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：7；取消：5；首页读取：1")
+        XCTAssertTrue(
+            app.staticTexts["home.image.urlMetrics"].label.contains("/banner-pending-a=6/5"))
+        XCTAssertTrue(
+            app.staticTexts["home.image.urlMetrics"].label.contains("/banner-success-b=1/0"))
+        XCTAssertTrue(app.staticTexts["home.image.urlMetrics"].label.contains("迟到尝试：5"))
+    }
+}
+
+extension HomeLoadTests {
+    @MainActor func testBannerSelectedPageSurvivesBusyRetapsAndCancelledRefresh() {
+        let app = bannerApp("banner-pending")
+        revealBanner(app)
+        app.buttons["home.banner.next"].tap()
+        bannerPage(app, 2)
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 10))
+        for _ in 0..<3 { app.tabBars.buttons["首页"].tap() }
+        imageMetrics(app, "图片请求：2；取消：1；首页读取：2")
+        bannerPage(app, 2)
+        XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+        app.tabBars.buttons["分类"].tap()
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertFalse(app.staticTexts["home.refreshing"].waitForExistence(timeout: 1.5))
+        imageMetrics(app, "图片请求：2；取消：1；首页读取：2")
+        bannerPage(app, 2)
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：2；取消：1；首页读取：3")
+        bannerPage(app, 2)
+    }
+}
+
+extension HomeLoadTests {
+    @MainActor private func pullHome(_ app: XCUIApplication, fast: Bool = false) {
+        let scroll = app.scrollViews["home.scroll"]
+        let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15))
+        let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
+        if fast {
+            start.press(
+                forDuration: 0.05, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0)
+        } else {
+            start.press(forDuration: 0.05, thenDragTo: end)
+        }
+    }
+
+    @MainActor func testPullRefreshSuccessReplacesSnapshot() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-home-fixture", "retap-sequence"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+        pullHome(app)
+        let goods = app.staticTexts["home.count.goods"]
+        expectation(for: NSPredicate(format: "label == %@", "全部商品：11"), evaluatedWith: goods)
+        waitForExpectations(timeout: 5)
+        XCTAssertEqual(goods.label, "全部商品：11")
+        XCTAssertFalse(app.staticTexts["home.refreshing"].exists)
+        // A second distinct short pull must be accepted exactly once too.
+        pullHome(app, fast: true)
+        expectation(for: NSPredicate(format: "label == %@", "全部商品：12"), evaluatedWith: goods)
+        waitForExpectations(timeout: 5)
+        XCTAssertEqual(goods.label, "全部商品：12")
+        XCTAssertFalse(app.staticTexts["home.refreshing"].exists)
+    }
+
+    @MainActor func testPullRefreshFailureKeepsContentAndRetryRecovers() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-home-fixture", "retap-failure"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
+        pullHome(app)
+        XCTAssertTrue(app.staticTexts["home.refresh.failed"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+        XCTAssertFalse(app.staticTexts["home.refreshing"].exists)
+        app.buttons["home.refresh.retry"].tap()
+        let goods = app.staticTexts["home.count.goods"]
+        expectation(for: NSPredicate(format: "label == %@", "全部商品：11"), evaluatedWith: goods)
+        waitForExpectations(timeout: 5)
+        XCTAssertFalse(app.staticTexts["home.refresh.failed"].exists)
+    }
+
+    @MainActor func testBusyPullDoesNotQueueAndLeaveCancelsAcceptedRefresh() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-home-fixture", "page-controlled"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 5))
+        pullHome(app)  // Busy pull is rejected; never queues or restarts the read.
+        XCTAssertEqual(app.staticTexts["home.page.requests"].label, "读取：2；取消：0")
+        app.tabBars.buttons["分类"].tap()
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["home.page.requests"].label, "读取：2；取消：1")
+        XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+        XCTAssertFalse(app.staticTexts["home.refreshing"].exists)
+        XCTAssertFalse(app.staticTexts["home.refresh.failed"].exists)
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["home.page.requests"].label, "读取：3；取消：1")
+        app.buttons["home.page.success"].tap()
+        XCTAssertFalse(app.staticTexts["home.refreshing"].exists)
+    }
+}
+
+extension HomeLoadTests {
+    @MainActor func testR2ProductSectionsKeepDistinctIdentitiesAndYuanPrices() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-home-fixture", "valid"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
+        for (key, id, price) in [
+            ("flashSale", "830001", "3,999.00"), ("recommend", "830009", "4,999.00"),
+            ("goods", "1", "5,499.00"),
+        ] {
+            revealSectionContent(app, key: key)
+            XCTAssertTrue(app.staticTexts["home.\(key).\(id).title"].exists)
+            XCTAssertTrue(app.staticTexts["home.\(key).\(id).price"].label.contains(price))
+        }
+        app.buttons["home.search"].tap()
+        XCTAssertTrue(app.staticTexts["home.unavailable"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["home.loaded"].exists)
+        XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
+    }
+}
+
+extension HomeLoadTests {
+    @MainActor func testBannerUnavailableActionShowsAppFeedbackWithoutReadingAgain() {
+        let app = bannerApp("banner-multiple")
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        app.buttons["home.banner.current.910001"].tap()
+        XCTAssertTrue(app.staticTexts["home.unavailable"].waitForExistence(timeout: 2))
+        imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
+        bannerPage(app, 1)
     }
 }

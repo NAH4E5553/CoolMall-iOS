@@ -33,6 +33,7 @@ struct HomeProductCardView: View {
     let role: Role
     let action: () -> Void
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .body) private var titleSize = 14.0
     @ScaledMetric(relativeTo: .caption) private var smallSize = 12.0
     @ScaledMetric(relativeTo: .caption2) private var subtitleSize = 11.0
@@ -45,7 +46,7 @@ struct HomeProductCardView: View {
                     HomeRecommendationLayout {
                         productImage(size: CGSize(width: 100, height: 100))
                         textDetails
-                        price
+                        priceAndSold
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
@@ -85,8 +86,30 @@ struct HomeProductCardView: View {
     private var details: some View {
         VStack(alignment: .leading, spacing: 4) {
             textDetails
-            price
+            priceAndSold
         }
+    }
+    private var subtitleColor: Color { Color(white: 178.0 / 255) }
+    private var priceAndSold: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if role != .featured && typeSize.isAccessibilitySize {
+                price.frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                price
+            }
+            if role != .featured {
+                if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
+                Text(verbatim: "已售\(product.sold)件")
+                    .font(.system(size: subtitleSize))
+                    .foregroundStyle(subtitleColor)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: true)
+                    .accessibilityIdentifier("home.\(key).\(product.id).sold")
+            }
+        }
+        // At accessibility sizes the complete single-line row uses the card's
+        // horizontal inset too; its text keeps the same subtitle size.
+        .padding(.horizontal, role != .featured && typeSize.isAccessibilitySize ? -12 : 0)
     }
     private var textDetails: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -107,11 +130,17 @@ struct HomeProductCardView: View {
                     .padding(.vertical, subtitleSize * 0.15)
                     .lineLimit(role == .recommendation ? 1 : 2)
                     .truncationMode(.tail)
-                    .foregroundStyle(Color(white: 178.0 / 255))
+                    .foregroundStyle(subtitleColor)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("home.\(key).\(product.id).subtitle")
             }
         }
+    }
+    private var minimumPriceScale: CGFloat {
+        guard role != .featured, typeSize.isAccessibilitySize else { return 0.75 }
+        // Permit content-driven fitting while keeping every amount segment at
+        // least its ordinary 18pt integer / 12pt currency-and-fraction size.
+        return CGFloat(min(0.75, max(18 / priceSize, 12 / smallSize)))
     }
     private var price: some View {
         // Currency formatting stays Decimal-based, including fractional yuan.
@@ -129,16 +158,15 @@ struct HomeProductCardView: View {
             + Text(fraction).font(.system(size: smallSize)))
             .foregroundStyle(Color(red: 1, green: 43.0 / 255, blue: 43.0 / 255))
             .lineLimit(1)
-            .minimumScaleFactor(0.75)
+            .minimumScaleFactor(minimumPriceScale)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel(formatted)
             .accessibilityIdentifier("home.\(key).\(product.id).price")
     }
 }
 
-/// Only the full amount's intrinsic width chooses the footer. Titles are always
-/// measured in their actual right-hand column, so wrapping titles cannot force
-/// an otherwise fitting amount out of that column.
+/// The complete price/sold row chooses a full-width footer when it cannot fit
+/// beside the image. Titles are measured in their actual right-hand column.
 private struct HomeRecommendationLayout: Layout {
     private let imageWidth = 100.0
     private let spacing = 12.0

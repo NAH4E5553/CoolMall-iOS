@@ -10,7 +10,7 @@ struct HomeCategorySectionView: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        HomeSectionView(title: "分类", key: "category") {
+        HomeSectionView(title: nil, key: "category") {
             LazyVGrid(
                 columns: Array(
                     repeating: GridItem(.flexible(), spacing: 8),

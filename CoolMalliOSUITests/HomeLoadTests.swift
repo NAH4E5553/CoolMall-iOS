@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// HOME-01 UI checks over the DEBUG deterministic home fixture modes
@@ -197,8 +198,8 @@ final class HomeLoadTests: XCTestCase {
 }
 
 /// HOME-02 section-skeleton coverage (AT-HOME-02-01…04). Ordering assertions
-/// scroll through the content and record when each title first becomes
-/// hittable; empty-section hiding is structural (the elements never exist).
+/// compare real content/header anchors; empty-section hiding is structural
+/// (the elements never exist).
 extension HomeLoadTests {
     @MainActor private func revealSectionContent(_ app: XCUIApplication, key: String) {
         for _ in 0..<12 {
@@ -210,7 +211,12 @@ extension HomeLoadTests {
     /// Real content replaces each former placeholder without weakening its
     /// nonempty/empty section condition. Source-specific leaf IDs stay visible.
     @MainActor private func sectionContent(_ app: XCUIApplication, key: String) -> XCUIElement {
-        let prefix = "home.\(key == "category" ? "category" : key)."
+        if key == "banner" {
+            return app.descendants(matching: .any).matching(
+                NSPredicate(format: "identifier BEGINSWITH %@", "home.banner.current.")
+            ).firstMatch
+        }
+        let prefix = "home.\(key)."
         return app.staticTexts.matching(
             NSPredicate(
                 format:
@@ -231,11 +237,12 @@ extension HomeLoadTests {
         app.launch()
         XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["home.source"].label, "工程夹具（valid）")
-        // All six titles and placeholders exist for the all-non-empty input.
+        // All six sections retain real content; only product headings remain.
         for section in Self.orderedSections {
-            XCTAssertTrue(
+            XCTAssertEqual(
                 app.staticTexts["home.section.\(section.key).title"].exists,
-                "\(section.key) title must exist for valid input")
+                !["banner", "coupon", "category"].contains(section.key),
+                "only product section headings remain")
             if section.key == "banner" {
                 XCTAssertTrue(
                     app.staticTexts["home.banner.page"].exists,
@@ -258,7 +265,9 @@ extension HomeLoadTests {
         }
         XCTAssertTrue(lastRow.isHittable, "auxiliary last row must be reachable")
         let titleFrames = Self.orderedSections.map { section in
-            app.staticTexts["home.section.\(section.key).title"].frame
+            ["banner", "coupon", "category"].contains(section.key)
+                ? sectionContent(app, key: section.key).frame
+                : app.staticTexts["home.section.\(section.key).title"].frame
         }
         for index in 1..<titleFrames.count {
             XCTAssertLessThan(
@@ -266,10 +275,10 @@ extension HomeLoadTests {
                 "\(Self.orderedSections[index - 1].key) must sit above \(Self.orderedSections[index].key)"
             )
         }
-        // Left alignment at the shared 16pt margin: all title leading edges
+        // Left alignment at the shared 16pt margin: product heading leading edges
         // line up regardless of text length.
-        let leading = titleFrames[0].minX
-        for (index, frame) in titleFrames.enumerated() {
+        let leading = titleFrames[3].minX
+        for (index, frame) in titleFrames.enumerated() where index >= 3 {
             XCTAssertEqual(
                 frame.minX, leading, accuracy: 2,
                 "\(Self.orderedSections[index].key) title must share the left margin")
@@ -293,7 +302,7 @@ extension HomeLoadTests {
                 "\(key) placeholder and reserved area must be hidden")
         }
         for key in ["coupon", "flashSale", "recommend", "goods"] {
-            XCTAssertTrue(app.staticTexts["home.section.\(key).title"].exists)
+            XCTAssertEqual(app.staticTexts["home.section.\(key).title"].exists, key != "coupon")
             revealSectionContent(app, key: key)
             XCTAssertTrue(sectionContent(app, key: key).exists)
         }
@@ -417,7 +426,7 @@ extension HomeLoadTests {
         XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 15))
         XCTAssertEqual(app.staticTexts["home.source"].label, "工程夹具（retap-sequence）")
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
-        let bannerTitle = app.staticTexts["home.section.banner.title"]
+        let bannerTitle = sectionContent(app, key: "banner")
         let lastRow = app.staticTexts["home.count.categoryAll"]
         // Reach the full page's auxiliary row, including at accessibility
         // sizes, then prove the re-tap starts from a non-zero content position.
@@ -470,7 +479,7 @@ extension HomeLoadTests {
         app.launch()
         XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 15))
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
-        let bannerTitle = app.staticTexts["home.section.banner.title"]
+        let bannerTitle = sectionContent(app, key: "banner")
         let lastRow = app.staticTexts["home.count.categoryAll"]
         let atRestMinY = lastRow.frame.minY
         var scrolledMinY = atRestMinY
@@ -863,7 +872,7 @@ extension HomeLoadTests {
         XCTAssertFalse(app.buttons["home.banner.next"].exists)
         app.tabBars.buttons["首页"].tap()
         imageMetrics(app, "图片请求：3；取消：0；首页读取：5")
-        XCTAssertTrue(app.staticTexts["home.section.banner.title"].exists)
+        XCTAssertFalse(app.staticTexts["home.section.banner.title"].exists)
         XCTAssertFalse(app.staticTexts["home.banner.page"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["home.banner.current.910001"].exists)
     }
@@ -1181,5 +1190,122 @@ extension HomeLoadTests {
         XCTAssertTrue(app.staticTexts["home.unavailable"].waitForExistence(timeout: 2))
         imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
         bannerPage(app, 1)
+    }
+}
+
+extension HomeLoadTests {
+    @MainActor private func assertApprovedHomeDisplay(accessibility: Bool) {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-home-fixture", "valid"]
+        if accessibility {
+            app.launchArguments += [
+                "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+            ]
+        }
+        app.launch()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
+        if accessibility {
+            let traits = UITraitCollection(
+                preferredContentSizeCategory: .accessibilityExtraExtraExtraLarge)
+            let small = UIFontMetrics(forTextStyle: .caption1).scaledValue(
+                for: 12, compatibleWith: traits)
+            let amount = UIFontMetrics(forTextStyle: .headline).scaledValue(
+                for: 18, compatibleWith: traits)
+            let subtitle = UIFontMetrics(forTextStyle: .caption2).scaledValue(
+                for: 11, compatibleWith: traits)
+            let amountWidth =
+                ("¥.00" as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: small)])
+                .width
+                + ("4,999" as NSString).size(withAttributes: [
+                    .font: UIFont.boldSystemFont(ofSize: amount)
+                ]).width
+            let soldWidth = ("已售2101件" as NSString).size(withAttributes: [
+                .font: UIFont.systemFont(ofSize: subtitle)
+            ]).width
+            print(
+                "AX row typography estimate: amount=\(amountWidth), amount75%=\(amountWidth * 0.75), sold=\(soldWidth), gap=8; original346/borrowed370"
+            )
+        }
+        for key in ["banner", "coupon", "category"] {
+            XCTAssertFalse(app.staticTexts["home.section.\(key).title"].exists)
+        }
+        func reveal(_ element: XCUIElement) {
+            let scroll = app.scrollViews["home.scroll"]
+            for _ in 0..<8 {
+                if element.exists, element.isHittable { return }
+                let frame = scroll.frame
+                let bottom = min(frame.maxY, app.tabBars.firstMatch.frame.minY) - 12
+                scroll.coordinate(withNormalizedOffset: .zero)
+                    .withOffset(CGVector(dx: frame.width / 2, dy: bottom - frame.minY))
+                    .press(
+                        forDuration: 0.05,
+                        thenDragTo: scroll.coordinate(withNormalizedOffset: .zero)
+                            .withOffset(CGVector(dx: frame.width / 2, dy: 40)))
+            }
+            XCTAssertTrue(element.isHittable)
+        }
+        func capture(_ name: String) {
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "home-display-\(accessibility ? "AX" : "normal")-\(name)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        let coupon = app.staticTexts["home.coupon.860001.title"]
+        reveal(coupon)
+        let claim = app.staticTexts["home.coupon.860001.claim"]
+        XCTAssertTrue(claim.isHittable)
+        XCTAssertLessThan(coupon.frame.maxX, claim.frame.minX)
+        XCTAssertTrue(coupon.frame.minY < claim.frame.maxY && claim.frame.minY < coupon.frame.maxY)
+        XCTAssertFalse(coupon.label.isEmpty)
+        capture("coupon")
+        if !accessibility {
+            reveal(app.staticTexts["home.flashSale.830001.title"])
+            XCTAssertFalse(app.staticTexts["home.flashSale.830001.sold"].exists)
+            capture("featured")
+        }
+        let rows =
+            accessibility
+            ? [
+                ("recommend", "830009", "2101"), ("recommend", "830010", "4683"),
+                ("goods", "1", "459"),
+            ]
+            : [("recommend", "830009", "2101"), ("goods", "1", "459")]
+        for (key, id, sold) in rows {
+            let price = app.staticTexts["home.\(key).\(id).price"]
+            let count = app.staticTexts["home.\(key).\(id).sold"]
+            reveal(count)
+            if accessibility, id == "830010" {
+                let scroll = app.scrollViews["home.scroll"]
+                let frame = scroll.frame
+                let bottom = min(frame.maxY, app.tabBars.firstMatch.frame.minY) - 24
+                let excess = max(price.frame.maxY, count.frame.maxY) - bottom
+                if excess > 0 {
+                    let start = CGPoint(x: frame.width / 2, y: bottom - frame.minY)
+                    let distance = min(excess + 24, start.y - 40)
+                    scroll.coordinate(withNormalizedOffset: .zero)
+                        .withOffset(CGVector(dx: start.x, dy: start.y))
+                        .press(
+                            forDuration: 0.05,
+                            thenDragTo: scroll.coordinate(withNormalizedOffset: .zero)
+                                .withOffset(CGVector(dx: start.x, dy: start.y - distance)))
+                }
+                XCTAssertLessThanOrEqual(max(price.frame.maxY, count.frame.maxY), bottom)
+            }
+            XCTAssertTrue(price.isHittable)
+            XCTAssertEqual(count.label, "已售\(sold)件")
+            print("Home display \(key) amount frame=\(price.frame), sold frame=\(count.frame)")
+            XCTAssertLessThanOrEqual(price.frame.maxX, count.frame.minX)
+            XCTAssertTrue(
+                price.frame.minY < count.frame.maxY && count.frame.minY < price.frame.maxY,
+                "price and actual sold count must share one row")
+            capture(id == "830010" ? "recommend-4683" : key)
+        }
+    }
+    @MainActor func testApprovedHomeDisplayAtNormalSize() {
+        assertApprovedHomeDisplay(accessibility: false)
+    }
+    @MainActor func testApprovedHomeDisplayAtAccessibilitySize() {
+        assertApprovedHomeDisplay(accessibility: true)
     }
 }

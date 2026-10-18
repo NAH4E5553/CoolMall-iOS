@@ -7,6 +7,7 @@ struct HomeProductSectionsView: View {
     let pipeline: MallImagePipeline?
     let isActive: Bool
     let action: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .body) private var featuredWidth = 120.0
     var body: some View {
@@ -24,6 +25,8 @@ struct HomeProductSectionsView: View {
                         }
                     }
                 }
+                .padding(.vertical, 12)
+                .background(surface, in: RoundedRectangle(cornerRadius: 12))
             }
             if !snapshot.recommendations.isEmpty {
                 HomeSectionView(title: "推荐商品", key: "recommend") {
@@ -55,6 +58,8 @@ struct HomeProductSectionsView: View {
             }
         }
     }
+    private var surface: Color { colorScheme == .dark ? Color(white: 0.12) : .white }
+
     private func card(_ product: HomeProductSummary, key: String, role: HomeProductCardView.Role)
         -> some View
     {

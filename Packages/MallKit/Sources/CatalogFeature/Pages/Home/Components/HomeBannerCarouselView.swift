@@ -49,8 +49,6 @@ struct HomeBannerCarouselView: View {
     var body: some View {
         if !banners.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Text("轮播").font(.headline)
-                    .accessibilityIdentifier("home.section.banner.title")
                 Color.clear.aspectRatio(2, contentMode: .fit)
                     .overlay {
                         GeometryReader { geometry in

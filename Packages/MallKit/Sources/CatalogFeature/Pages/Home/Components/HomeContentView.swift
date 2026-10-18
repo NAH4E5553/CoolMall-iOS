@@ -19,7 +19,6 @@ struct HomeContentView: View {
             }
             if !snapshot.coupons.isEmpty {
                 HomeCouponSectionView(coupons: snapshot.coupons, action: onUnavailableAction)
-                    .padding(.vertical, 12)
                     .background(surface, in: RoundedRectangle(cornerRadius: 12))
             }
             if !snapshot.categories.isEmpty {

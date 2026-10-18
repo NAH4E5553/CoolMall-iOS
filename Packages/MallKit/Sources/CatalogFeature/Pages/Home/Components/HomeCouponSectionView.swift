@@ -4,23 +4,28 @@ import SwiftUI
 struct HomeCouponSectionView: View {
     let coupons: [HomeCouponSummary]
     let action: () -> Void
-    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
-        HomeSectionView(title: "优惠券", key: "coupon") {
+        HomeSectionView(title: nil, key: "coupon") {
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 12) {
                     ForEach(coupons, id: \.id) { coupon in
                         Button(action: action) {
                             HStack(alignment: .firstTextBaseline, spacing: 12) {
                                 Text(coupon.title).font(.body).foregroundStyle(.primary)
+                                    .lineLimit(1).truncationMode(.tail)
                                     .fixedSize(horizontal: false, vertical: true)
                                     .accessibilityIdentifier("home.coupon.\(coupon.id).title")
                                 Spacer(minLength: 0)
                                 Text("领取").font(.subheadline).fixedSize()
-                            }.padding(12).background(
-                                .quinary, in: RoundedRectangle(cornerRadius: 12))
+                                    .accessibilityIdentifier("home.coupon.\(coupon.id).claim")
+                                    .foregroundStyle(
+                                        Color(red: 1, green: 43.0 / 255, blue: 43.0 / 255))
+                            }
+                            .padding(.horizontal, 12)
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
                         }.buttonStyle(.plain)
-                            .frame(width: typeSize.isAccessibilitySize ? 320 : 260)
+                            .containerRelativeFrame(.horizontal)
                     }
                 }
             }

@@ -71,16 +71,37 @@ struct HomeServiceTests {
         // is 830009/4999 — sections are never mixed.
         #expect(snapshot.featured.first?.id == 830_001)
         #expect(snapshot.featured.first?.priceYuan == Decimal(3999))
+        #expect(snapshot.featured.first?.sold == 306)
         #expect(snapshot.goods.first?.id == 1)
         #expect(snapshot.goods.first?.priceYuan == Decimal(5499))
+        #expect(snapshot.goods.first?.sold == 459)
+        #expect(snapshot.goods.dropFirst().first?.sold == 7)
         #expect(snapshot.recommendations.first?.id == 830_009)
         #expect(snapshot.recommendations.first?.priceYuan == Decimal(4999))
+        #expect(snapshot.recommendations.first?.sold == 2101)
 
         #expect(snapshot.banners.first?.id == 810_001)
         #expect(snapshot.categories.first?.id == 800_001)
         #expect(snapshot.coupons.first?.id == 860_001)
         // Real CDN URLs from the sample are kept as absolute HTTPS.
         #expect(snapshot.banners.first?.imageURL?.scheme == "https")
+    }
+
+    @Test func soldDefaultsOnlyForMissingAndNullAndPreservesInteger() async throws {
+        for (field, expected) in [("", Int64(0)), (",\"sold\":null", 0), (",\"sold\":-7", -7)] {
+            let body =
+                "{\"code\":1000,\"data\":{\"goods\":[{\"id\":1,\"title\":\"Item\",\"price\":10\(field)}]}}"
+            let snapshot = try await Self.service(
+                StubTransport(responses: [Self.ok(Data(body.utf8))])
+            ).loadHome()
+            #expect(snapshot.goods.first?.sold == expected)
+        }
+        let body =
+            #"{"code":1000,"data":{"goods":[{"id":1,"title":"Item","price":10,"sold":"7"}]}}"#
+        await #expect(throws: HomeLoadFailure.invalidPayload) {
+            _ = try await Self.service(StubTransport(responses: [Self.ok(Data(body.utf8))]))
+                .loadHome()
+        }
     }
 
     @Test func invalidConfigurationFailsBeforeAnyRequest() async {

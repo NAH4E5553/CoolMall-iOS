@@ -1,4 +1,3 @@
-import UIKit
 import XCTest
 
 /// HOME-01 UI checks over the DEBUG deterministic home fixture modes
@@ -1205,28 +1204,6 @@ extension HomeLoadTests {
         }
         app.launch()
         XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
-        if accessibility {
-            let traits = UITraitCollection(
-                preferredContentSizeCategory: .accessibilityExtraExtraExtraLarge)
-            let small = UIFontMetrics(forTextStyle: .caption1).scaledValue(
-                for: 12, compatibleWith: traits)
-            let amount = UIFontMetrics(forTextStyle: .headline).scaledValue(
-                for: 18, compatibleWith: traits)
-            let subtitle = UIFontMetrics(forTextStyle: .caption2).scaledValue(
-                for: 11, compatibleWith: traits)
-            let amountWidth =
-                ("¥.00" as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: small)])
-                .width
-                + ("4,999" as NSString).size(withAttributes: [
-                    .font: UIFont.boldSystemFont(ofSize: amount)
-                ]).width
-            let soldWidth = ("已售2101件" as NSString).size(withAttributes: [
-                .font: UIFont.systemFont(ofSize: subtitle)
-            ]).width
-            print(
-                "AX row typography estimate: amount=\(amountWidth), amount75%=\(amountWidth * 0.75), sold=\(soldWidth), gap=8; original346/borrowed370"
-            )
-        }
         for key in ["banner", "coupon", "category"] {
             XCTAssertFalse(app.staticTexts["home.section.\(key).title"].exists)
         }

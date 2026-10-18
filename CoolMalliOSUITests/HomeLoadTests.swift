@@ -672,7 +672,24 @@ extension HomeLoadTests {
     }
 
     @MainActor func testBannerManualPagingBoundariesFailureAndMissing() {
+        continueAfterFailure = false
         let app = bannerApp("banner-multiple")
+        func requireMetrics(_ expected: String) -> Bool {
+            let metrics = app.staticTexts["home.image.metrics"]
+            // Read the live label first: the CI screenshot already showed the
+            // expected counts before the old KVC predicate timed out.
+            if metrics.label != expected {
+                let observed = XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in metrics.label == expected }, object: nil)
+                guard XCTWaiter.wait(for: [observed], timeout: 8) == .completed else {
+                    XCTFail("Expected \(expected); actual \(metrics.label)")
+                    return false
+                }
+            }
+            let actual = metrics.label
+            XCTAssertEqual(actual, expected)
+            return actual == expected
+        }
         revealBanner(app)
         bannerPage(app, 1)
         XCTAssertFalse(app.buttons["home.banner.previous"].isEnabled)
@@ -681,8 +698,8 @@ extension HomeLoadTests {
         app.buttons["home.banner.next"].tap()
         bannerPage(app, 2)
         XCTAssertTrue(imageElement(app, "failure").waitForExistence(timeout: 10))
+        guard requireMetrics("图片请求：2；取消：0；首页读取：1") else { return }
         keepFeedbackScreenshot(app, name: "HOME04-failure-complete")
-        imageMetrics(app, "图片请求：2；取消：0；首页读取：1")
         app.buttons["home.banner.next"].tap()
         bannerPage(app, 3)
         XCTAssertFalse(app.buttons["home.banner.next"].isEnabled)
@@ -692,7 +709,7 @@ extension HomeLoadTests {
         bannerPage(app, 2)
         XCTAssertTrue(imageElement(app, "failure").waitForExistence(timeout: 10))
         // A failed image is not automatically retried by metrics/body changes.
-        imageMetrics(app, "图片请求：3；取消：0；首页读取：1")
+        guard requireMetrics("图片请求：3；取消：0；首页读取：1") else { return }
         let pager = imageElement(app, "failure")
         pager.swipeRight()
         bannerPage(app, 1)
@@ -702,7 +719,30 @@ extension HomeLoadTests {
         XCTAssertEqual(app.staticTexts["home.count.banner"].label, "轮播：3")
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
         let last = app.staticTexts["home.count.categoryAll"]
-        for _ in 0..<12 where !last.isHittable { app.swipeUp(velocity: .fast) }
+        let scrollFrame = app.scrollViews["home.scroll"].frame.intersection(app.frame)
+        let navigationBottom = app.navigationBars.firstMatch.frame.maxY
+        let top = max(scrollFrame.minY, navigationBottom)
+        let bottom = min(scrollFrame.maxY, app.tabBars.firstMatch.frame.minY)
+        XCTAssertFalse(scrollFrame.isNull)
+        XCTAssertGreaterThan(scrollFrame.width, 0)
+        XCTAssertGreaterThan(bottom, top)
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let x = scrollFrame.minX + scrollFrame.width * 0.98
+        let start = origin.withOffset(CGVector(dx: x, dy: top + (bottom - top) * 0.9))
+        let end = origin.withOffset(
+            CGVector(dx: x, dy: top + (bottom - top) * 0.1))
+        // Exercise a real vertical gesture beside the pager, even if the
+        // auxiliary row is already visible. Stop if the content cannot move.
+        var before = last.frame.minY
+        for index in 0..<3 {
+            start.press(
+                forDuration: 0.01, thenDragTo: end, withVelocity: 10_000,
+                thenHoldForDuration: 0)
+            let after = last.frame.minY
+            print("HOME04 vertical drag \(index + 1): rowY=\(before)→\(after)")
+            if last.isHittable || after >= before - 1 { break }
+            before = after
+        }
         XCTAssertTrue(last.isHittable)
     }
 

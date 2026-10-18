@@ -965,26 +965,87 @@ extension HomeLoadTests {
 
 extension HomeLoadTests {
     @MainActor func testBannerSelectedPageSurvivesBusyRetapsAndCancelledRefresh() {
+        continueAfterFailure = false
         let app = bannerApp("banner-pending")
+        let aged = app.staticTexts["home.image.pending-aged"]
+        let began = Date()
+        if !aged.exists {
+            let remaining = max(0, 10 - Date().timeIntervalSince(began))
+            let settledHUD = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in aged.exists }, object: nil)
+            guard remaining > 0,
+                XCTWaiter.wait(for: [settledHUD], timeout: remaining) == .completed
+            else {
+                XCTFail("pending-age HUD did not settle within its 10-second precondition")
+                return
+            }
+        }
+        print("busy HUD aged after \(Date().timeIntervalSince(began)) seconds")
+        func requirePage2() -> Bool {
+            let page = app.staticTexts["home.banner.page"]
+            let expected = "第2张，共3张"
+            let began = Date()
+            var actual = page.label
+            if actual != expected {
+                let remaining = max(0, 8 - Date().timeIntervalSince(began))
+                let selected = XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in
+                        let value = page.label
+                        if value != actual { print("busy page \(actual)→\(value)") }
+                        actual = value
+                        return value == expected
+                    }, object: nil)
+                guard remaining > 0,
+                    XCTWaiter.wait(for: [selected], timeout: remaining) == .completed
+                else {
+                    keepFeedbackScreenshot(app, name: "busy-page-precondition-failure")
+                    XCTFail("Expected \(expected); actual \(actual)")
+                    return false
+                }
+            }
+            let finalActual = page.label
+            XCTAssertEqual(finalActual, expected)
+            return finalActual == expected
+        }
         revealBanner(app)
-        app.buttons["home.banner.next"].tap()
-        bannerPage(app, 2)
-        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        // The age marker inserts a DEBUG HUD row. Resolve the button only
+        // after that known layout transition; keep one original native tap.
+        let next = app.buttons["home.banner.next"]
+        let frame = next.frame
+        let scroll = app.scrollViews["home.scroll"].frame.intersection(app.frame)
+        let top = max(scroll.minY, app.navigationBars.firstMatch.frame.maxY)
+        let bottom = min(scroll.maxY, app.tabBars.firstMatch.frame.minY)
+        let viewport = CGRect(x: scroll.minX, y: top, width: scroll.width, height: bottom - top)
+        XCTAssertEqual(app.staticTexts["home.banner.page"].label, "第1张，共3张")
+        XCTAssertEqual(
+            app.staticTexts["home.image.metrics"].label, "图片请求：1；取消：0；首页读取：1")
+        XCTAssertTrue(next.isEnabled)
+        XCTAssertTrue(next.isHittable)
+        XCTAssertGreaterThan(frame.width, 0)
+        XCTAssertTrue(
+            viewport.contains(frame), "next button must be completely inside the viewport")
+        XCTAssertEqual(next.frame.minY, frame.minY, accuracy: 1, "initial button must be settled")
+        print("busy settled next=\(frame), viewport=\(viewport)")
+        next.tap()
+        guard requirePage2() else { return }
+        let success = imageElement(app, "success")
+        XCTAssertTrue(success.exists || success.waitForExistence(timeout: 10))
         app.tabBars.buttons["首页"].tap()
-        XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 10))
+        let refreshing = app.staticTexts["home.refreshing"]
+        XCTAssertTrue(refreshing.exists || refreshing.waitForExistence(timeout: 10))
         for _ in 0..<3 { app.tabBars.buttons["首页"].tap() }
         imageMetrics(app, "图片请求：2；取消：1；首页读取：2")
-        bannerPage(app, 2)
+        guard requirePage2() else { return }
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
         app.tabBars.buttons["分类"].tap()
         app.tabBars.buttons["首页"].tap()
         XCTAssertFalse(app.staticTexts["home.refreshing"].waitForExistence(timeout: 1.5))
         imageMetrics(app, "图片请求：2；取消：1；首页读取：2")
-        bannerPage(app, 2)
+        guard requirePage2() else { return }
         app.tabBars.buttons["首页"].tap()
-        XCTAssertTrue(app.staticTexts["home.refreshing"].waitForExistence(timeout: 10))
+        XCTAssertTrue(refreshing.exists || refreshing.waitForExistence(timeout: 10))
         imageMetrics(app, "图片请求：2；取消：1；首页读取：3")
-        bannerPage(app, 2)
+        guard requirePage2() else { return }
     }
 }
 

@@ -704,6 +704,43 @@ extension HomeLoadTests {
     @MainActor func testBannerManualPagingBoundariesFailureAndMissing() {
         continueAfterFailure = false
         let app = bannerApp("banner-multiple")
+        func observeImageState(_ state: String) -> Bool {
+            let began = Date()
+            let element = imageElement(app, state)
+            let present = element.exists
+            print(
+                "banner image \(state): first exists=\(present), elapsed=\(Date().timeIntervalSince(began))"
+            )
+            if !present {
+                // Diagnose a role mismatch once; an Any match never substitutes
+                // for the original state locator's success requirement.
+                let sameID = app.descendants(matching: .any)["home.image.\(state)"].firstMatch
+                if sameID.exists {
+                    print("banner image \(state): same-ID role=\(sameID.elementType.rawValue)")
+                } else {
+                    print("banner image \(state): same-ID absent")
+                }
+                // Include the first read and diagnostic lookup in the original
+                // ten-second observation budget. An AX getter can itself block.
+                let remaining = max(0, 10 - Date().timeIntervalSince(began))
+                guard remaining > 0 else {
+                    XCTFail("home.image.\(state) absent after first observation budget")
+                    return false
+                }
+                let observed = XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in element.exists }, object: nil)
+                let result = XCTWaiter.wait(for: [observed], timeout: remaining)
+                print(
+                    "banner image \(state): wait=\(result.rawValue), elapsed=\(Date().timeIntervalSince(began))"
+                )
+                guard result == .completed else {
+                    XCTFail("home.image.\(state) did not appear within its observation budget")
+                    return false
+                }
+            }
+            print("banner image \(state): observed role=\(element.elementType.rawValue)")
+            return true
+        }
         func requireMetrics(_ expected: String) -> Bool {
             let metrics = app.staticTexts["home.image.metrics"]
             // Read the live label first: the CI screenshot already showed the
@@ -723,11 +760,11 @@ extension HomeLoadTests {
         revealBanner(app)
         bannerPage(app, 1)
         XCTAssertFalse(app.buttons["home.banner.previous"].isEnabled)
-        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        guard observeImageState("success") else { return }
         keepFeedbackScreenshot(app, name: "HOME04-success-complete")
         app.buttons["home.banner.next"].tap()
         bannerPage(app, 2)
-        XCTAssertTrue(imageElement(app, "failure").waitForExistence(timeout: 10))
+        guard observeImageState("failure") else { return }
         guard requireMetrics("图片请求：2；取消：0；首页读取：1") else { return }
         keepFeedbackScreenshot(app, name: "HOME04-failure-complete")
         app.buttons["home.banner.next"].tap()
@@ -737,13 +774,13 @@ extension HomeLoadTests {
         keepFeedbackScreenshot(app, name: "HOME04-missing-complete")
         app.buttons["home.banner.previous"].tap()
         bannerPage(app, 2)
-        XCTAssertTrue(imageElement(app, "failure").waitForExistence(timeout: 10))
+        guard observeImageState("failure") else { return }
         // A failed image is not automatically retried by metrics/body changes.
         guard requireMetrics("图片请求：3；取消：0；首页读取：1") else { return }
         let pager = imageElement(app, "failure")
         pager.swipeRight()
         bannerPage(app, 1)
-        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        guard observeImageState("success") else { return }
         imageElement(app, "success").swipeLeft()
         bannerPage(app, 2)
         XCTAssertEqual(app.staticTexts["home.count.banner"].label, "轮播：3")
@@ -818,20 +855,58 @@ extension HomeLoadTests {
     }
 
     @MainActor func testBannerPendingPageCancellationAndTabRetention() {
+        continueAfterFailure = false
         let app = bannerApp("banner-pending")
+        func observeImageState(_ state: String) -> Bool {
+            let began = Date()
+            let element = imageElement(app, state)
+            let present = element.exists
+            print(
+                "banner image \(state): first exists=\(present), elapsed=\(Date().timeIntervalSince(began))"
+            )
+            if !present {
+                // Diagnose a role mismatch once; an Any match never substitutes
+                // for the original state locator's success requirement.
+                let sameID = app.descendants(matching: .any)["home.image.\(state)"].firstMatch
+                if sameID.exists {
+                    print("banner image \(state): same-ID role=\(sameID.elementType.rawValue)")
+                } else {
+                    print("banner image \(state): same-ID absent")
+                }
+                // Include the first read and diagnostic lookup in the original
+                // ten-second observation budget. An AX getter can itself block.
+                let remaining = max(0, 10 - Date().timeIntervalSince(began))
+                guard remaining > 0 else {
+                    XCTFail("home.image.\(state) absent after first observation budget")
+                    return false
+                }
+                let observed = XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in element.exists }, object: nil)
+                let result = XCTWaiter.wait(for: [observed], timeout: remaining)
+                print(
+                    "banner image \(state): wait=\(result.rawValue), elapsed=\(Date().timeIntervalSince(began))"
+                )
+                guard result == .completed else {
+                    XCTFail("home.image.\(state) did not appear within its observation budget")
+                    return false
+                }
+            }
+            print("banner image \(state): observed role=\(element.elementType.rawValue)")
+            return true
+        }
         revealBanner(app)
-        XCTAssertTrue(imageElement(app, "loading").waitForExistence(timeout: 10))
+        guard observeImageState("loading") else { return }
         imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
         keepFeedbackScreenshot(app, name: "HOME04-loading-complete")
         app.buttons["home.banner.next"].tap()
         bannerPage(app, 2)
-        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        guard observeImageState("success") else { return }
         imageMetrics(app, "图片请求：2；取消：1；首页读取：1")
         XCTAssertFalse(imageElement(app, "loading").exists)
         keepFeedbackScreenshot(app, name: "HOME04-B-after-late-A")
         app.buttons["home.banner.previous"].tap()
         bannerPage(app, 1)
-        XCTAssertTrue(imageElement(app, "loading").waitForExistence(timeout: 10))
+        guard observeImageState("loading") else { return }
         app.tabBars.buttons["分类"].tap()
         app.tabBars.buttons["首页"].tap()
         bannerPage(app, 1)

@@ -1230,7 +1230,7 @@ extension HomeLoadTests {
         }
         let coupon = app.staticTexts["home.coupon.860001.title"]
         reveal(coupon)
-        let claim = app.staticTexts["home.coupon.860001.claim"]
+        let claim = app.buttons["home.coupon.860001.claim"]
         XCTAssertTrue(claim.isHittable)
         XCTAssertLessThan(coupon.frame.maxX, claim.frame.minX)
         XCTAssertTrue(coupon.frame.minY < claim.frame.maxY && claim.frame.minY < coupon.frame.maxY)
@@ -1284,5 +1284,110 @@ extension HomeLoadTests {
     }
     @MainActor func testApprovedHomeDisplayAtAccessibilitySize() {
         assertApprovedHomeDisplay(accessibility: true)
+    }
+}
+
+extension HomeLoadTests {
+    @MainActor private func assertCouponAndFeatured(accessibility: Bool) {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-home-fixture", "valid"]
+        if accessibility {
+            app.launchArguments += [
+                "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+            ]
+        }
+        app.launch()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
+        for key in ["banner", "coupon", "category"] {
+            XCTAssertFalse(app.staticTexts["home.section.\(key).title"].exists)
+        }
+        func reveal(_ element: XCUIElement) {
+            let scroll = app.scrollViews["home.scroll"]
+            for _ in 0..<8 {
+                if element.exists, element.isHittable { return }
+                let frame = scroll.frame
+                let bottom = min(frame.maxY, app.tabBars.firstMatch.frame.minY) - 12
+                scroll.coordinate(withNormalizedOffset: .zero)
+                    .withOffset(CGVector(dx: frame.width / 2, dy: bottom - frame.minY))
+                    .press(
+                        forDuration: 0.05,
+                        thenDragTo: scroll.coordinate(withNormalizedOffset: .zero)
+                            .withOffset(CGVector(dx: frame.width / 2, dy: 40)))
+            }
+            XCTAssertTrue(element.isHittable)
+        }
+        func capture(_ name: String) {
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "home-coupon-featured-\(accessibility ? "AX" : "normal")-\(name)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        let coupon = app.staticTexts["home.coupon.860001.title"]
+        reveal(coupon)
+        let claim = app.buttons["home.coupon.860001.claim"]
+        XCTAssertTrue(claim.isHittable)
+        XCTAssertGreaterThanOrEqual(claim.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(claim.frame.height, 44)
+        XCTAssertLessThan(coupon.frame.maxX, claim.frame.minX)
+        XCTAssertTrue(coupon.frame.minY < claim.frame.maxY && claim.frame.minY < coupon.frame.maxY)
+        XCTAssertFalse(coupon.label.isEmpty)
+        let claimFrame = claim.frame
+        coupon.swipeLeft()
+        let nextClaim = app.buttons["home.coupon.860002.claim"]
+        XCTAssertTrue(nextClaim.waitForExistence(timeout: 8))
+        XCTAssertEqual(nextClaim.frame.minX, claimFrame.minX, accuracy: 1)
+        XCTAssertEqual(nextClaim.frame.minY, claimFrame.minY, accuracy: 1)
+        XCTAssertTrue(nextClaim.label.contains("小米家电"))
+        capture("coupon-current-second")
+        nextClaim.tap()
+        XCTAssertTrue(app.staticTexts["home.unavailable"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["home.loaded"].exists)
+        XCTAssertEqual(app.staticTexts["home.count.coupon"].label, "优惠券：3")
+        app.tabBars.buttons["分类"].tap()
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 5))
+        XCTAssertTrue(nextClaim.exists)
+        XCTAssertEqual(nextClaim.frame.minX, claimFrame.minX, accuracy: 1)
+        XCTAssertEqual(nextClaim.frame.minY, claimFrame.minY, accuracy: 1)
+        app.staticTexts["home.coupon.860002.title"].swipeRight()
+        XCTAssertTrue(claim.waitForExistence(timeout: 8))
+        capture("coupon")
+        reveal(app.staticTexts["home.flashSale.830001.title"])
+        XCTAssertFalse(app.staticTexts["home.flashSale.830001.sold"].exists)
+        // Align the actual section top inside the real viewport so all four
+        // white-container insets can be reviewed, including at AX sizes.
+        let homeScroll = app.scrollViews["home.scroll"]
+        let sectionHeader = app.staticTexts["home.section.flashSale.title"]
+        for _ in 0..<2 {
+            let viewport = homeScroll.frame
+            let top = viewport.minY + 12
+            let bottom = min(viewport.maxY, app.tabBars.firstMatch.frame.minY) - 12
+            let delta = sectionHeader.frame.minY - 12 - top
+            if abs(delta) <= 2 { break }
+            let startY = delta > 0 ? bottom - 20 : top + 20
+            let distance = min(abs(delta), (bottom - top) * 0.8)
+            let endY = startY + (delta > 0 ? -distance : distance)
+            let origin = homeScroll.coordinate(withNormalizedOffset: .zero)
+            origin.withOffset(CGVector(dx: viewport.width * 0.98, dy: startY - viewport.minY))
+                .press(
+                    forDuration: 0.05,
+                    thenDragTo: origin.withOffset(
+                        CGVector(dx: viewport.width * 0.98, dy: endY - viewport.minY)),
+                    withVelocity: 500, thenHoldForDuration: 0.2)
+        }
+        capture("featured")
+        let firstFeatured = app.buttons["home.flashSale.830001.card"]
+        let initialFeaturedX = firstFeatured.frame.minX
+        app.scrollViews["home.flashSale.items"].swipeLeft()
+        XCTAssertLessThan(firstFeatured.frame.minX, initialFeaturedX)
+        XCTAssertEqual(app.staticTexts["home.count.flashSale"].label, "限时精选：8")
+        capture("featured-scrolled")
+    }
+    @MainActor func testCouponAndFeaturedAtNormalSize() {
+        assertCouponAndFeatured(accessibility: false)
+    }
+    @MainActor func testCouponAndFeaturedAtAccessibilitySize() {
+        assertCouponAndFeatured(accessibility: true)
     }
 }

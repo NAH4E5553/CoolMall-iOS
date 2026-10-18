@@ -24,8 +24,9 @@ struct HomeProductSectionsView: View {
                             }
                         }
                     }
+                    .accessibilityIdentifier("home.flashSale.items")
                 }
-                .padding(.vertical, 12)
+                .padding(12)
                 .background(surface, in: RoundedRectangle(cornerRadius: 12))
             }
             if !snapshot.recommendations.isEmpty {

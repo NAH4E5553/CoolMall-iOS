@@ -180,19 +180,9 @@ struct RootView: View {
                 onUnavailableAction: showUnavailable
             )
         }
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button("CoolMall", action: showUnavailable).accessibilityIdentifier("home.about")
-            }
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button(action: showUnavailable) {
-                    Image(systemName: "chevron.left.forwardslash.chevron.right")
-                }
-                .accessibilityLabel("项目").accessibilityIdentifier("home.project")
-            }
-        }
-        .toolbarBackground(.visible, for: .navigationBar, .tabBar)
-        .toolbarBackground(.regularMaterial, for: .navigationBar, .tabBar)
+        .toolbar(.hidden, for: .navigationBar)
+        .toolbarBackground(.visible, for: .tabBar)
+        .toolbarBackground(.regularMaterial, for: .tabBar)
         .overlay(alignment: .bottom) {
             if unavailableNotice != nil {
                 Text("暂未开放").font(.body).padding(12)
@@ -221,6 +211,7 @@ struct RootView: View {
         case .cart:
             CartEntryView(cart: dependencies.cart)
                 .toolbar(.hidden, for: .tabBar)
+                .toolbar(.visible, for: .navigationBar)
         case .productDetail(let goodsID):
             // The cart intent from a detail pushes onto the SAME stack, so back
             // restores this detail (same goodsId, same page identity) without
@@ -230,9 +221,11 @@ struct RootView: View {
                 openCart: { router.append(.cart, on: tab) }
             )
             .toolbar(.hidden, for: .tabBar)
+            .toolbar(.visible, for: .navigationBar)
         case .fixturePathProbe(let label):
             FixturePathProbeView(label: label)
                 .toolbar(.hidden, for: .tabBar)
+                .toolbar(.visible, for: .navigationBar)
         }
     }
 }

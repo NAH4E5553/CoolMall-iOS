@@ -22,6 +22,40 @@ final class HomeLoadTests: XCTestCase {
         XCTAssertTrue(app.tabBars.buttons["首页"].exists)
     }
 
+    /// A seeded route tests the real home root's navigation appearance;
+    /// this is controlled structure evidence, not a new product route.
+    @MainActor func testHomeTopRowRemovedAndPushedRouteBackRestoresRoot() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "--ui-home-fixture", "valid", "--uitest-nav-control", "--uitest-nav-paths", "home=cart",
+        ]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.navigationBars.firstMatch.exists)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.navigationBars.firstMatch.exists)
+        XCTAssertFalse(app.buttons["home.about"].exists)
+        XCTAssertFalse(app.buttons["home.project"].exists)
+        let search = app.buttons["home.search"]
+        XCTAssertTrue(search.isHittable)
+        XCTAssertEqual(
+            search.frame.minY, app.staticTexts["home.source"].frame.maxY + 4, accuracy: 1,
+            "search follows the existing source marker without a navigation row")
+        keepFeedbackScreenshot(app, name: "HOME-top-row-removed-after-back")
+        app.buttons["navctl.select.category"].tap()
+        XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars.firstMatch.exists)
+        app.buttons["navctl.select.home"].tap()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.navigationBars.firstMatch.exists)
+        XCTAssertFalse(app.buttons["home.about"].exists)
+        XCTAssertFalse(app.buttons["home.project"].exists)
+        XCTAssertTrue(search.isHittable)
+        keepFeedbackScreenshot(app, name: "HOME-top-row-removed-after-controlled-tab-return")
+    }
+
     @MainActor func testEmptyFixtureShowsCountsAndRetryStaysEmpty() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-home-fixture", "empty"]
@@ -90,8 +124,7 @@ final class HomeLoadTests: XCTestCase {
         if row.exists && row.isHittable { return }
         let scroll = app.scrollViews["home.scroll"]
         let frame = scroll.frame.intersection(app.frame)
-        let navigationBottom = app.navigationBars.firstMatch.frame.maxY
-        let top = max(frame.minY, navigationBottom)
+        let top = frame.minY
         let bottom = min(frame.maxY, app.tabBars.firstMatch.frame.minY)
         guard !frame.isNull, frame.width > 0, bottom > top else {
             XCTFail("home.scroll has no usable vertical viewport: \(frame)")
@@ -106,10 +139,10 @@ final class HomeLoadTests: XCTestCase {
         let x = viewport.minX + viewport.width * 0.98
         let start = origin.withOffset(
             CGVector(dx: x, dy: viewport.minY + viewport.height * 0.9))
-        // Start inside the scroll view, then continue the same touch
-        // below the navigation bar even when the DEBUG viewport is small.
+        // Keep both endpoints inside the actual scroll viewport, including
+        // the DEBUG layout that reserves space above it.
         let end = origin.withOffset(
-            CGVector(dx: x, dy: navigationBottom + viewport.height * 0.1))
+            CGVector(dx: x, dy: viewport.minY + viewport.height * 0.1))
         var before = row.frame.minY
         var stalledDrags = 0
         for index in 0..<maximumDrags {
@@ -321,7 +354,7 @@ extension HomeLoadTests {
         XCTAssertTrue(loaded.exists || loaded.waitForExistence(timeout: 10))
         let lastRow = app.staticTexts["home.count.categoryAll"]
         let scrollFrame = app.scrollViews["home.scroll"].frame.intersection(app.frame)
-        let top = max(scrollFrame.minY, app.navigationBars.firstMatch.frame.maxY)
+        let top = scrollFrame.minY
         let bottom = min(scrollFrame.maxY, app.tabBars.firstMatch.frame.minY)
         XCTAssertFalse(scrollFrame.isNull)
         XCTAssertGreaterThan(scrollFrame.width, 0)
@@ -405,13 +438,11 @@ extension HomeLoadTests {
         waitForExpectations(timeout: 10)
         XCTAssertTrue(bannerTitle.isHittable, "the first section must be back on screen")
         let scrollToTopMinY = bannerTitle.frame.minY
-        // The scrollTo anchor alignment sits slightly above the fully
-        // expanded large-title resting position (bar/inset dependent — ~68pt
-        // at large, ~101pt at AX), so only a loose bound is asserted here;
-        // the deterministic assertions are the banner visibility and the
-        // second re-tap landing on the SAME position.
+        // Bound the anchor against the real scroll viewport. The precise
+        // assertions remain visibility and the second re-tap landing on the
+        // SAME position.
         XCTAssertGreaterThan(
-            scrollToTopMinY, app.navigationBars.firstMatch.frame.maxY - 160,
+            scrollToTopMinY, app.scrollViews["home.scroll"].frame.minY - 160,
             "re-tap must land near the resting (top) position")
         // Real re-tap #2 while ALREADY AT TOP (AT: 停在顶部再按→C): a re-tap
         // at the top also refreshes, and the position stays put.
@@ -787,8 +818,7 @@ extension HomeLoadTests {
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
         let last = app.staticTexts["home.count.categoryAll"]
         let scrollFrame = app.scrollViews["home.scroll"].frame.intersection(app.frame)
-        let navigationBottom = app.navigationBars.firstMatch.frame.maxY
-        let top = max(scrollFrame.minY, navigationBottom)
+        let top = scrollFrame.minY
         let bottom = min(scrollFrame.maxY, app.tabBars.firstMatch.frame.minY)
         XCTAssertFalse(scrollFrame.isNull)
         XCTAssertGreaterThan(scrollFrame.width, 0)
@@ -1013,7 +1043,7 @@ extension HomeLoadTests {
         let next = app.buttons["home.banner.next"]
         let frame = next.frame
         let scroll = app.scrollViews["home.scroll"].frame.intersection(app.frame)
-        let top = max(scroll.minY, app.navigationBars.firstMatch.frame.maxY)
+        let top = scroll.minY
         let bottom = min(scroll.maxY, app.tabBars.firstMatch.frame.minY)
         let viewport = CGRect(x: scroll.minX, y: top, width: scroll.width, height: bottom - top)
         XCTAssertEqual(app.staticTexts["home.banner.page"].label, "第1张，共3张")

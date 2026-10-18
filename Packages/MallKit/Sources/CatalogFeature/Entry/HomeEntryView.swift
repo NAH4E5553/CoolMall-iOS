@@ -107,8 +107,6 @@ public struct HomeEntryView: View {
                     transaction.scrollContentOffsetAdjustmentBehavior = .disabled
                 }
             }
-            .navigationTitle("首页")
-            .navigationBarTitleDisplayMode(.inline)
             .background(Color(white: colorScheme == .dark ? 0.06 : 0.95))
             .simultaneousGesture(
                 DragGesture(minimumDistance: 1).updating($isPullDragging) { _, dragging, _ in

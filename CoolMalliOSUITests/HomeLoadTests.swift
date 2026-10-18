@@ -799,6 +799,10 @@ extension HomeLoadTests {
     @MainActor func testBannerFastPageRoundTripsAreBounded() {
         let app = bannerApp("banner-pending")
         revealBanner(app)
+        // The final totals include the initial A subscription, not just page selection.
+        print("Initial banner sources: \(app.staticTexts["home.image.urlMetrics"].label)")
+        XCTAssertTrue(imageElement(app, "loading").waitForExistence(timeout: 10))
+        imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
         for _ in 0..<5 {
             app.buttons["home.banner.next"].tap()
             app.buttons["home.banner.previous"].tap()

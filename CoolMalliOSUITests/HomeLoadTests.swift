@@ -313,31 +313,56 @@ extension HomeLoadTests {
     /// same viewport position after every round trip, which holds whether or
     /// not the content fits a single screen.
     @MainActor func testScrollPositionAndContentRetainedAcrossTabRoundTrips() {
+        continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments += ["--ui-home-fixture", "valid"]
         app.launch()
-        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
+        let loaded = app.staticTexts["home.loaded"]
+        XCTAssertTrue(loaded.exists || loaded.waitForExistence(timeout: 10))
         let lastRow = app.staticTexts["home.count.categoryAll"]
-        for _ in 0..<8 {
-            if lastRow.exists, lastRow.isHittable { break }
-            app.swipeUp(velocity: .fast)
-            usleep(500_000)
+        let scrollFrame = app.scrollViews["home.scroll"].frame.intersection(app.frame)
+        let top = max(scrollFrame.minY, app.navigationBars.firstMatch.frame.maxY)
+        let bottom = min(scrollFrame.maxY, app.tabBars.firstMatch.frame.minY)
+        XCTAssertFalse(scrollFrame.isNull)
+        XCTAssertGreaterThan(scrollFrame.width, 0)
+        XCTAssertGreaterThan(bottom, top)
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let x = scrollFrame.minX + scrollFrame.width * 0.98
+        let start = origin.withOffset(CGVector(dx: x, dy: top + (bottom - top) * 0.9))
+        let end = origin.withOffset(CGVector(dx: x, dy: top + (bottom - top) * 0.1))
+        var before = lastRow.frame.minY
+        for index in 0..<3 {
+            if lastRow.isHittable { break }
+            start.press(
+                forDuration: 0.01, thenDragTo: end, withVelocity: 10_000,
+                thenHoldForDuration: 0)
+            let after = lastRow.frame.minY
+            print("retention vertical drag \(index + 1): rowY=\(before)→\(after)")
+            if after >= before - 1 { break }
+            before = after
         }
         XCTAssertTrue(lastRow.isHittable, "auxiliary last row must be reachable by scrolling")
-        // Let the scroll settle before recording the reference position.
-        usleep(600_000)
+        // The gesture waits for idle. Confirm two consecutive initial samples
+        // are stable before fixing the reference; never wait for it on return.
         let referenceMinY = lastRow.frame.minY
+        XCTAssertEqual(
+            lastRow.frame.minY, referenceMinY, accuracy: 1, "initial row must be settled")
         let bannerLabelBefore = app.staticTexts["home.count.banner"].label
 
         for round in 1...2 {
-            app.tabBars.buttons["分类"].tap()
-            usleep(700_000)
-            app.tabBars.buttons["首页"].tap()
-            XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 5))
-            app.tabBars.buttons["购物车"].tap()
-            usleep(700_000)
-            app.tabBars.buttons["首页"].tap()
-            XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 5))
+            let category = app.tabBars.buttons["分类"]
+            category.tap()
+            XCTAssertTrue(category.isSelected)
+            let home = app.tabBars.buttons["首页"]
+            home.tap()
+            XCTAssertTrue(home.isSelected)
+            XCTAssertTrue(loaded.exists || loaded.waitForExistence(timeout: 5))
+            let cart = app.tabBars.buttons["购物车"]
+            cart.tap()
+            XCTAssertTrue(cart.isSelected)
+            home.tap()
+            XCTAssertTrue(home.isSelected)
+            XCTAssertTrue(loaded.exists || loaded.waitForExistence(timeout: 5))
             XCTAssertTrue(lastRow.isHittable, "last row must stay reachable after round \(round)")
             XCTAssertEqual(
                 lastRow.frame.minY, referenceMinY, accuracy: 1,
@@ -514,18 +539,23 @@ extension HomeLoadTests {
     }
 
     @MainActor func testImageSuccessAndTabReturnUseOneCachedRequest() {
+        continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments += ["--ui-home-fixture", "image-success"]
         app.launch()
-        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        let loaded = app.staticTexts["home.loaded"]
+        XCTAssertTrue(loaded.exists || loaded.waitForExistence(timeout: 10))
+        let success = app.buttons["home.image.success"].firstMatch
+        XCTAssertTrue(success.exists || success.waitForExistence(timeout: 10))
         imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
-        let frame = imageElement(app, "success").frame
+        let frame = success.frame
         XCTAssertGreaterThan(frame.width, 0)
         XCTAssertEqual(frame.width / frame.height, 2, accuracy: 0.02)
         keepFeedbackScreenshot(app, name: "IMAGE01-success")
         app.tabBars.buttons["分类"].tap()
         app.tabBars.buttons["首页"].tap()
-        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 8))
+        XCTAssertTrue(loaded.exists || loaded.waitForExistence(timeout: 8))
+        XCTAssertTrue(success.exists || success.waitForExistence(timeout: 8))
         imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
         XCTAssertEqual(app.staticTexts["home.count.banner"].label, "轮播：6")
     }

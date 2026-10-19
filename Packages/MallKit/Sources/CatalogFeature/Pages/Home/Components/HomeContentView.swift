@@ -7,6 +7,9 @@ struct HomeContentView: View {
     let snapshot: HomeSnapshot
     var imagePipeline: MallImagePipeline? = nil
     var isActive = true
+    var allowsBannerAutoplay = true
+    var bannerViewport = CGRect.zero
+    var isUserDragging = false
     @Environment(\.colorScheme) private var colorScheme
     var onUnavailableAction: () -> Void = {}
     var body: some View {
@@ -14,6 +17,8 @@ struct HomeContentView: View {
             if !snapshot.banners.isEmpty {
                 HomeBannerCarouselView(
                     banners: snapshot.banners, imagePipeline: imagePipeline, isActive: isActive,
+                    allowsAutoplay: allowsBannerAutoplay, visibleViewport: bannerViewport,
+                    isUserDragging: isUserDragging,
                     onUnavailableAction: onUnavailableAction
                 )
             }

@@ -33,65 +33,146 @@ struct HomeBannerSelection {
     }
 }
 
+/// The complete autoplay gate as pure inputs. The view supplies its own state
+/// plus the scene and assistive environments, so every pause reason stays
+/// enumerable and unit-testable without a live scene or real system settings.
+struct HomeBannerAutoplayGate {
+    var bannerCount: Int
+    var allowsAutoplay = true
+    var isHomeActive = true
+    var isSceneActive = true
+    var reducesMotion = false
+    var isVoiceOverRunning = false
+    var isDragging = false
+    var bannerFrame: CGRect = .zero
+    var viewport: CGRect = .zero
+
+    var isEligible: Bool {
+        let intersection = bannerFrame.intersection(viewport)
+        return bannerCount > 1 && allowsAutoplay && isHomeActive && isSceneActive
+            && !reducesMotion && !isVoiceOverRunning && !isDragging
+            && !intersection.isNull && intersection.width > 0 && intersection.height > 0
+    }
+}
+
+/// Deadline bookkeeping for the single autoplay task. Generation tokens reject
+/// stale wakes, including any wake surviving a pause/resume cycle; consuming
+/// the deadline clears it, so a repeated wake can never advance twice.
+struct HomeBannerAutoplay {
+    private(set) var generation: UInt64 = 0
+    private(set) var deadline: ContinuousClock.Instant?
+
+    mutating func restart(at now: ContinuousClock.Instant, eligible: Bool) -> UInt64 {
+        generation &+= 1
+        deadline = eligible ? now.advanced(by: .seconds(5)) : nil
+        return generation
+    }
+
+    mutating func consume(_ token: UInt64, at now: ContinuousClock.Instant) -> Bool {
+        guard token == generation, let deadline, now >= deadline else { return false }
+        self.deadline = nil
+        return true
+    }
+}
+
 @MainActor
 struct HomeBannerCarouselView: View {
     let banners: [HomeBanner]
     let imagePipeline: MallImagePipeline?
     let isActive: Bool
+    var allowsAutoplay = true
+    var visibleViewport = CGRect.zero
+    /// Any ACTIVE user drag on the home scroll (the entry's existing
+    /// scroll-wide gesture) pauses playback — including banner swipes that
+    /// do not change the page and system-cancelled drags. A local pager
+    /// gesture is deliberately NOT used: it breaks pull-to-refresh.
+    var isUserDragging = false
     var onUnavailableAction: () -> Void = {}
-    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @State private var selection = HomeBannerSelection()
+    @State private var autoplay = HomeBannerAutoplay()
+    @State private var bannerFrame = CGRect.zero
+    @State private var interaction: UInt64 = 0
 
     private var ids: [Int64] { banners.map(\.id) }
     private var currentID: Int64? { selection.currentID(in: ids) }
     private var currentIndex: Int { ids.firstIndex(of: currentID ?? 0) ?? 0 }
+    private var canAutoplay: Bool {
+        HomeBannerAutoplayGate(
+            bannerCount: banners.count, allowsAutoplay: allowsAutoplay,
+            isHomeActive: isActive, isSceneActive: scenePhase == .active,
+            reducesMotion: reduceMotion, isVoiceOverRunning: voiceOver,
+            isDragging: isUserDragging, bannerFrame: bannerFrame, viewport: visibleViewport
+        ).isEligible
+    }
+    private struct PlaybackKey: Equatable {
+        let ids: [Int64]
+        let currentID: Int64?
+        let eligible: Bool
+        let interaction: UInt64
+    }
+    private var playbackKey: PlaybackKey {
+        PlaybackKey(ids: ids, currentID: currentID, eligible: canAutoplay, interaction: interaction)
+    }
 
     var body: some View {
         if !banners.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Color.clear.aspectRatio(2, contentMode: .fit)
-                    .overlay {
-                        GeometryReader { geometry in
-                            TabView(selection: pagerSelection) {
-                                ForEach(banners, id: \.id) { banner in
-                                    bannerPage(banner, size: geometry.size)
-                                        .tag(banner.id)
-                                }
+            Color.clear.aspectRatio(2, contentMode: .fit)
+                .overlay {
+                    GeometryReader { geometry in
+                        TabView(selection: pagerSelection) {
+                            ForEach(banners, id: \.id) { banner in
+                                bannerPage(banner, size: geometry.size).tag(banner.id)
                             }
-                            .tabViewStyle(.page(indexDisplayMode: .never))
                         }
-                    }
-                if banners.count > 1 {
-                    if typeSize.isAccessibilitySize {
-                        VStack(alignment: .leading, spacing: 4) { pageControls }
-                    } else {
-                        HStack(spacing: 12) { pageControls }
+                        .tabViewStyle(.page(indexDisplayMode: .never))
+                        .overlay(alignment: .bottom) { paginationDots }
                     }
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .onChange(of: ids, initial: true) { _, newIDs in
-                selection.reconcile(with: newIDs)
-            }
+                .onGeometryChange(for: CGRect.self) {
+                    $0.frame(in: .global)
+                } action: {
+                    bannerFrame = $0
+                }
+                .onChange(of: ids, initial: true) { _, newIDs in
+                    selection.reconcile(with: newIDs)
+                }
+                .task(id: playbackKey) { @MainActor in
+                    let clock = ContinuousClock()
+                    let token = autoplay.restart(at: clock.now, eligible: canAutoplay)
+                    guard let deadline = autoplay.deadline else { return }
+                    do { try await clock.sleep(until: deadline) } catch { return }
+                    guard !Task.isCancelled, canAutoplay,
+                        autoplay.consume(token, at: clock.now), !ids.isEmpty
+                    else { return }
+                    // No copied sentinel pages; the last-to-first wrap may visibly reverse.
+                    let next = ids[(currentIndex + 1) % ids.count]
+                    withAnimation { selection.select(next) }
+                }
         }
     }
 
-    @ViewBuilder private var pageControls: some View {
-        Text("第\(currentIndex + 1)张，共\(banners.count)张")
-            .font(.caption)
-            .accessibilityIdentifier("home.banner.page")
-        HStack {
-            Button("上一张") { move(offset: -1) }
-                .disabled(selection.adjacentID(offset: -1, in: ids) == nil)
-                .accessibilityIdentifier("home.banner.previous")
-            Spacer(minLength: 8)
-            Button("下一张") { move(offset: 1) }
-                .disabled(selection.adjacentID(offset: 1, in: ids) == nil)
-                .accessibilityIdentifier("home.banner.next")
+    /// In-image pagination dots replace the removed below-image controls row.
+    /// Hit-test transparent; only the page summary is exposed semantically.
+    @ViewBuilder private var paginationDots: some View {
+        if ids.count > 1 {
+            HStack(spacing: 6) {
+                ForEach(ids, id: \.self) { id in
+                    Circle().fill(.white.opacity(id == currentID ? 1 : 0.45))
+                        .frame(width: 6, height: 6)
+                }
+            }
+            .padding(6)
+            .background(.black.opacity(0.25), in: Capsule())
+            .padding(.bottom, 8)
+            .allowsHitTesting(false)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("轮播分页")
+            .accessibilityValue("第\(currentIndex + 1)页，共\(ids.count)页")
+            .accessibilityIdentifier("home.banner.indicators")
         }
-        .font(.caption)
-        .buttonStyle(.bordered)
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var pagerSelection: Binding<Int64> {
@@ -125,6 +206,15 @@ struct HomeBannerCarouselView: View {
                     banner.description.isEmpty
                         ? "轮播图，第\(currentIndex + 1)张，共\(banners.count)张" : banner.description
                 )
+                .accessibilityValue("第\(currentIndex + 1)张，共\(banners.count)张")
+                .accessibilityAdjustableAction { direction in
+                    switch direction {
+                    case .increment: move(offset: 1)
+                    case .decrement: move(offset: -1)
+                    @unknown default: break
+                    }
+                    interaction &+= 1
+                }
                 .accessibilityIdentifier("home.banner.current.\(banner.id)")
                 .accessibilityHidden(banner.id != currentID)
         }
@@ -137,7 +227,7 @@ struct HomeBannerCarouselView: View {
 }
 
 #if DEBUG
-    #Preview("手动轮播 · 深色特大字体") {
+    #Preview("轮播 · 深色特大字体") {
         ScrollView {
             HomeBannerCarouselView(
                 banners: (1...3).map {

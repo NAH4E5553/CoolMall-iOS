@@ -104,6 +104,18 @@ struct RootView: View {
         router.selectedTab == .home && router.homePath.isEmpty
     }
 
+    /// Only an explicit DEBUG home-fixture launch may suppress banner playback
+    /// for controlled manual chains; Release and normal Debug always allow it.
+    private var allowsBannerAutoplay: Bool {
+        #if DEBUG
+            return
+                !(dependencies.homeTesting.fixtureMode != nil
+                && ProcessInfo.processInfo.arguments.contains("--ui-banner-manual"))
+        #else
+            return true
+        #endif
+    }
+
     /// HOME-01 root selection. Normal Debug/Release show the real read UI with
     /// the App-declared source marker; DEBUG launch arguments may keep the F0
     /// catalog fixture root for the navigation suite or select a deterministic
@@ -176,6 +188,7 @@ struct RootView: View {
                 isActive: homeIsVisible,
                 refreshRequest: router.homeReTapEvent,
                 imagePipeline: dependencies.homeImagePipeline,
+                allowsBannerAutoplay: allowsBannerAutoplay,
                 showsReadVerification: dependencies.showsHomeReadVerification,
                 onUnavailableAction: showUnavailable
             )

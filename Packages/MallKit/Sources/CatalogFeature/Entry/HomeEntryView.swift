@@ -14,8 +14,10 @@ public struct HomeEntryView: View {
     @State private var viewModel: HomeViewModel?
     @GestureState private var isPullDragging = false
     @State private var pullInteraction: UInt64 = 0
+    @State private var bannerViewport = CGRect.zero
     private let home: any HomeLoading
     private let isActive: Bool
+    private let allowsBannerAutoplay: Bool
     private let refreshRequest: UInt64
     private let imagePipeline: MallImagePipeline?
     private let showsReadVerification: Bool
@@ -24,10 +26,12 @@ public struct HomeEntryView: View {
     public init(
         home: any HomeLoading, isActive: Bool, refreshRequest: UInt64 = 0,
         imagePipeline: MallImagePipeline? = nil,
+        allowsBannerAutoplay: Bool = true,
         showsReadVerification: Bool = false, onUnavailableAction: @escaping () -> Void = {}
     ) {
         self.home = home
         self.isActive = isActive
+        self.allowsBannerAutoplay = allowsBannerAutoplay
         self.refreshRequest = refreshRequest
         self.imagePipeline = imagePipeline
         self.showsReadVerification = showsReadVerification
@@ -60,7 +64,8 @@ public struct HomeEntryView: View {
                             // Read-only sections hide with their own empty arrays.
                             HomeContentView(
                                 snapshot: snapshot, imagePipeline: imagePipeline,
-                                isActive: isActive,
+                                isActive: isActive, allowsBannerAutoplay: allowsBannerAutoplay,
+                                bannerViewport: bannerViewport, isUserDragging: isPullDragging,
                                 onUnavailableAction: onUnavailableAction
                             )
 
@@ -100,6 +105,18 @@ public struct HomeEntryView: View {
                 .id("home.contentTop")
             }
             .accessibilityIdentifier("home.scroll")
+            // The onscreen banner region: the scroll viewport minus its
+            // safe-area insets (top chrome, tab bar, DEBUG control strip).
+            .onGeometryChange(for: CGRect.self) { geometry in
+                let frame = geometry.frame(in: .global)
+                let insets = geometry.safeAreaInsets
+                return CGRect(
+                    x: frame.minX + insets.leading, y: frame.minY + insets.top,
+                    width: max(0, frame.width - insets.leading - insets.trailing),
+                    height: max(0, frame.height - insets.top - insets.bottom))
+            } action: {
+                bannerViewport = $0
+            }
             // Keep the viewport across visibility transactions; ordinary
             // content updates retain SwiftUI's default offset adjustment.
             .transaction(value: isActive) { transaction in

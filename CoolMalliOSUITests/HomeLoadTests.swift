@@ -274,13 +274,13 @@ extension HomeLoadTests {
                 "\(Self.orderedSections[index - 1].key) must sit above \(Self.orderedSections[index].key)"
             )
         }
-        // Left alignment at the shared 16pt margin: product heading leading edges
-        // line up regardless of text length.
-        let leading = titleFrames[3].minX
+        // Featured adds its approved 12pt inner inset to the shared 16pt outer margin.
+        let leading = app.scrollViews["home.scroll"].frame.minX + 16
         for (index, frame) in titleFrames.enumerated() where index >= 3 {
+            let innerInset: CGFloat = index == 3 ? 12 : 0
             XCTAssertEqual(
-                frame.minX, leading, accuracy: 2,
-                "\(Self.orderedSections[index].key) title must share the left margin")
+                frame.minX, leading + innerInset, accuracy: 2,
+                "\(Self.orderedSections[index].key) title must respect its approved inset")
         }
     }
 
@@ -1207,18 +1207,50 @@ extension HomeLoadTests {
         for key in ["banner", "coupon", "category"] {
             XCTAssertFalse(app.staticTexts["home.section.\(key).title"].exists)
         }
-        func reveal(_ element: XCUIElement) {
-            let scroll = app.scrollViews["home.scroll"]
+        let appFrame = app.frame
+        let scrollFrame = app.scrollViews["home.scroll"].frame.intersection(appFrame)
+        let bottom = min(scrollFrame.maxY, app.tabBars.firstMatch.frame.minY) - 24
+        let top = scrollFrame.minY + 40
+        func reveal(_ element: XCUIElement, including companion: XCUIElement? = nil) {
             for _ in 0..<8 {
-                if element.exists, element.isHittable { return }
-                let frame = scroll.frame
-                let bottom = min(frame.maxY, app.tabBars.firstMatch.frame.minY) - 12
-                scroll.coordinate(withNormalizedOffset: .zero)
-                    .withOffset(CGVector(dx: frame.width / 2, dy: bottom - frame.minY))
+                let elementFrame = element.exists ? element.frame : .zero
+                let companionFrame: CGRect
+                if let companion {
+                    companionFrame = companion.exists ? companion.frame : .zero
+                } else {
+                    companionFrame = elementFrame
+                }
+                let frame =
+                    elementFrame.isEmpty || companionFrame.isEmpty
+                    ? CGRect.zero : elementFrame.union(companionFrame)
+                if !elementFrame.isEmpty, !companionFrame.isEmpty,
+                    frame.minY >= top, frame.maxY <= bottom
+                {
+                    XCTAssertTrue(element.isHittable)
+                    return
+                }
+                let above = !frame.isEmpty && frame.minY < top
+                let available = bottom - top
+                let distance =
+                    frame.isEmpty
+                    ? available
+                    : min(above ? top - frame.minY + 24 : frame.maxY - bottom + 24, available)
+                let startY = above ? top : bottom
+                let endY = startY + (above ? distance : -distance)
+                print(
+                    "Home display reveal target=\(frame), viewport=\(scrollFrame), drag=\(endY - startY)"
+                )
+                app.coordinate(withNormalizedOffset: .zero)
+                    .withOffset(
+                        CGVector(dx: scrollFrame.midX - appFrame.minX, dy: startY - appFrame.minY)
+                    )
                     .press(
                         forDuration: 0.05,
-                        thenDragTo: scroll.coordinate(withNormalizedOffset: .zero)
-                            .withOffset(CGVector(dx: frame.width / 2, dy: 40)))
+                        thenDragTo: app.coordinate(withNormalizedOffset: .zero)
+                            .withOffset(
+                                CGVector(
+                                    dx: scrollFrame.midX - appFrame.minX, dy: endY - appFrame.minY)),
+                        withVelocity: .fast, thenHoldForDuration: 0.2)
             }
             XCTAssertTrue(element.isHittable)
         }
@@ -1232,8 +1264,10 @@ extension HomeLoadTests {
         reveal(coupon)
         let claim = app.buttons["home.coupon.860001.claim"]
         XCTAssertTrue(claim.isHittable)
-        XCTAssertLessThan(coupon.frame.maxX, claim.frame.minX)
-        XCTAssertTrue(coupon.frame.minY < claim.frame.maxY && claim.frame.minY < coupon.frame.maxY)
+        let couponFrame = coupon.frame
+        let claimFrame = claim.frame
+        XCTAssertLessThan(couponFrame.maxX, claimFrame.minX)
+        XCTAssertTrue(couponFrame.minY < claimFrame.maxY && claimFrame.minY < couponFrame.maxY)
         XCTAssertFalse(coupon.label.isEmpty)
         capture("coupon")
         if !accessibility {
@@ -1251,30 +1285,18 @@ extension HomeLoadTests {
         for (key, id, sold) in rows {
             let price = app.staticTexts["home.\(key).\(id).price"]
             let count = app.staticTexts["home.\(key).\(id).sold"]
-            reveal(count)
-            if accessibility, id == "830010" {
-                let scroll = app.scrollViews["home.scroll"]
-                let frame = scroll.frame
-                let bottom = min(frame.maxY, app.tabBars.firstMatch.frame.minY) - 24
-                let excess = max(price.frame.maxY, count.frame.maxY) - bottom
-                if excess > 0 {
-                    let start = CGPoint(x: frame.width / 2, y: bottom - frame.minY)
-                    let distance = min(excess + 24, start.y - 40)
-                    scroll.coordinate(withNormalizedOffset: .zero)
-                        .withOffset(CGVector(dx: start.x, dy: start.y))
-                        .press(
-                            forDuration: 0.05,
-                            thenDragTo: scroll.coordinate(withNormalizedOffset: .zero)
-                                .withOffset(CGVector(dx: start.x, dy: start.y - distance)))
-                }
-                XCTAssertLessThanOrEqual(max(price.frame.maxY, count.frame.maxY), bottom)
-            }
+            reveal(count, including: price)
             XCTAssertTrue(price.isHittable)
             XCTAssertEqual(count.label, "已售\(sold)件")
-            print("Home display \(key) amount frame=\(price.frame), sold frame=\(count.frame)")
-            XCTAssertLessThanOrEqual(price.frame.maxX, count.frame.minX)
+            let priceFrame = price.frame
+            let countFrame = count.frame
+            if accessibility, id == "830010" {
+                XCTAssertLessThanOrEqual(max(priceFrame.maxY, countFrame.maxY), bottom)
+            }
+            print("Home display \(key) amount frame=\(priceFrame), sold frame=\(countFrame)")
+            XCTAssertLessThanOrEqual(priceFrame.maxX, countFrame.minX)
             XCTAssertTrue(
-                price.frame.minY < count.frame.maxY && count.frame.minY < price.frame.maxY,
+                priceFrame.minY < countFrame.maxY && countFrame.minY < priceFrame.maxY,
                 "price and actual sold count must share one row")
             capture(id == "830010" ? "recommend-4683" : key)
         }

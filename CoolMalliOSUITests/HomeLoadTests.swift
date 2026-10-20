@@ -808,95 +808,124 @@ extension HomeLoadTests {
         keepFeedbackScreenshot(app, name: "HOME04-single-same-ID-new-image")
     }
 
-    @MainActor func testBannerManualPagingBoundariesFailureAndMissing() {
+    @MainActor func testBannerManualPagingBoundariesFailureAndMissing() throws {
         continueAfterFailure = false
-        let app = bannerApp("banner-multiple")
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-home-fixture", "banner-multiple", "--ui-banner-manual"]
+        let launched = ProcessInfo.processInfo.systemUptime
+        app.launch()
+        print("HOME04 launch returned after \(ProcessInfo.processInfo.systemUptime - launched)s")
+        let loaded = app.staticTexts["home.loaded"]
+        XCTAssertTrue(loaded.exists || loaded.waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["home.banner.page"].exists)
         XCTAssertFalse(app.buttons["home.banner.previous"].exists)
         XCTAssertFalse(app.buttons["home.banner.next"].exists)
-        func observeImageState(_ state: String) -> Bool {
-            let began = Date()
-            let element = imageElement(app, state)
-            let present = element.exists
-            print(
-                "banner image \(state): first exists=\(present), elapsed=\(Date().timeIntervalSince(began))"
-            )
-            if !present {
-                // Diagnose a role mismatch once; an Any match never substitutes
-                // for the original state locator's success requirement.
-                let sameID = app.descendants(matching: .any)["home.image.\(state)"].firstMatch
-                if sameID.exists {
-                    print("banner image \(state): same-ID role=\(sameID.elementType.rawValue)")
-                } else {
-                    print("banner image \(state): same-ID absent")
-                }
-                // Include the first read and diagnostic lookup in the original
-                // ten-second observation budget. An AX getter can itself block.
-                let remaining = max(0, 10 - Date().timeIntervalSince(began))
-                guard remaining > 0 else {
-                    XCTFail("home.image.\(state) absent after first observation budget")
-                    return false
-                }
-                let observed = XCTNSPredicateExpectation(
-                    predicate: NSPredicate { _, _ in element.exists }, object: nil)
-                let result = XCTWaiter.wait(for: [observed], timeout: remaining)
-                print(
-                    "banner image \(state): wait=\(result.rawValue), elapsed=\(Date().timeIntervalSince(began))"
-                )
-                guard result == .completed else {
-                    XCTFail("home.image.\(state) did not appear within its observation budget")
-                    return false
-                }
-            }
-            print("banner image \(state): observed role=\(element.elementType.rawValue)")
-            return true
+
+        // A checkpoint reads one live AX hierarchy. Page, dots, image role and
+        // request counts belong to that same observation, rather than each
+        // attribute causing another remote query. Every swipe replaces it.
+        var observation: [any XCUIElementSnapshot] = []
+        func descendants(_ node: any XCUIElementSnapshot) -> [any XCUIElementSnapshot] {
+            [node] + node.children.flatMap { descendants($0) }
         }
-        func requireMetrics(_ expected: String) -> Bool {
-            let metrics = app.staticTexts["home.image.metrics"]
-            // Read the live label first: the CI screenshot already showed the
-            // expected counts before the old KVC predicate timed out.
-            if metrics.label != expected {
-                let observed = XCTNSPredicateExpectation(
-                    predicate: NSPredicate { _, _ in metrics.label == expected }, object: nil)
-                guard XCTWaiter.wait(for: [observed], timeout: 8) == .completed else {
-                    XCTFail("Expected \(expected); actual \(metrics.label)")
-                    return false
+        func observe() throws {
+            let began = ProcessInfo.processInfo.systemUptime
+            observation = descendants(try app.snapshot())
+            print("HOME04 checkpoint snapshot \(ProcessInfo.processInfo.systemUptime - began)s")
+        }
+        func requirePage(_ index: Int) throws {
+            try observe()
+            let expected = "第\(index)张，共3张"
+            func observedPage() -> String? {
+                observation.first { $0.identifier.hasPrefix("home.banner.current.") }?.value
+                    as? String
+            }
+            if observedPage() != expected {
+                let page = currentBanner(app)
+                let settled = XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in page.value as? String == expected },
+                    object: nil)
+                XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 8), .completed)
+                try observe()
+            }
+            XCTAssertEqual(observedPage(), expected)
+            let dots = observation.first { $0.identifier == "home.banner.indicators" }
+            XCTAssertEqual(dots != nil, true)
+            XCTAssertEqual(dots?.value as? String, "第\(index)页，共3页")
+        }
+        func observeImageState(_ state: String) throws {
+            func present() -> Bool {
+                observation.contains {
+                    $0.identifier == "home.image.\(state)" && $0.elementType == .button
                 }
             }
-            let actual = metrics.label
+            if !present() {
+                let element = imageElement(app, state)
+                let settled = XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in element.exists }, object: nil)
+                XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 10), .completed)
+                try observe()
+            }
+            XCTAssertTrue(present(), "the actionable image must expose \(state)")
+        }
+        func requireMetrics(_ expected: String) {
+            var actual = observation.first { $0.identifier == "home.image.metrics" }?.label
+            if actual != expected {
+                let metrics = app.staticTexts["home.image.metrics"]
+                let settled = XCTNSPredicateExpectation(
+                    predicate: NSPredicate { _, _ in
+                        actual = metrics.label
+                        return actual == expected
+                    }, object: nil)
+                XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 8), .completed)
+            }
             XCTAssertEqual(actual, expected)
-            return actual == expected
         }
         revealBanner(app)
-        bannerPage(app, 1)
-        // Outward swipe at the first boundary keeps the current page (bounded).
-        currentBanner(app).swipeRight()
-        bannerPage(app, 1)
-        guard observeImageState("success") else { return }
+        try requirePage(1)
+        let appFrame = app.frame
+        let bannerFrame = try XCTUnwrap(
+            observation.first { $0.identifier.hasPrefix("home.banner.current.") }?.frame)
+        let y = (bannerFrame.midY - appFrame.minY) / appFrame.height
+        let left = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: y))
+        let right = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: y))
+        func swipeLeft() {
+            right.press(
+                forDuration: 0.01, thenDragTo: left, withVelocity: .fast, thenHoldForDuration: 0)
+        }
+        func swipeRight() {
+            left.press(
+                forDuration: 0.01, thenDragTo: right, withVelocity: .fast, thenHoldForDuration: 0)
+        }
+        // The same full gesture chain, including both outward boundary swipes.
+        swipeRight()
+        try requirePage(1)
+        try observeImageState("success")
         keepFeedbackScreenshot(app, name: "HOME04-success-complete")
-        currentBanner(app).swipeLeft()
-        bannerPage(app, 2)
-        guard observeImageState("failure") else { return }
-        guard requireMetrics("图片请求：2；取消：0；首页读取：1") else { return }
+        swipeLeft()
+        try requirePage(2)
+        try observeImageState("failure")
+        requireMetrics("图片请求：2；取消：0；首页读取：1")
         keepFeedbackScreenshot(app, name: "HOME04-failure-complete")
-        currentBanner(app).swipeLeft()
-        bannerPage(app, 3)
-        // Outward swipe at the last boundary also keeps the current page.
-        currentBanner(app).swipeLeft()
-        bannerPage(app, 3)
-        XCTAssertTrue(imageElement(app, "missing").exists)
+        swipeLeft()
+        try requirePage(3)
+        swipeLeft()
+        try requirePage(3)
+        XCTAssertTrue(
+            observation.contains {
+                $0.identifier == "home.image.missing" && $0.elementType == .button
+            })
         keepFeedbackScreenshot(app, name: "HOME04-missing-complete")
-        currentBanner(app).swipeRight()
-        bannerPage(app, 2)
-        guard observeImageState("failure") else { return }
-        // A failed image is not automatically retried by metrics/body changes.
-        guard requireMetrics("图片请求：3；取消：0；首页读取：1") else { return }
-        let pager = imageElement(app, "failure")
-        pager.swipeRight()
-        bannerPage(app, 1)
-        guard observeImageState("success") else { return }
-        imageElement(app, "success").swipeLeft()
-        bannerPage(app, 2)
+        swipeRight()
+        try requirePage(2)
+        try observeImageState("failure")
+        // A failed image is not automatically retried by observation changes.
+        requireMetrics("图片请求：3；取消：0；首页读取：1")
+        swipeRight()
+        try requirePage(1)
+        try observeImageState("success")
+        swipeLeft()
+        try requirePage(2)
         XCTAssertEqual(app.staticTexts["home.count.banner"].label, "轮播：3")
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
         let last = app.staticTexts["home.count.categoryAll"]
@@ -1272,7 +1301,7 @@ extension HomeLoadTests {
 }
 
 extension HomeLoadTests {
-    @MainActor private func assertApprovedHomeDisplay(accessibility: Bool) {
+    @MainActor private func assertApprovedHomeDisplay(accessibility: Bool) throws {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["--ui-home-fixture", "valid"]
@@ -1281,8 +1310,13 @@ extension HomeLoadTests {
                 "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
             ]
         }
+        let launched = ProcessInfo.processInfo.systemUptime
         app.launch()
-        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
+        print(
+            "Home display launch returned after \(ProcessInfo.processInfo.systemUptime - launched)s"
+        )
+        let loaded = app.staticTexts["home.loaded"]
+        XCTAssertTrue(loaded.exists || loaded.waitForExistence(timeout: 10))
         for key in ["banner", "coupon", "category"] {
             XCTAssertFalse(app.staticTexts["home.section.\(key).title"].exists)
         }
@@ -1290,7 +1324,9 @@ extension HomeLoadTests {
         let scrollFrame = app.scrollViews["home.scroll"].frame.intersection(appFrame)
         let bottom = min(scrollFrame.maxY, app.tabBars.firstMatch.frame.minY) - 24
         let top = scrollFrame.minY + 40
-        func reveal(_ element: XCUIElement, including companion: XCUIElement? = nil) {
+        func reveal(
+            _ element: XCUIElement, including companion: XCUIElement? = nil
+        ) throws -> (element: any XCUIElementSnapshot, companion: (any XCUIElementSnapshot)?) {
             func pressDrag(from startY: CGFloat, to endY: CGFloat) {
                 app.coordinate(withNormalizedOffset: .zero)
                     .withOffset(
@@ -1322,7 +1358,8 @@ extension HomeLoadTests {
                     dragUp(available)
                     continue
                 }
-                let elementFrame = element.frame
+                let elementSnapshot = try element.snapshot()
+                let elementFrame = elementSnapshot.frame
                 guard elementFrame.minY >= top, elementFrame.maxY <= bottom else {
                     print(
                         "Home display reveal anchor=\(elementFrame), viewport=\(scrollFrame)")
@@ -1336,16 +1373,17 @@ extension HomeLoadTests {
                 // Anchor in band: verify the companion now (single read).
                 guard let companion else {
                     XCTAssertTrue(element.isHittable)
-                    return
+                    return (elementSnapshot, nil)
                 }
                 guard companion.exists else {
                     dragUp(available)
                     continue
                 }
-                let frame = elementFrame.union(companion.frame)
+                let companionSnapshot = try companion.snapshot()
+                let frame = elementFrame.union(companionSnapshot.frame)
                 if frame.minY >= top, frame.maxY <= bottom {
                     XCTAssertTrue(element.isHittable)
-                    return
+                    return (elementSnapshot, companionSnapshot)
                 }
                 if frame.minY < top {
                     dragDown(min(top - frame.minY + 24, available))
@@ -1354,6 +1392,7 @@ extension HomeLoadTests {
                 }
             }
             XCTAssertTrue(element.isHittable)
+            return (try element.snapshot(), try companion?.snapshot())
         }
         func capture(_ name: String) {
             let attachment = XCTAttachment(screenshot: app.screenshot())
@@ -1362,17 +1401,17 @@ extension HomeLoadTests {
             add(attachment)
         }
         let coupon = app.staticTexts["home.coupon.860001.title"]
-        reveal(coupon)
+        let couponObservation = try reveal(coupon)
         let claim = app.buttons["home.coupon.860001.claim"]
         XCTAssertTrue(claim.isHittable)
-        let couponFrame = coupon.frame
+        let couponFrame = couponObservation.element.frame
         let claimFrame = claim.frame
         XCTAssertLessThan(couponFrame.maxX, claimFrame.minX)
         XCTAssertTrue(couponFrame.minY < claimFrame.maxY && claimFrame.minY < couponFrame.maxY)
-        XCTAssertFalse(coupon.label.isEmpty)
+        XCTAssertFalse(couponObservation.element.label.isEmpty)
         capture("coupon")
         if !accessibility {
-            reveal(app.staticTexts["home.flashSale.830001.title"])
+            _ = try reveal(app.staticTexts["home.flashSale.830001.title"])
             XCTAssertFalse(app.staticTexts["home.flashSale.830001.sold"].exists)
             capture("featured")
         }
@@ -1386,11 +1425,11 @@ extension HomeLoadTests {
         for (key, id, sold) in rows {
             let price = app.staticTexts["home.\(key).\(id).price"]
             let count = app.staticTexts["home.\(key).\(id).sold"]
-            reveal(count, including: price)
+            let row = try reveal(count, including: price)
             XCTAssertTrue(price.isHittable)
-            XCTAssertEqual(count.label, "已售\(sold)件")
-            let priceFrame = price.frame
-            let countFrame = count.frame
+            XCTAssertEqual(row.element.label, "已售\(sold)件")
+            let priceFrame = try XCTUnwrap(row.companion).frame
+            let countFrame = row.element.frame
             if accessibility, id == "830010" {
                 XCTAssertLessThanOrEqual(max(priceFrame.maxY, countFrame.maxY), bottom)
             }
@@ -1402,11 +1441,11 @@ extension HomeLoadTests {
             capture(id == "830010" ? "recommend-4683" : key)
         }
     }
-    @MainActor func testApprovedHomeDisplayAtNormalSize() {
-        assertApprovedHomeDisplay(accessibility: false)
+    @MainActor func testApprovedHomeDisplayAtNormalSize() throws {
+        try assertApprovedHomeDisplay(accessibility: false)
     }
-    @MainActor func testApprovedHomeDisplayAtAccessibilitySize() {
-        assertApprovedHomeDisplay(accessibility: true)
+    @MainActor func testApprovedHomeDisplayAtAccessibilitySize() throws {
+        try assertApprovedHomeDisplay(accessibility: true)
     }
 }
 

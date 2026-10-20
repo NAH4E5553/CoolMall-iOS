@@ -1617,7 +1617,7 @@ extension HomeLoadTests {
         keepFeedbackScreenshot(app, name: "HOME-AUTO-image-dots-cycle")
     }
 
-    /// Phase-consistent baseline WITHOUT waiting out a five-second interval:
+    /// Consistent AX baseline; this does not establish a fresh timer period.
     /// the indicator value updates promptly while the leaf's AX exposure lags
     /// an advance, so retry briefly until both surfaces agree on one page.
     /// banner-multiple order: 910001…910003 = pages 1…3.
@@ -1642,10 +1642,38 @@ extension HomeLoadTests {
         executionTimeAllowance = 120
         let app = bannerApp("banner-multiple", automatic: true)
         revealBanner(app)
-        // The method's total budget (several five-second waits plus two away
-        // windows) structurally exceeded the 60s allowance on slow CI runners,
-        // so the old cold-start sync advance is dropped: indicator/leaf
-        // agreement replaces it as the phase lock.
+        // Cache geometry before establishing a fresh timer period. No dynamic
+        // element lookup is needed when the native tab touch is delivered.
+        let appFrame = app.frame
+        let bannerFrame = currentBanner(app).frame
+        func point(_ location: CGPoint) -> XCUICoordinate {
+            app.coordinate(
+                withNormalizedOffset: CGVector(
+                    dx: (location.x - appFrame.minX) / appFrame.width,
+                    dy: (location.y - appFrame.minY) / appFrame.height))
+        }
+        // Horizontal paging may translate the leaf; the application center stays fixed.
+        let dragStart = point(CGPoint(x: appFrame.midX, y: bannerFrame.midY))
+        let dragEnd = point(
+            CGPoint(
+                x: appFrame.midX + appFrame.width * 0.02, y: bannerFrame.midY))
+        let categoryFrame = app.tabBars.buttons["分类"].frame
+        let homeFrame = app.tabBars.buttons["首页"].frame
+        let categoryTab = point(CGPoint(x: categoryFrame.midX, y: categoryFrame.midY))
+        let homeTab = point(CGPoint(x: homeFrame.midX, y: homeFrame.midY))
+        @discardableResult
+        func stableBannerDrag(hold: TimeInterval) -> Date {
+            // A newly selected leaf can still have an offscreen animation
+            // frame. Touch the stationary banner region cached above instead.
+            dragStart.press(
+                forDuration: 0.05, thenDragTo: dragEnd,
+                withVelocity: .slow, thenHoldForDuration: hold)
+            return Date()
+        }
+        // This anchor precedes the real release/re-arm. Confirming departure
+        // within five seconds excludes expiry between baseline and departure.
+        let tabDepartureStarted = ProcessInfo.processInfo.systemUptime
+        stableBannerDrag(hold: 0.1)
         guard let baseline = syncedCurrentLeafID(app) else {
             XCTFail("indicator and leaf never agreed on one page")
             return
@@ -1653,10 +1681,18 @@ extension HomeLoadTests {
         // Away on another tab for MORE than one interval: any pre-leave arm's
         // deadline falls inside the away window, so a still-running timer
         // would have advanced exactly once by the time home returns.
-        app.tabBars.buttons["分类"].tap()
-        XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
+        categoryTab.tap()
+        let categoryLoaded = app.staticTexts["category.pending"]
+        XCTAssertTrue(categoryLoaded.exists || categoryLoaded.waitForExistence(timeout: 5))
+        let tabPreparationSeconds = ProcessInfo.processInfo.systemUptime - tabDepartureStarted
+        XCTContext.runActivity(named: "Tab departure prepared in \(tabPreparationSeconds)s (<5s)") {
+            _ in
+            XCTAssertLessThan(
+                tabPreparationSeconds, 5,
+                "driver precondition: confirm departure before the fresh period expires")
+        }
         waitQuiet(5.6)
-        app.tabBars.buttons["首页"].tap()
+        homeTab.tap()
         // ORIGINAL timing scope (R-LATEST-04): sample the anchor immediately
         // after the tap returns, BEFORE the currentBanner AX query, so the
         // original bounds cover the query too.
@@ -1674,7 +1710,7 @@ extension HomeLoadTests {
             return
         }
         let resumedLeafID = "home.banner.current.\(910_000 + pageNumber)"
-        let tabReleased = unchangedDrag(app, hold: 0.5)
+        let tabReleased = stableBannerDrag(hold: 0.5)
         XCTAssertEqual(
             currentBanner(app).identifier, resumedLeafID, "unchanged drag keeps the page")
         waitAdvance(app, from: indicatorPage(app))
@@ -1683,6 +1719,8 @@ extension HomeLoadTests {
             tabRearmElapsed, 4.4, "release in the resumed state must re-arm a full interval")
         XCTAssertLessThanOrEqual(tabRearmElapsed, 9)
         // Scene backgrounding pauses the same way and preserves selection.
+        let sceneDepartureStarted = ProcessInfo.processInfo.systemUptime
+        stableBannerDrag(hold: 0.1)
         guard let beforeBackground = syncedCurrentLeafID(app) else {
             XCTFail("indicator and leaf never agreed before backgrounding")
             return
@@ -1693,6 +1731,13 @@ extension HomeLoadTests {
         XCTAssertEqual(
             XCTWaiter.wait(for: [backgrounded], timeout: 5), .completed,
             "the simulated home press must actually background the app")
+        let scenePreparationSeconds = ProcessInfo.processInfo.systemUptime - sceneDepartureStarted
+        XCTContext.runActivity(named: "Background prepared in \(scenePreparationSeconds)s (<5s)") {
+            _ in
+            XCTAssertLessThan(
+                scenePreparationSeconds, 5,
+                "driver precondition: confirm backgrounding before the fresh period expires")
+        }
         waitQuiet(5.6)
         app.activate()
         let foregrounded = Date()

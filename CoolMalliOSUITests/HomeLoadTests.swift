@@ -1315,18 +1315,41 @@ extension HomeLoadTests {
         print(
             "Home display launch returned after \(ProcessInfo.processInfo.systemUptime - launched)s"
         )
-        let loaded = app.staticTexts["home.loaded"]
-        XCTAssertTrue(loaded.exists || loaded.waitForExistence(timeout: 10))
-        for key in ["banner", "coupon", "category"] {
-            XCTAssertFalse(app.staticTexts["home.section.\(key).title"].exists)
+        func descendants(_ node: any XCUIElementSnapshot) -> [any XCUIElementSnapshot] {
+            [node] + node.children.flatMap { descendants($0) }
         }
-        let appFrame = app.frame
-        let scrollFrame = app.scrollViews["home.scroll"].frame.intersection(appFrame)
-        let bottom = min(scrollFrame.maxY, app.tabBars.firstMatch.frame.minY) - 24
+        func observe() throws -> (root: any XCUIElementSnapshot, nodes: [any XCUIElementSnapshot]) {
+            let began = ProcessInfo.processInfo.systemUptime
+            let root = try app.snapshot()
+            let nodes = descendants(root)
+            print("Home display snapshot \(ProcessInfo.processInfo.systemUptime - began)s")
+            return (root, nodes)
+        }
+        var initial = try observe()
+        let loaded = initial.nodes.contains {
+            $0.elementType == .staticText && $0.identifier == "home.loaded"
+        }
+        XCTAssertTrue(loaded || app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
+        if !loaded { initial = try observe() }
+        for key in ["banner", "coupon", "category"] {
+            XCTAssertFalse(
+                initial.nodes.contains {
+                    $0.elementType == .staticText && $0.identifier == "home.section.\(key).title"
+                })
+        }
+        let appFrame = initial.root.frame
+        let scrollFrame = try XCTUnwrap(
+            initial.nodes.first {
+                $0.elementType == .scrollView && $0.identifier == "home.scroll"
+            }
+        ).frame.intersection(appFrame)
+        let tabFrame = try XCTUnwrap(initial.nodes.first { $0.elementType == .tabBar }).frame
+        let bottom = min(scrollFrame.maxY, tabFrame.minY) - 24
         let top = scrollFrame.minY + 40
         func reveal(
-            _ element: XCUIElement, including companion: XCUIElement? = nil
+            _ identifier: String, including companionID: String? = nil
         ) throws -> (element: any XCUIElementSnapshot, companion: (any XCUIElementSnapshot)?) {
+            let element = app.staticTexts[identifier]
             func pressDrag(from startY: CGFloat, to endY: CGFloat) {
                 app.coordinate(withNormalizedOffset: .zero)
                     .withOffset(
@@ -1346,19 +1369,20 @@ extension HomeLoadTests {
             func dragUp(_ distance: CGFloat) {
                 pressDrag(from: bottom, to: bottom - distance)
             }
+            // Each iteration observes one current hierarchy after the last
+            // real gesture. Missing nodes still require bounded navigation;
+            // offscreen frames never count as a successful reveal.
             for _ in 0..<8 {
-                // ONE anchor frame per navigation iteration: a single AX read
-                // can cost seconds on a slow CI runner (the 60s-deadline
-                // failure), so the companion is read ONLY once the anchor is
-                // in band. Missing frames (anchor or companion) take a
-                // bounded POSITIVE step — a union of partial frames could
-                // compute a negative shortfall and flip the drag direction.
+                let nodes = try observe().nodes
                 let available = bottom - top
-                guard element.exists else {
+                guard
+                    let elementSnapshot = nodes.first(where: {
+                        $0.elementType == .staticText && $0.identifier == identifier
+                    })
+                else {
                     dragUp(available)
                     continue
                 }
-                let elementSnapshot = try element.snapshot()
                 let elementFrame = elementSnapshot.frame
                 guard elementFrame.minY >= top, elementFrame.maxY <= bottom else {
                     print(
@@ -1370,16 +1394,18 @@ extension HomeLoadTests {
                     }
                     continue
                 }
-                // Anchor in band: verify the companion now (single read).
-                guard let companion else {
+                guard let companionID else {
                     XCTAssertTrue(element.isHittable)
                     return (elementSnapshot, nil)
                 }
-                guard companion.exists else {
+                guard
+                    let companionSnapshot = nodes.first(where: {
+                        $0.elementType == .staticText && $0.identifier == companionID
+                    })
+                else {
                     dragUp(available)
                     continue
                 }
-                let companionSnapshot = try companion.snapshot()
                 let frame = elementFrame.union(companionSnapshot.frame)
                 if frame.minY >= top, frame.maxY <= bottom {
                     XCTAssertTrue(element.isHittable)
@@ -1392,7 +1418,15 @@ extension HomeLoadTests {
                 }
             }
             XCTAssertTrue(element.isHittable)
-            return (try element.snapshot(), try companion?.snapshot())
+            let nodes = try observe().nodes
+            let anchor = try XCTUnwrap(
+                nodes.first {
+                    $0.elementType == .staticText && $0.identifier == identifier
+                })
+            let companion = companionID.flatMap { id in
+                nodes.first { $0.elementType == .staticText && $0.identifier == id }
+            }
+            return (anchor, companion)
         }
         func capture(_ name: String) {
             let attachment = XCTAttachment(screenshot: app.screenshot())
@@ -1400,8 +1434,7 @@ extension HomeLoadTests {
             attachment.lifetime = .keepAlways
             add(attachment)
         }
-        let coupon = app.staticTexts["home.coupon.860001.title"]
-        let couponObservation = try reveal(coupon)
+        let couponObservation = try reveal("home.coupon.860001.title")
         let claim = app.buttons["home.coupon.860001.claim"]
         XCTAssertTrue(claim.isHittable)
         let couponFrame = couponObservation.element.frame
@@ -1411,7 +1444,7 @@ extension HomeLoadTests {
         XCTAssertFalse(couponObservation.element.label.isEmpty)
         capture("coupon")
         if !accessibility {
-            _ = try reveal(app.staticTexts["home.flashSale.830001.title"])
+            _ = try reveal("home.flashSale.830001.title")
             XCTAssertFalse(app.staticTexts["home.flashSale.830001.sold"].exists)
             capture("featured")
         }
@@ -1424,8 +1457,7 @@ extension HomeLoadTests {
             : [("recommend", "830009", "2101"), ("goods", "1", "459")]
         for (key, id, sold) in rows {
             let price = app.staticTexts["home.\(key).\(id).price"]
-            let count = app.staticTexts["home.\(key).\(id).sold"]
-            let row = try reveal(count, including: price)
+            let row = try reveal("home.\(key).\(id).sold", including: "home.\(key).\(id).price")
             XCTAssertTrue(price.isHittable)
             XCTAssertEqual(row.element.label, "已售\(sold)件")
             let priceFrame = try XCTUnwrap(row.companion).frame

@@ -1058,15 +1058,71 @@ extension HomeLoadTests {
         imageMetrics(app, "图片请求：4；取消：2；首页读取：1")
     }
 
+    /// The two manual round-trip chains share only a live checkpoint reader.
+    /// Every call replaces the snapshot after the preceding gestures/navigation.
+    /// Unexpected values retain the original page/image/metrics wait budgets.
+    @MainActor private func roundTripCheckpoint(
+        _ app: XCUIApplication, page index: Int? = nil,
+        image state: String? = nil, metrics expectedMetrics: String
+    ) throws -> [any XCUIElementSnapshot] {
+        func descendants(_ node: any XCUIElementSnapshot) -> [any XCUIElementSnapshot] {
+            [node] + node.children.flatMap { descendants($0) }
+        }
+        func observe() throws -> [any XCUIElementSnapshot] {
+            let began = ProcessInfo.processInfo.systemUptime
+            let nodes = descendants(try app.snapshot())
+            print("round-trip checkpoint \(ProcessInfo.processInfo.systemUptime - began)s")
+            return nodes
+        }
+        var nodes = try observe()
+        if let index {
+            let expected = "第\(index)张，共3张"
+            func pageValue() -> String? {
+                nodes.first { $0.identifier.hasPrefix("home.banner.current.") }?.value as? String
+            }
+            if pageValue() != expected {
+                bannerPage(app, index)
+                nodes = try observe()
+            }
+            XCTAssertEqual(pageValue(), expected)
+            let dots = nodes.first { $0.identifier == "home.banner.indicators" }
+            XCTAssertTrue(dots != nil)
+            XCTAssertEqual(dots?.value as? String, "第\(index)页，共3页")
+        }
+        if let state {
+            func imagePresent() -> Bool {
+                nodes.contains {
+                    $0.identifier == "home.image.\(state)"
+                        && (state != "success" || $0.elementType == .button)
+                }
+            }
+            if !imagePresent() {
+                XCTAssertTrue(imageElement(app, state).waitForExistence(timeout: 10))
+                nodes = try observe()
+            }
+            XCTAssertTrue(imagePresent(), "image must expose \(state)")
+        }
+        func metricsLabel() -> String? {
+            nodes.first {
+                $0.identifier == "home.image.metrics" && $0.elementType == .staticText
+            }?.label
+        }
+        if metricsLabel() != expectedMetrics {
+            imageMetrics(app, expectedMetrics)
+            nodes = try observe()
+        }
+        XCTAssertEqual(metricsLabel(), expectedMetrics)
+        return nodes
+    }
+
     /// Non-first selection and the exact bottom viewport survive ordinary
     /// tab changes together; no home re-tap or implicit read is involved.
-    @MainActor func testSelectedBannerAndBottomPositionRetainedAcrossTabs() {
+    @MainActor func testSelectedBannerAndBottomPositionRetainedAcrossTabs() throws {
         let app = bannerApp("banner-pending")
         revealBanner(app)
         currentBanner(app).swipeLeft()
-        bannerPage(app, 2)
-        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
-        imageMetrics(app, "图片请求：2；取消：1；首页读取：1")
+        _ = try roundTripCheckpoint(
+            app, page: 2, image: "success", metrics: "图片请求：2；取消：1；首页读取：1")
         let lastRow = app.staticTexts["home.count.categoryAll"]
         reachAuxiliaryRow(app, row: lastRow, maximumDrags: 8)
         XCTAssertTrue(lastRow.isHittable, "the auxiliary last row must be reached")
@@ -1075,36 +1131,40 @@ extension HomeLoadTests {
             for tab in ["分类", "购物车"] {
                 app.tabBars.buttons[tab].tap()
                 app.tabBars.buttons["首页"].tap()
-                XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 5))
+                let loaded = app.staticTexts["home.loaded"]
+                XCTAssertTrue(loaded.exists || loaded.waitForExistence(timeout: 5))
                 XCTAssertTrue(
                     lastRow.isHittable, "bottom row must stay visible after \(tab), round \(round)")
                 XCTAssertEqual(lastRow.frame.minY, referenceMinY, accuracy: 1)
             }
-            bannerPage(app, 2)
-            imageMetrics(app, "图片请求：2；取消：1；首页读取：1")
+            _ = try roundTripCheckpoint(
+                app, page: 2, metrics: "图片请求：2；取消：1；首页读取：1")
         }
         keepFeedbackScreenshot(app, name: "PR13-selected-bottom-retained")
     }
 
-    @MainActor func testBannerFastPageRoundTripsAreBounded() {
+    @MainActor func testBannerFastPageRoundTripsAreBounded() throws {
         let app = bannerApp("banner-pending")
         revealBanner(app)
         // The final totals include the initial A subscription, not just page selection.
-        print("Initial banner sources: \(app.staticTexts["home.image.urlMetrics"].label)")
-        XCTAssertTrue(imageElement(app, "loading").waitForExistence(timeout: 10))
-        imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
+        let initial = try roundTripCheckpoint(
+            app, image: "loading", metrics: "图片请求：1；取消：0；首页读取：1")
+        print(
+            "Initial banner sources: \(initial.first { $0.identifier == "home.image.urlMetrics" }?.label ?? "")"
+        )
         for _ in 0..<5 {
             currentBanner(app).swipeLeft()
             currentBanner(app).swipeRight()
         }
-        bannerPage(app, 1)
-        XCTAssertTrue(imageElement(app, "loading").waitForExistence(timeout: 10))
-        imageMetrics(app, "图片请求：7；取消：5；首页读取：1")
-        XCTAssertTrue(
-            app.staticTexts["home.image.urlMetrics"].label.contains("/banner-pending-a=6/5"))
-        XCTAssertTrue(
-            app.staticTexts["home.image.urlMetrics"].label.contains("/banner-success-b=1/0"))
-        XCTAssertTrue(app.staticTexts["home.image.urlMetrics"].label.contains("迟到尝试：5"))
+        let final = try roundTripCheckpoint(
+            app, page: 1, image: "loading", metrics: "图片请求：7；取消：5；首页读取：1")
+        let urls = try XCTUnwrap(
+            final.first {
+                $0.identifier == "home.image.urlMetrics" && $0.elementType == .staticText
+            }?.label)
+        XCTAssertTrue(urls.contains("/banner-pending-a=6/5"))
+        XCTAssertTrue(urls.contains("/banner-success-b=1/0"))
+        XCTAssertTrue(urls.contains("迟到尝试：5"))
     }
 }
 
@@ -1605,8 +1665,9 @@ extension HomeLoadTests {
     }
 
     /// Wait for the first pagination change away from `page` and return the
-    /// newly shown page. AX polling lag only delays detection, never advances
-    /// it, so elapsed measurements stay valid lower bounds.
+    /// newly shown page. Elapsed time includes AX detection lag, so these UI
+    /// bounds constrain observation latency; exact timer boundaries are
+    /// covered by the deterministic autoplay tests.
     @MainActor private func waitAdvance(
         _ app: XCUIApplication, from page: String, timeout: TimeInterval = 10
     ) -> String {
@@ -1624,31 +1685,23 @@ extension HomeLoadTests {
         return observed
     }
 
-    /// One real short horizontal drag below the paging threshold. It must
-    /// keep the current page while held; the return value anchors the
-    /// re-arm measurement at the release instant. The press uses STATIC
-    /// app-relative coordinates: an element-derived coordinate is re-resolved
-    /// against the live AX tree during the press (and across the wrap
-    /// animation), which on a slow runner delayed the synthesized touch past
-    /// the pending five-second deadline (R-AUTO-01: the wrap then fired
-    /// before any touch existed). The banner is stationary once revealed, so
-    /// a single frame lookup converted to app fractions is enough.
-    @discardableResult
-    @MainActor private func unchangedDrag(_ app: XCUIApplication, hold: TimeInterval) -> Date {
-        let frame = currentBanner(app).frame
-        let appFrame = app.frame
-        let center = CGVector(
-            dx: (frame.midX - appFrame.minX) / appFrame.width,
-            dy: (frame.midY - appFrame.minY) / appFrame.height)
-        let shifted = CGVector(dx: center.dx + 0.02, dy: center.dy)
-        app.coordinate(withNormalizedOffset: center).press(
-            forDuration: 0.05,
-            thenDragTo: app.coordinate(withNormalizedOffset: shifted),
-            withVelocity: .slow, thenHoldForDuration: hold)
-        return Date()
+    /// One live AX observation keeps the leaf and dots at one checkpoint.
+    /// Call again after each gesture or navigation; never reuse across them.
+    @MainActor private func autoplayObservation(
+        _ app: XCUIApplication
+    ) throws -> (leafID: String, page: String) {
+        func descendants(_ node: any XCUIElementSnapshot) -> [any XCUIElementSnapshot] {
+            [node] + node.children.flatMap { descendants($0) }
+        }
+        let began = ProcessInfo.processInfo.systemUptime
+        let nodes = descendants(try app.snapshot())
+        let leaf = nodes.first { $0.identifier.hasPrefix("home.banner.current.") }
+        let dots = nodes.first { $0.identifier == "home.banner.indicators" }
+        print("autoplay checkpoint \(ProcessInfo.processInfo.systemUptime - began)s")
+        return (leaf?.identifier ?? "", dots?.value as? String ?? "")
     }
 
-    @MainActor func testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag() {
+    @MainActor func testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag() throws {
         continueAfterFailure = false
         let app = bannerApp("banner-multiple", automatic: true)
         revealBanner(app)
@@ -1658,33 +1711,61 @@ extension HomeLoadTests {
         XCTAssertTrue(bannerIndicators(app).exists, "multiple banners show in-image dots")
         // Synchronize on one genuine cold-start advance so later intervals
         // are measured from a known fresh arm, not from launch overhead.
+        // Cache the stationary touch area BEFORE observing a fresh advance.
+        // AX reads of the moving leaf must not delay the later real touch.
+        let appFrame = app.frame
+        let bannerFrame = currentBanner(app).frame
+        let y = (bannerFrame.midY - appFrame.minY) / appFrame.height
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: y))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.52, dy: y))
         let coldStart = Date()
         let heldPage = waitAdvance(app, from: indicatorPage(app), timeout: 15)
         print("autoplay cold-start advance after \(Date().timeIntervalSince(coldStart))s")
-        // The leaf's AX exposure can lag the indicator value by a beat right
-        // after an advance; settle before treating the leaf as the baseline.
-        waitQuiet(0.8)
-        let baseline = currentBanner(app).identifier
-        let released = unchangedDrag(app, hold: 1)
-        XCTAssertEqual(currentBanner(app).identifier, baseline, "unchanged drag keeps the page")
-        waitAdvance(app, from: heldPage)
+        // Dots expose the real selected index. Derive the expected fixture
+        // leaf directly, with no settling sleep or moving-frame lookup
+        // between this just-observed advance and the short drag.
+        guard let heldMatch = heldPage.firstMatch(of: /第(\d+)页/), let number = Int(heldMatch.1)
+        else {
+            XCTFail("unexpected indicator page value: \(heldPage)")
+            return
+        }
+        let baseline = "home.banner.current.\(910_000 + number)"
+        start.press(
+            forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 1)
+        let released = Date()
+        XCTAssertEqual(
+            try autoplayObservation(app).leafID, baseline, "unchanged drag keeps the page")
+        var page = waitAdvance(app, from: heldPage)
         let rearmElapsed = Date().timeIntervalSince(released)
         XCTAssertGreaterThanOrEqual(
             rearmElapsed, 4.5, "release must re-arm one full five-second interval")
         XCTAssertLessThanOrEqual(rearmElapsed, 9)
         // Two more genuine advances from the CURRENT page complete the
         // approved wrap back to the page held before the drag.
-        var page = indicatorPage(app)
         page = waitAdvance(app, from: page)
         page = waitAdvance(app, from: page)
         XCTAssertEqual(page, heldPage, "three advances wrap back to the held page")
         // Both public AX surfaces must agree after the wrap settles: the leaf
         // exposure can trail the indicator value by one AX beat.
         let baselineID = String(baseline.dropFirst("home.banner.current.".count))
-        let wrappedLeaf = app.descendants(matching: .any)[
-            "home.banner.current.\(baselineID)"
-        ].firstMatch
-        XCTAssertTrue(wrappedLeaf.waitForExistence(timeout: 2), "wrapped page leaf must be exposed")
+        // A fresh snapshot avoids re-resolving a moving AX element across
+        // the wrap. Keep the same exact leaf ID and two-second exposure bound.
+        func containsWrappedLeaf(_ node: any XCUIElementSnapshot) -> Bool {
+            node.identifier == "home.banner.current.\(baselineID)"
+                || node.children.contains { containsWrappedLeaf($0) }
+        }
+        let wrappedLeaf = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                do {
+                    return containsWrappedLeaf(try app.snapshot())
+                } catch {
+                    XCTFail("cannot observe wrapped leaf: \(error)")
+                    return false
+                }
+            }, object: nil)
+        XCTAssertTrue(
+            XCTWaiter.wait(for: [wrappedLeaf], timeout: 2) == .completed,
+            "wrapped page leaf must be exposed")
         keepFeedbackScreenshot(app, name: "HOME-AUTO-image-dots-cycle")
     }
 
@@ -1706,7 +1787,7 @@ extension HomeLoadTests {
         return nil
     }
 
-    @MainActor func testBannerAutoplayPausesWhileAwayAndResumesFullInterval() {
+    @MainActor func testBannerAutoplayPausesWhileAwayAndResumesFullInterval() throws {
         continueAfterFailure = false
         // APPROVAL-AWAY-BUSY-120-20261019: several mandated five-second waits
         // plus two away windows exceed the default allowance on slow runners.
@@ -1741,11 +1822,23 @@ extension HomeLoadTests {
                 withVelocity: .slow, thenHoldForDuration: hold)
             return Date()
         }
+        func consistentLeafID() throws -> String? {
+            for _ in 0..<4 {
+                let observation = try autoplayObservation(app)
+                if let p = observation.page.firstMatch(of: /第(\d+)页/), let n = Int(p.1),
+                    observation.leafID == "home.banner.current.\(910_000 + n)"
+                {
+                    return observation.leafID
+                }
+                waitQuiet(0.5)
+            }
+            return nil
+        }
         // This anchor precedes the real release/re-arm. Confirming departure
         // within five seconds excludes expiry between baseline and departure.
         let tabDepartureStarted = ProcessInfo.processInfo.systemUptime
         stableBannerDrag(hold: 0.1)
-        guard let baseline = syncedCurrentLeafID(app) else {
+        guard let baseline = try consistentLeafID() else {
             XCTFail("indicator and leaf never agreed on one page")
             return
         }
@@ -1768,8 +1861,9 @@ extension HomeLoadTests {
         // after the tap returns, BEFORE the currentBanner AX query, so the
         // original bounds cover the query too.
         let returned = Date()
-        XCTAssertEqual(currentBanner(app).identifier, baseline, "no advance while away")
-        let resumedPage = waitAdvance(app, from: indicatorPage(app))
+        let returnedObservation = try autoplayObservation(app)
+        XCTAssertEqual(returnedObservation.leafID, baseline, "no advance while away")
+        let resumedPage = waitAdvance(app, from: returnedObservation.page)
         let tabElapsed = Date().timeIntervalSince(returned)
         XCTAssertGreaterThanOrEqual(tabElapsed, 3.0, "timer must resume after tab return")
         XCTAssertLessThanOrEqual(tabElapsed, 9)
@@ -1782,9 +1876,10 @@ extension HomeLoadTests {
         }
         let resumedLeafID = "home.banner.current.\(910_000 + pageNumber)"
         let tabReleased = stableBannerDrag(hold: 0.5)
+        let draggedObservation = try autoplayObservation(app)
         XCTAssertEqual(
-            currentBanner(app).identifier, resumedLeafID, "unchanged drag keeps the page")
-        waitAdvance(app, from: indicatorPage(app))
+            draggedObservation.leafID, resumedLeafID, "unchanged drag keeps the page")
+        waitAdvance(app, from: draggedObservation.page)
         let tabRearmElapsed = Date().timeIntervalSince(tabReleased)
         XCTAssertGreaterThanOrEqual(
             tabRearmElapsed, 4.4, "release in the resumed state must re-arm a full interval")
@@ -1792,7 +1887,7 @@ extension HomeLoadTests {
         // Scene backgrounding pauses the same way and preserves selection.
         let sceneDepartureStarted = ProcessInfo.processInfo.systemUptime
         stableBannerDrag(hold: 0.1)
-        guard let beforeBackground = syncedCurrentLeafID(app) else {
+        guard let beforeBackground = try consistentLeafID() else {
             XCTFail("indicator and leaf never agreed before backgrounding")
             return
         }
@@ -1815,16 +1910,38 @@ extension HomeLoadTests {
         // ONE early preserved read: the resumed timer legitimately advances
         // five seconds after activation, and a slow post-restart read can land
         // after that advance, so a second (indicator) preserved read is racy.
-        XCTAssertEqual(currentBanner(app).identifier, beforeBackground)
-        waitAdvance(app, from: indicatorPage(app))
+        let foregroundObservation = try autoplayObservation(app)
+        XCTAssertEqual(foregroundObservation.leafID, beforeBackground)
+        waitAdvance(app, from: foregroundObservation.page)
         let sceneElapsed = Date().timeIntervalSince(foregrounded)
         XCTAssertGreaterThanOrEqual(sceneElapsed, 3.0, "timer must resume after foregrounding")
         XCTAssertLessThanOrEqual(sceneElapsed, 9)
     }
 
-    @MainActor func testBannerAutoplayPausesWhileBannerIsOffscreen() {
+    @MainActor func testBannerAutoplayPausesWhileBannerIsOffscreen() throws {
         continueAfterFailure = false
         let app = bannerApp("banner-multiple", automatic: true)
+        // Snapshot each observation instead of repeatedly resolving a dots
+        // element whose AX representation can change during the transition.
+        // This preserves the original nonempty/change predicate and 10s bound.
+        func waitObservedAdvance(from page: String) -> String {
+            var observed = page
+            let advanced = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in
+                    do {
+                        let value = try self.autoplayObservation(app).page
+                        if !value.isEmpty, value != page { observed = value }
+                        return !value.isEmpty && value != page
+                    } catch {
+                        XCTFail("cannot observe autoplay advance: \(error)")
+                        return false
+                    }
+                }, object: nil)
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [advanced], timeout: 10), .completed,
+                "autoplay must advance away from \(page)")
+            return observed
+        }
         revealBanner(app)
         XCTAssertTrue(currentBanner(app).isHittable)
         let scroll = app.scrollViews["home.scroll"].frame.intersection(app.frame)
@@ -1865,17 +1982,30 @@ extension HomeLoadTests {
         // pre-touch baseline raced it — the CI offscreen failure), so re-arm
         // the phase explicitly and derive the expected leaf from the
         // JUST-OBSERVED indicator page.
-        let resumedPage = waitAdvance(app, from: indicatorPage(app))
+        // Cache the stationary touch region before the fresh advance. The
+        // selected leaf can translate offscreen during horizontal animation.
+        let appFrame = app.frame
+        let bannerY = (currentBanner(app).frame.midY - appFrame.minY) / appFrame.height
+        let dragStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: bannerY))
+        let dragEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.52, dy: bannerY))
+        let returnObservation = try autoplayObservation(app)
+        XCTAssertFalse(returnObservation.page.isEmpty, "indicator page must be exposed")
+        let resumedPage = waitObservedAdvance(from: returnObservation.page)
         guard let page = resumedPage.firstMatch(of: /第(\d+)页/), let pageNumber = Int(page.1)
         else {
             XCTFail("unexpected indicator page value: \(resumedPage)")
             return
         }
         let resumedLeafID = "home.banner.current.\(910_000 + pageNumber)"
-        let released = unchangedDrag(app, hold: 0.5)
+        dragStart.press(
+            forDuration: 0.05, thenDragTo: dragEnd,
+            withVelocity: .slow, thenHoldForDuration: 0.5)
+        let released = Date()
+        let draggedObservation = try autoplayObservation(app)
         XCTAssertEqual(
-            currentBanner(app).identifier, resumedLeafID, "unchanged drag keeps the page")
-        waitAdvance(app, from: indicatorPage(app))
+            draggedObservation.leafID, resumedLeafID, "unchanged drag keeps the page")
+        XCTAssertFalse(draggedObservation.page.isEmpty, "indicator page must be exposed")
+        _ = waitObservedAdvance(from: draggedObservation.page)
         let elapsed = Date().timeIntervalSince(released)
         XCTAssertGreaterThanOrEqual(elapsed, 4.4, "release must re-arm a full interval")
         XCTAssertLessThanOrEqual(elapsed, 9)
@@ -1884,7 +2014,7 @@ extension HomeLoadTests {
     /// The seeded pushed route keeps home inactive from launch; popping back
     /// must arm one full fresh interval with no catch-up burst. Existing
     /// nav-control seams only — no new product route or test button.
-    @MainActor func testBannerAutoplayArmsAfterPushedRoutePopsBack() {
+    @MainActor func testBannerAutoplayArmsAfterPushedRoutePopsBack() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments += [
@@ -1896,11 +2026,15 @@ extension HomeLoadTests {
         app.navigationBars.buttons.element(boundBy: 0).tap()
         let popped = Date()
         XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
-        revealBanner(app)
+        // Observe the preserved selection before reveal's geometry queries;
+        // every query remains inside the original pop-to-advance timing scope.
+        let poppedObservation = try autoplayObservation(app)
         XCTAssertEqual(
-            currentBanner(app).identifier, "home.banner.current.910001",
+            poppedObservation.leafID, "home.banner.current.910001",
             "home was inactive for the whole pushed period")
-        waitAdvance(app, from: indicatorPage(app), timeout: 15)
+        XCTAssertFalse(poppedObservation.page.isEmpty, "indicator page must be exposed")
+        revealBanner(app)
+        waitAdvance(app, from: poppedObservation.page, timeout: 15)
         let elapsed = Date().timeIntervalSince(popped)
         XCTAssertGreaterThanOrEqual(
             elapsed, 4.4, "popping must arm one full fresh interval, not a catch-up burst")

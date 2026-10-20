@@ -25,19 +25,6 @@ final class NavigationSmokeTests: XCTestCase {
         XCTAssertEqual(tabs.element(boundBy: 1).label, "分类")
         XCTAssertEqual(tabs.element(boundBy: 2).label, "购物车")
         XCTAssertEqual(tabs.element(boundBy: 3).label, "我的")
-        XCTAssertTrue(app.staticTexts["真实首页待接入 · 当前展示本地工程夹具"].waitForExistence(timeout: 5))
-    }
-
-    @MainActor func testPendingTabsShowMarkersAndCartStaysFixture() {
-        let app = launchApp()
-        app.tabBars.buttons["分类"].tap()
-        XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
-        app.tabBars.buttons["购物车"].tap()
-        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
-        app.tabBars.buttons["我的"].tap()
-        XCTAssertTrue(app.staticTexts["me.pending"].waitForExistence(timeout: 5))
-        app.tabBars.buttons["首页"].tap()
-        XCTAssertTrue(app.staticTexts["catalog.fixture"].waitForExistence(timeout: 5))
     }
 
     /// Re-tapping the current tab is only reachable while the tab bar is visible, i.e.
@@ -336,7 +323,6 @@ final class NavigationSmokeTests: XCTestCase {
         app.buttons["catalog.openProduct"].tap()
         XCTAssertTrue(app.staticTexts["detail.goodsID"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["detail.goodsID"].label, "商品ID：1")
-        XCTAssertTrue(app.staticTexts["真实详情待接入 · 仅验证类型化导航与商品ID传递"].exists)
         XCTAssertFalse(app.tabBars.buttons["首页"].waitForExistence(timeout: 2))
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.buttons["catalog.openProduct"].waitForExistence(timeout: 5))

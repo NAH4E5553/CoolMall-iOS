@@ -50,21 +50,53 @@ class CIRuntimeTests(unittest.TestCase):
 
 
 class CIResultTests(unittest.TestCase):
+    def needs(self, required='true', result='success', reason='implementation-rules-or-unknown'):
+        return {'classify': {'result': 'success', 'outputs': {'run_verification': required, 'reason': reason}},
+                'verify': {'result': result}}
+
     def test_success(self):
-        RESULTS.validate({'verify': {'result': 'success'}})
+        self.assertIn('verification succeeded', RESULTS.validate(self.needs()))
+
+    def test_explicit_scope_exclusion(self):
+        self.assertIn('not run', RESULTS.validate(self.needs('false', 'skipped', 'docs-or-placeholder-only')))
 
     def test_failure_skip_cancel_and_missing_result(self):
         for result in ('failure', 'skipped', 'cancelled', None):
-            with self.subTest(result=result), self.assertRaises(ValueError):
-                RESULTS.validate({'verify': {'result': result}})
+            with self.subTest(result=result), self.assertRaisesRegex(ValueError, 'verify result'):
+                RESULTS.validate(self.needs(result=result))
+
+    def test_excluded_job_must_really_be_skipped(self):
+        for result in ('failure', 'success', 'cancelled', None):
+            with self.subTest(result=result), self.assertRaisesRegex(ValueError, 'unexpectedly'):
+                RESULTS.validate(self.needs('false', result, 'docs-or-placeholder-only'))
+
+    def test_classification_failure_never_passes(self):
+        for result in ('failure', 'cancelled', 'skipped', None):
+            data = self.needs('false', 'skipped', 'docs-or-placeholder-only')
+            data['classify']['result'] = result
+            with self.subTest(result=result), self.assertRaisesRegex(ValueError, 'classify result'):
+                RESULTS.validate(data)
+
+    def test_invalid_decision_or_reason(self):
+        for required, reason in [('false', 'unknown'), ('', ''), ('TRUE', ''), (None, '')]:
+            with self.subTest(required=required), self.assertRaisesRegex(ValueError, 'classification decision'):
+                RESULTS.validate(self.needs(required, 'skipped', reason))
 
     def test_missing_job(self):
-        with self.assertRaises(ValueError):
-            RESULTS.validate({})
+        with self.assertRaisesRegex(ValueError, 'job set'):
+            RESULTS.validate({'verify': {'result': 'success'}})
 
     def test_unknown_job(self):
-        with self.assertRaises(ValueError):
-            RESULTS.validate({'verify': {'result': 'success'}, 'extra': {'result': 'success'}})
+        data = self.needs()
+        data['extra'] = {'result': 'success'}
+        with self.assertRaisesRegex(ValueError, 'job set'):
+            RESULTS.validate(data)
+
+    def test_missing_outputs(self):
+        data = self.needs()
+        data['classify']['outputs'] = {}
+        with self.assertRaises(KeyError):
+            RESULTS.validate(data)
 
 
 if __name__ == '__main__':

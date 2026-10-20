@@ -1,0 +1,591 @@
+{
+  "errors" : [
+
+  ],
+  "values" : [
+    {
+      "disabledTests" : [
+
+      ],
+      "enabledTests" : [
+        {
+          "identifier" : "CartFeatureTests/cancellationDoesNotPublishBufferedValues()"
+        },
+        {
+          "identifier" : "CartFeatureTests/projectionRejectsOlderRevision()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeBannerAutoplayGateTests/assistiveMotionSettingsDisableAutoplay()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeBannerAutoplayGateTests/dragPausesAndOffscreenBannerPauses()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeBannerAutoplayGateTests/emptyOrSingleBannerNeverStartsTheTimer()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeBannerAutoplayGateTests/manualGateInactiveHomeOrScenePauses()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeBannerAutoplayGateTests/multipleVisibleBannersAreEligible()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeBannerAutoplayTests/earlyAndSupersededWakesCannotAdvance()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeBannerAutoplayTests/pauseCancelsAndResumeDoesNotCatchUp()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeBannerSelectionTests/boundariesNeverWrapAndSingleHasNoNeighbor()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeBannerSelectionTests/changedURLDoesNotChangeSelectedIdentity()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeBannerSelectionTests/delayedMissingIDCannotReselectRemovedPage()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeBannerSelectionTests/deletionEmptyAndReturnUseNewFirst()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeBannerSelectionTests/initialAndReorderedSelectionUsesID()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/acceptedPullReadIsReallyCancelledOnLeaveWithoutRefire()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/alreadyCancelledPullDoesNotAcceptOrRegister()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/busyPullReplayStaysDedupedAndAccessibleEntryReadsWhenIdle()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/callerCancelledFirstReadRejectsLatePlainError()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/callerCancelledFirstReadRejectsLateValueDespiteIgnoredCancel()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/callerCancelledOriginalRetryRestoresRetainedFailure()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/cancelledTaskReturningValueRestoresIdleThenRereadSucceeds()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/cancelledTaskThrowingPlainErrorRestoresIdleNotFailed()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/cancelledThenFasterNewReadWinsOverStaleCompletions()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/cancellingPullWaitDoesNotCancelOwnedReadOrClearNextTicket()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/consecutiveRetapsMergeIntoOneBatchAtLastDeadline()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/delayedTaskStartWaitsOnlyRemainingMergeTime()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/driveCancelsInFlightRetryOnVisibilityLossWithoutAutoRetry()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/duplicatePullInteractionCannotReadAgainAfterCompletion()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/expiredDeadlineAtTaskStartSkipsSleepEntirely()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/explicitRetapRefreshOfEmptyStillKeepsSnapshotBehindHint()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/explicitVisibilityLossSuspendsFirstReadToIdle()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/failedIsRetainedAcrossVisibilityWithoutAutoRetry()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/failedPullEndsAndKeepsCommittedContent()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/failureThenSingleUserRetrySucceeds()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/firstLoadSuccessCommitsReady()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/lateFailureAfterSuspensionDoesNotDisturbNewRequest()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/loadingRejectsSecondRetry()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/offPageCancelsInFlightRetapReadKeepsContentAndDoesNotRefire()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/oldWaiterCannotEndNewPullWaiter()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/originalRetryFromEmptyReloadsFullPageAndFailsToFailed()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/originalRetryFromEmptyShowsLoadingAndCancelRestoresRetainedEmpty()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/pageTeardownAfterFirstLoadDropsPendingRetapWindow()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/pageTeardownEndsAllCurrentPageIntentsIdempotentlyWithoutReplay()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/pageTeardownEndsPullWaiterAndRejectsLateErrorFromIgnoredCancel()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/pageTeardownReallyCancelsInFlightRetapRefresh()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/pageTeardownRejectsLateValueFromIgnoredCancelInFlightRefresh()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/pullDuringMergeWindowIsRejectedWithoutDisturbingWindow()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/pullReadsImmediatelyAndBusyPullDoesNotQueue()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/reTapFromEmptyCanProduceReady()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/reTapOnFullPageFailureReloadsThroughFirstLoadUI()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/readySnapshotIsRetainedWithoutImplicitReread()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/realEntryHostPositiveControlRetapReadsWhileMounted()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/realEntryOnDisappearTearsDownPendingRetapWindow()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/recoveryIsImmediateAndRetapMaySupersedeIt()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/refreshFailureKeepsOldContentHintAndRetryRefreshSucceeds()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/retapDuringFirstLoadWaitsWindowAndLateFirstValueIsRejected()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/retapDuringInFlightReadSupersedesAndMergesNewBatch()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/retapDuringMergeWindowReplacesPendingTimer()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/retapSupersedeCancelsOldClientTaskThroughRealOwner()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/retapSupersedesCancellationResponsiveFirstLoadForReal()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/retapSupersedesInFlightPullAndEndsWaiterBeforeNewRead()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/retapSupersedesOriginalRetryReadForReal()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/retapWindowIsDroppedOnLeaveWithoutReadOrReplay()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/retryCancelledMidFlightRestoresRetainedFailure()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/retryRefreshSlotRejectsSecondAcceptanceWhileBusy()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/sameTokenRedeliveryDoesNotResetDeadline()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/secondImmediateAcceptanceInSameActorTurnIsRejected()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/singleRetapReadsOnlyAfterFullWindowAndOnlyOnce()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/sixEmptyDisplayArraysCommitEmptyEvenWithAuxiliaryCategories()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/staleCallerCancellationCannotTouchNewerRetapRequest()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/supersededRefreshCompletionCannotClearNewRefreshState()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/supersededRefreshLateFailureCannotSetHintOrClearIndicator()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/taskCancellationOfFirstReadReturnsToIdle()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/validEmptyCanRetryAndReadyHasNoRefreshAction()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/validEmptyCommitSurvivesLateFailureFromRevokedRequest()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeViewModelTests/visibilityLossSuspendsFirstReadToIdleAndReReadsOnceOnReturn()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/cancelledLoadReturnsIdle()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/replacedLoadCannotOverwriteNewResult()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/successAndFailure()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testApprovedHomeDisplayAtAccessibilitySize()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testApprovedHomeDisplayAtNormalSize()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayArmsAfterPushedRoutePopsBack()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayPausesWhileAwayAndResumesFullInterval()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayPausesWhileBannerIsOffscreen()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBannerFastPageRoundTripsAreBounded()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBannerInitialImageKeepsSingleHomeRead()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBannerManualPagingBoundariesFailureAndMissing()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBannerPendingPageCancellationAndTabRetention()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBannerReconciliationInOneRefreshSequence()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBannerRefreshFailurePreservesSelectedPageAndRetry()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBannerSelectedPageSurvivesBusyRetapsAndCancelledRefresh()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBannerSingleHidesControlsAndUpdatesSameIDURL()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBusyPullDoesNotQueueAndLeaveCancelsAcceptedRefresh()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testConflictingTestArgumentsStopWithConfigError()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testCouponAndFeaturedAtAccessibilitySize()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testCouponAndFeaturedAtNormalSize()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testEmptyCategoryFixtureShowsNoSectionsAndKeepsEmptyEvidence()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testEmptyFixtureShowsCountsAndRetryStaysEmpty()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testEmptyFixtureShowsNoSectionsAndKeepsEmptyEvidence()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testFlagLikeNextArgumentStopsWithConfigError()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testHomeTopRowRemovedAndPushedRouteBackRestoresRoot()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testImageControlledTimeoutIsFailureNotCancellation()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testImageFailureKeepsHomeAndExplicitRefreshChangesURL()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testImageFastScrollKeepsOneRequestAndHomeSnapshot()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testImageMissingAfterExplicitRefreshKeepsHome()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testImagePendingLeaveCancelsAndReturnRestoresWithoutHomeReload()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testImageSuccessAndTabReturnUseOneCachedRequest()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testLayoutMixedHidesEmptySectionsAndKeepsCounts()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testMissingFixtureValueStopsWithConfigError()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testOnlyCategoryAllFixtureStaysEmptyWithObservableAuxiliaryCount()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testPendingRefreshFullChainInOneLaunch()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testPullRefreshFailureKeepsContentAndRetryRecovers()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testPullRefreshSuccessReplacesSnapshot()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testR2ProductSectionsKeepDistinctIdentitiesAndYuanPrices()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testReTapRefreshFailureKeepsOldContentAndRetrySucceeds()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testReTapScrollsToTopAndRefreshesWithNewSnapshot()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testRetryFixtureFailsFirstReadThenSucceedsOnUserRetry()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testScrollPositionAndContentRetainedAcrossTabRoundTrips()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testSelectedBannerAndBottomPositionRetainedAcrossTabs()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testUnknownFixtureValueStopsWithConfigError()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testValidFixtureShowsLoadedStateAndSectionCounts()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testValidFixtureShowsSixSectionsInPRDOrder()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testCartRouteHidesTabBarAndBackRestoresIt()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testCatalogRouteOpensCartAndReturns()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testCategoryDetailSourceKeepsSourceTabAndHomeStack()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testColdStartDefaultsToHomeWithFourTabs()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testControlledBackPopsOnlyCurrentStackAcrossFourPaths()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testControlledProbeIdentityAcrossSwitchesCategoryAndCart()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testControlledProbeIdentityAcrossSwitchesMeAndHomeCart()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testDetailIndependentCartReturnKeepsDetailIDAndIdentity()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testFeatureTabsSwitchAndReturn()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testFixtureProbeHidesTabBarAndBackRestoresIt()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testFixtureProbePathPushBackAndIdentityPerEntry()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testHomeCartPathIndependentFromCategoryStack()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testProductDetailRoutePassesIDAndRestoresSourceRoot()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testRepeatedCategoryRootTapsStayPut()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testRepeatedCurrentTabTapsDoNotAlterPageOrPath()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testRepeatedMeAndHomeRootTapsStayPut()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testTabRoundTripKeepsCategoryRootCountAcrossTwoRounds()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testTabRoundTripKeepsMeRootCountAcrossTwoRounds()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/NavigationSmokeTests/testTabRoundTripPreservesFixtureRootLabels()"
+        },
+        {
+          "identifier" : "MallCoreTests/HomeContractTests/integerPriceConvertsToExactYuanDecimal()"
+        },
+        {
+          "identifier" : "MallCoreTests/HomeContractTests/snapshotInitializerKeepsSectionOrderAndValues()"
+        },
+        {
+          "identifier" : "MallCoreTests/specificationAndScopeIdentity()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/allSevenMissingOrNullAndEmptyArraysAreValidEmpty()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/crossSectionSameGoodsIDIsAllowed()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/envelopeShapeFailuresAreInvalidResponseOrPayload()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/fixtureServiceMapsBundledValidEnvelope()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/httpFailureWinsEvenWithBadBodyAndBusinessCodeWinsOverBadData()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/idAndPriceViolationsFailWholeRead()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/imageURLTextRulesMapToNilButKeepOthers()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/invalidConfigurationFailsBeforeAnyRequest()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/nonHTTPResponseFailsInvalidResponse()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/nonPositiveTimeoutFailsConfiguration()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/nonStringImageValueFails()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/onlyCategoryAllNonEmptyIsStillEmptyButKeepsAuxiliary()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/sectionPresentButNotArrayFailsNotEmpty()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/soldDefaultsOnlyForMissingAndNullAndPreservesInteger()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/subTitleOptionalStringRules()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/trailingSlashMissingBaseFailsConfiguration()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/typeErrorsOnRequiredAndOptionalFieldsFailWholeRead()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/unknownFieldsAreIgnored()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeServiceTests/validEnvelopeMapsSevenSectionsInOrderWithExactPrices()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeTransportTests/productionConfigurationDisablesCookieCredentialAndCacheStorage()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeTransportTests/requestConstructionUsesExactGETWithoutAuthOrCookies()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeTransportTests/requestTimeoutMapsToTimeoutFailure()"
+        },
+        {
+          "identifier" : "MallDataTests/HomeTransportTests/taskCancellationPropagatesAsCancellationError()"
+        },
+        {
+          "identifier" : "MallDataTests/bundledProductAndMissingID()"
+        },
+        {
+          "identifier" : "MallDataTests/cancelledObservationCleansUp()"
+        },
+        {
+          "identifier" : "MallDataTests/cancelledWriteDoesNotCommit()"
+        },
+        {
+          "identifier" : "MallDataTests/destroyingOwnerFinishesStream()"
+        },
+        {
+          "identifier" : "MallDataTests/failuresDoNotCommitAndScopesAreIndependent()"
+        },
+        {
+          "identifier" : "MallDataTests/initialAndSubsequentSnapshotsAndReconnect()"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/configuredRedirectDelegateStripsHeadersAndRejectsPrivateOrHTTP()"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/controlledAssemblyObservesRealNukeTaskCancellation()"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/controlledSourceActualCancellationRejectsLateCallbacks()"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/controlledSourceCancelBeforeStartNeverStartsOrCompletes()"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/controlledSourceSynchronousResponsePreservesOrderAndSingleEnd()"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/controlledSourceTimeoutCompletesAsErrorAndCleanupOnlyOnce()"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/differentThumbnailSubscribersShareTheOriginalDownload()"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/diskCacheRestoresAndNamespacesStayIsolated()"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/diskInitializationFailureAndMemoryOnlyRecovery()"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/invalidConfigurationsFailBeforeTransport()"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/invalidMissingInactiveInputsMakeNoRequest()"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/lastSubscriberCancellationSuppressesLateTransport()"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/memoryLimitDeclinesOversizedEntriesWithoutBreakingDisplay()"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/oldSuccessOrErrorAfterCancelCannotReplaceB(isError:)"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/realURLSessionHasNoCredentialsAndRejectsFailures()"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/sharedWorkSurvivesOneSubscriberCancellation()"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/stableMemoryCacheAndSeparateFitFillIdentity()"
+        },
+        {
+          "identifier" : "MallImagesTests/ImagePipelineTests/thumbnailDecodesLargeSourceAtTargetPixels()"
+        }
+      ],
+      "testPlan" : "CoolMalliOS"
+    }
+  ]
+}

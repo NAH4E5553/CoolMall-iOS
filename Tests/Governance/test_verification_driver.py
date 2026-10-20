@@ -1,0 +1,302 @@
+"""Exercise the real verification entry with isolated command stubs, not Xcode."""
+import json
+import os
+import shutil
+import signal
+import subprocess
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+STUB = r'''#!/usr/bin/env python3
+import json, os, plistlib, sys, time
+from pathlib import Path
+name = Path(sys.argv[0]).name
+args = sys.argv[1:]
+event = name
+if name == 'xcodebuild':
+    event += ':' + args[0]
+    if '-enumerate-tests' in args:
+        event = 'xcodebuild:discovery'
+    if args[0] == 'build':
+        event += ':' + args[args.index('-configuration') + 1]
+with open(os.environ['STUB_EVENTS'], 'a') as f:
+    f.write(json.dumps({'event': event, 'args': args}) + '\n')
+if event == 'xcodebuild:build:Debug':
+    app = Path(args[args.index('-derivedDataPath') + 1]) / 'Build/Products/Debug-iphonesimulator/CoolMalliOS.app'
+    app.mkdir(parents=True)
+    (app / 'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier': 'fixture.verification'}))
+if event == 'xcodebuild:discovery':
+    raw = json.loads(Path('fixture-enumeration.json').read_text())
+    if os.environ.get('STUB_BAD_DISCOVERY'):
+        raw['values'][0]['enabledTests'] = []
+    Path(args[args.index('-test-enumeration-output-path') + 1]).write_text(json.dumps(raw))
+if event == 'xcodebuild:test-without-building' and os.environ.get('STUB_TAMPER'):
+    response = Path(args[args.index('-only-testing') + 1][1:])
+    if os.environ['STUB_TAMPER'] == 'response':
+        response.write_text('CoolMalliOSUITests/HomeLoadTests/unknown()\n')
+    else:
+        manifest = response.parent / 'test-scope.json'
+        data = json.loads(manifest.read_text()); data['expected'] = data['expected'][:-1]
+        manifest.write_text(json.dumps(data))
+if event == os.environ.get('STUB_BLOCK'):
+    Path(os.environ['STUB_READY']).write_text('ready')
+    time.sleep(30)
+if event == 'xcodebuild:test-without-building' and os.environ.get('STUB_CORRUPT'):
+    next(Path('.build/verification').glob('*/stage-timings.json')).write_text('{broken')
+if event == os.environ.get('STUB_FAIL'):
+    sys.exit(int(os.environ.get('STUB_RC', '42')))
+'''
+
+
+class VerificationDriverTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        (self.root / 'Scripts').mkdir()
+        (self.root / 'bin').mkdir()
+        for name in ['verify-local.sh', 'verification-timing.py', 'select-test-scope.py', 'classify-ci-changes.py', 'check-boundaries.py']:
+            shutil.copy2(ROOT / 'Scripts' / name, self.root / 'Scripts' / name)
+        for name in ['check-toolchain.sh', 'check-format.sh', 'check-boundary-negative.sh',
+                     'check-test-results.py']:
+            self.stub(self.root / 'Scripts' / name)
+        for name in ['xcodebuild', 'xcrun']:
+            self.stub(self.root / 'bin' / name)
+        shutil.copy2(ROOT / 'ENGINEERING.md', self.root / 'ENGINEERING.md')
+        shutil.copy2(ROOT / 'Tests/Governance/Fixtures/test-enumeration.json', self.root / 'fixture-enumeration.json')
+        (self.root / '.gitignore').write_text('.build/\nevents.jsonl\nready\n')
+        for args in [('init', '-q'), ('config', 'user.email', 'fixture@example.invalid'),
+                     ('config', 'user.name', 'Fixture'), ('add', '.'), ('commit', '-qm', 'fixture')]:
+            subprocess.run(['git', *args], cwd=self.root, check=True, capture_output=True)
+        self.env = dict(os.environ, PATH=str(self.root / 'bin') + os.pathsep + os.environ['PATH'],
+                        MALL_SIMULATOR_ID='fixture-only-no-device',
+                        STUB_EVENTS=str(self.root / 'events.jsonl'),
+                        STUB_READY=str(self.root / 'ready'))
+        for key in ['MALL_TEST_DIAGNOSTICS', 'STUB_FAIL', 'STUB_RC', 'STUB_CORRUPT', 'STUB_BLOCK', 'STUB_BAD_DISCOVERY', 'GITHUB_EVENT_NAME']:
+            self.env.pop(key, None)
+
+    def stub(self, path):
+        path.write_text(STUB)
+        path.chmod(0o755)
+
+    def run_entry(self, **env):
+        return subprocess.run(['bash', 'Scripts/verify-local.sh'], cwd=self.root,
+                              env=dict(self.env, **env), capture_output=True, text=True, timeout=15)
+
+    def ledger(self):
+        path = next((self.root / '.build/verification').glob('*/stage-timings.json'))
+        return path, json.loads(path.read_text())
+
+    def events(self):
+        path = self.root / 'events.jsonl'
+        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+    def test_default_keeps_complete_order_and_never_diagnostics(self):
+        result = self.run_entry()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        events = self.events()
+        self.assertEqual([e['event'] for e in events], [
+            'check-toolchain.sh', 'xcrun', 'xcrun', 'check-format.sh',
+            'check-boundary-negative.sh', 'xcodebuild:build:Debug', 'xcodebuild:build:Release',
+            'xcrun', 'xcrun', 'xcrun', 'xcrun', 'xcodebuild:discovery', 'xcodebuild:test-without-building', 'check-test-results.py'])
+        discovery = next(e['args'] for e in events if e['event'] == 'xcodebuild:discovery')
+        self.assertEqual(discovery[discovery.index('-collect-test-diagnostics') + 1], 'never')
+        args = next(e['args'] for e in events if e['event'] == 'xcodebuild:test-without-building')
+        self.assertEqual(args[args.index('-collect-test-diagnostics') + 1], 'never')
+        self.assertEqual(args[args.index('-testPlan') + 1], 'CoolMalliOS')
+        self.assertEqual(args[args.index('-parallel-testing-enabled') + 1], 'NO')
+        self.assertFalse(any(a.startswith(('-skip-testing', '-maximum-test')) for a in args))
+        self.assertEqual(args.count('-only-testing'), 1)
+        self.assertTrue(args[args.index('-only-testing') + 1].startswith('@'))
+        manifest = json.loads(next((self.root / '.build/verification').glob('*/test-scope.json')).read_text())
+        self.assertEqual(manifest['expected'], manifest['discovered'])
+        path, data = self.ledger()
+        self.assertEqual(data['verificationExitCode'], 0)
+        self.assertTrue(all(p['status'] == 'passed' and p['durationSeconds'] >= 0 for p in data['phases']))
+        self.assertTrue(path.with_suffix('.md').exists())
+
+    def test_pr_selected_entry_uses_discovered_class_and_exact_head(self):
+        # Replace only the remote transport in this isolated copy, retaining the
+        # actual history decision, Git diff, resolver and shell entry.
+        selector = self.root / 'Scripts/select-test-scope.py'
+        text = selector.read_text().replace('def api(path, env):', 'def live_api(path, env):')
+        fake = """def api(path, env):
+    if '/jobs?' in path:
+        return {'total_count':2, 'jobs':[{'name':name,'status':'completed','conclusion':'success'} for name in ['F0 verification','required-checks']]}
+    if '/workflows/' in path:
+        return {'total_count':1,'workflow_runs':[{'id':1,'created_at':'2026-01-01','status':'completed','conclusion':'success','head_sha':env['MALL_DIFF_BASE'],'head_branch':'fixture','pull_requests':[{'number':13}]}]}
+    return {'id':2,'workflow_id':10,'head_branch':'fixture'}
+
+
+"""
+        selector.write_text(text.replace('def prior_verification(', fake + 'def prior_verification('))
+        test = self.root / 'CoolMalliOSUITests/HomeLoadTests.swift'
+        test.parent.mkdir(); test.write_text('oldBody\n')
+        def git(*args):
+            return subprocess.check_output(['git', *args], cwd=self.root).decode().strip()
+        git('add','.'); git('commit','-qm','baseline transport fixture')
+        base = git('rev-parse','HEAD')
+        test.write_text('newBody\n')
+        git('add','.'); git('commit','-qm','test body change')
+        head = git('rev-parse','HEAD')
+        result = self.run_entry(GITHUB_EVENT_NAME='pull_request', GITHUB_RUN_ID='2',
+                                MALL_PR_NUMBER='13', MALL_DIFF_BASE=base, MALL_DIFF_HEAD=head)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        scope = json.loads(next((self.root / '.build/verification').glob('*/test-scope.json')).read_text())
+        self.assertEqual(scope['mode'], 'selected')
+        self.assertTrue(scope['expected'])
+        self.assertTrue(scope['omitted'])
+        self.assertTrue(all(method.startswith('CoolMalliOSUITests/HomeLoadTests/') for method in scope['expected']))
+        args = next(e['args'] for e in self.events() if e['event'] == 'xcodebuild:test-without-building')
+        response = self.root / args[args.index('-only-testing') + 1][1:]
+        self.assertEqual(response.read_text().splitlines(), scope['expected'])
+
+    def test_changed_response_or_manifest_cannot_pass_entry(self):
+        for value in ['response', 'manifest']:
+            with self.subTest(value=value):
+                result = self.run_entry(STUB_TAMPER=value)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn('PASS: local F0 gates', result.stdout)
+
+    def test_empty_discovery_stops_before_execution(self):
+        result = self.run_entry(STUB_BAD_DISCOVERY='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('xcodebuild:test-without-building', [e['event'] for e in self.events()])
+
+    def test_enumeration_failure_preserves_exit(self):
+        result = self.run_entry(STUB_FAIL='xcodebuild:discovery', STUB_RC='71')
+        self.assertEqual(result.returncode, 71)
+        self.assertNotIn('xcodebuild:test-without-building', [e['event'] for e in self.events()])
+
+    def test_explicit_failure_diagnostics(self):
+        result = self.run_entry(MALL_TEST_DIAGNOSTICS='on-failure')
+        self.assertEqual(result.returncode, 0)
+        args = next(e['args'] for e in self.events() if e['event'] == 'xcodebuild:test-without-building')
+        self.assertEqual(args[args.index('-collect-test-diagnostics') + 1], 'on-failure')
+
+    def test_invalid_diagnostics_rejected_before_external_commands(self):
+        # Each value is literal environment data, never evaluated as shell code.
+        for value in ['', 'always', 'never -skip-testing:Anything', '$(touch injected)']:
+            with self.subTest(value=value):
+                result = self.run_entry(MALL_TEST_DIAGNOSTICS=value)
+                self.assertEqual(result.returncode, 64)
+                self.assertEqual(self.events(), [])
+                self.assertFalse((self.root / 'injected').exists())
+
+    def test_early_failure_preserves_exit_and_does_not_run_later_checks(self):
+        result = self.run_entry(STUB_FAIL='check-format.sh', STUB_RC='23')
+        self.assertEqual(result.returncode, 23)
+        _, data = self.ledger()
+        phases = {p['name']: p for p in data['phases']}
+        self.assertEqual(phases['format']['exitCode'], 23)
+        self.assertEqual(phases['format']['status'], 'failed')
+        self.assertEqual(phases['policy-negative']['status'], 'not-run')
+        self.assertNotIn('xcodebuild:test-without-building', [e['event'] for e in self.events()])
+
+    def test_build_failure_stops_before_release_and_device(self):
+        result = self.run_entry(STUB_FAIL='xcodebuild:build:Debug', STUB_RC='66')
+        self.assertEqual(result.returncode, 66)
+        self.assertEqual(self.events()[-1]['event'], 'xcodebuild:build:Debug')
+
+    def test_test_failure_preserves_65_and_skips_result_validator(self):
+        result = self.run_entry(STUB_FAIL='xcodebuild:test-without-building', STUB_RC='65')
+        self.assertEqual(result.returncode, 65)
+        path, data = self.ledger()
+        self.assertEqual(data['verificationExitCode'], 65)
+        self.assertEqual(data['phases'][-2]['status'], 'failed')
+        self.assertEqual(data['phases'][-1]['status'], 'not-run')
+        self.assertTrue((path.parent / 'tests.log').exists())
+        self.assertEqual(self.events()[-1]['event'], 'xcodebuild:test-without-building')
+
+    def test_result_validator_failure_is_not_a_pass(self):
+        result = self.run_entry(STUB_FAIL='check-test-results.py', STUB_RC='67')
+        self.assertEqual(result.returncode, 67)
+        self.assertEqual(self.ledger()[1]['phases'][-1]['status'], 'failed')
+
+    def test_recording_error_does_not_mask_original_failure(self):
+        result = self.run_entry(STUB_FAIL='xcodebuild:test-without-building', STUB_RC='42', STUB_CORRUPT='1')
+        self.assertEqual(result.returncode, 42)
+        self.assertIn('verification exit=42', result.stdout)
+
+    def test_recording_error_cannot_produce_green(self):
+        result = self.run_entry(STUB_CORRUPT='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('PASS: local F0 gates', result.stdout)
+
+    def interrupted(self, signum):
+        process = subprocess.Popen(['bash', 'Scripts/verify-local.sh'], cwd=self.root,
+                                   env=dict(self.env, STUB_BLOCK='xcodebuild:test-without-building'),
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                   start_new_session=True)
+        try:
+            deadline = time.monotonic() + 10
+            while not (self.root / 'ready').exists() and time.monotonic() < deadline:
+                if process.poll() is not None:
+                    self.fail('entry exited before cancellation checkpoint')
+                time.sleep(0.02)
+            self.assertTrue((self.root / 'ready').exists())
+            os.killpg(process.pid, signum)
+            return process.wait(timeout=5)
+        finally:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+
+    def test_missing_device_is_rejected_before_external_commands(self):
+        self.env.pop('MALL_SIMULATOR_ID')
+        result = self.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.events(), [])
+        self.assertEqual(self.ledger()[1]['phases'][0]['status'], 'failed')
+
+    def test_report_without_ledger_does_not_claim_pass(self):
+        result = subprocess.run(['python3', 'Scripts/verification-timing.py', 'report-all',
+                                 '.build/verification'], cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('not started', result.stdout)
+
+    def test_summary_failure_after_success_fails_closed(self):
+        helper = self.root / 'Scripts/verification-timing.py'
+        helper.write_text(helper.read_text().replace(
+            "elif command == 'report':", "elif command == 'report':\n        raise OSError('fixture summary error')"))
+        result = self.run_entry()
+        self.assertEqual(result.returncode, 65)
+        self.assertNotIn('PASS: local F0 gates', result.stdout)
+        _, data = self.ledger()
+        self.assertEqual(data['verificationExitCode'], 0)
+        self.assertEqual(data['entryExitCode'], 65)
+        self.assertTrue(data['recordingFailure'])
+        report = subprocess.run(['python3', 'Scripts/verification-timing.py', 'report-all',
+                                 '.build/verification'], cwd=self.root, capture_output=True, text=True)
+        self.assertIn('Verification entry exit: 65', report.stdout)
+
+    def test_int_records_cancellation_and_pending_stages(self):
+        self.assertEqual(self.interrupted(signal.SIGINT), 130)
+        _, data = self.ledger()
+        self.assertEqual(data['phases'][-2]['status'], 'cancelled')
+        self.assertEqual(data['phases'][-2]['exitCode'], 130)
+        self.assertEqual(data['phases'][-1]['status'], 'not-run')
+
+    def test_term_records_cancellation_and_pending_stages(self):
+        self.assertEqual(self.interrupted(signal.SIGTERM), 143)
+        _, data = self.ledger()
+        self.assertEqual(data['phases'][-2]['status'], 'cancelled')
+        self.assertEqual(data['phases'][-2]['exitCode'], 143)
+        self.assertEqual(data['phases'][-1]['status'], 'not-run')
+
+    def test_kill_leaves_durable_incomplete_stage_for_always_summary(self):
+        self.assertEqual(self.interrupted(signal.SIGKILL), -signal.SIGKILL)
+        _, data = self.ledger()
+        self.assertEqual(data['phases'][-2]['status'], 'running')
+        result = subprocess.run(['python3', 'Scripts/verification-timing.py', 'report-all',
+                                 '.build/verification'], cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('| test-execute-diagnostics | incomplete |', result.stdout)
+        self.assertIn('| test-result-validation | not-run |', result.stdout)
+
+
+if __name__ == '__main__':
+    unittest.main()

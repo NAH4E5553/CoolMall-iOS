@@ -1,6 +1,7 @@
 """Exercise the real verification entry with isolated command stubs, not Xcode."""
 import json
 import os
+import py_compile
 import shutil
 import signal
 import subprocess
@@ -33,6 +34,16 @@ if event == 'xcodebuild:discovery':
     if os.environ.get('STUB_BAD_DISCOVERY'):
         raw['values'][0]['enabledTests'] = []
     Path(args[args.index('-test-enumeration-output-path') + 1]).write_text(json.dumps(raw))
+    if os.environ.get('STUB_CREATE_BYTECODE'):
+        import py_compile
+        cache = Path('Scripts/__pycache__/check-boundaries.fixture.pyc')
+        cache.parent.mkdir(exist_ok=True)
+        py_compile.compile('Scripts/check-boundaries.py', cfile=str(cache), doraise=True)
+    if os.environ.get('STUB_MUTATE_SOURCE') == 'tracked':
+        with Path('Scripts/check-toolchain.sh').open('a') as source:
+            source.write('\n# genuine tracked source change\n')
+    elif os.environ.get('STUB_MUTATE_SOURCE') == 'untracked':
+        Path('Scripts/unexpected.py').write_text('unexpected = True\n')
 if event == 'xcodebuild:test-without-building' and os.environ.get('STUB_TAMPER'):
     response = Path(args[args.index('-only-testing') + 1][1:])
     if os.environ['STUB_TAMPER'] == 'response':
@@ -67,7 +78,8 @@ class VerificationDriverTests(unittest.TestCase):
             self.stub(self.root / 'bin' / name)
         shutil.copy2(ROOT / 'ENGINEERING.md', self.root / 'ENGINEERING.md')
         shutil.copy2(ROOT / 'Tests/Governance/Fixtures/test-enumeration.json', self.root / 'fixture-enumeration.json')
-        (self.root / '.gitignore').write_text('.build/\nevents.jsonl\nready\n')
+        # Match the real repository: Python cache is generated output, not source.
+        (self.root / '.gitignore').write_text('.build/\n__pycache__/\nevents.jsonl\nready\n')
         for args in [('init', '-q'), ('config', 'user.email', 'fixture@example.invalid'),
                      ('config', 'user.name', 'Fixture'), ('add', '.'), ('commit', '-qm', 'fixture')]:
             subprocess.run(['git', *args], cwd=self.root, check=True, capture_output=True)
@@ -75,7 +87,7 @@ class VerificationDriverTests(unittest.TestCase):
                         MALL_SIMULATOR_ID='fixture-only-no-device',
                         STUB_EVENTS=str(self.root / 'events.jsonl'),
                         STUB_READY=str(self.root / 'ready'))
-        for key in ['MALL_TEST_DIAGNOSTICS', 'STUB_FAIL', 'STUB_RC', 'STUB_CORRUPT', 'STUB_BLOCK', 'STUB_BAD_DISCOVERY', 'GITHUB_EVENT_NAME']:
+        for key in ['MALL_TEST_DIAGNOSTICS', 'STUB_FAIL', 'STUB_RC', 'STUB_CORRUPT', 'STUB_BLOCK', 'STUB_BAD_DISCOVERY', 'STUB_CREATE_BYTECODE', 'STUB_MUTATE_SOURCE', 'GITHUB_EVENT_NAME']:
             self.env.pop(key, None)
 
     def stub(self, path):
@@ -142,7 +154,12 @@ class VerificationDriverTests(unittest.TestCase):
         test.write_text('newBody\n')
         git('add','.'); git('commit','-qm','test body change')
         head = git('rev-parse','HEAD')
-        result = self.run_entry(GITHUB_EVENT_NAME='pull_request', GITHUB_RUN_ID='2',
+        # Real bytecode inside the repo must not make an exact-head PR dirty.
+        cache = self.root / 'Scripts/__pycache__/select-test-scope.fixture.pyc'
+        cache.parent.mkdir(exist_ok=True)
+        py_compile.compile(str(selector), cfile=str(cache), doraise=True)
+        self.assertTrue(cache.is_file())
+        result = self.run_entry(STUB_CREATE_BYTECODE='1', GITHUB_EVENT_NAME='pull_request', GITHUB_RUN_ID='2',
                                 MALL_PR_NUMBER='13', MALL_DIFF_BASE=base, MALL_DIFF_HEAD=head)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         scope = json.loads(next((self.root / '.build/verification').glob('*/test-scope.json')).read_text())
@@ -153,6 +170,30 @@ class VerificationDriverTests(unittest.TestCase):
         args = next(e['args'] for e in self.events() if e['event'] == 'xcodebuild:test-without-building')
         response = self.root / args[args.index('-only-testing') + 1][1:]
         self.assertEqual(response.read_text().splitlines(), scope['expected'])
+
+    def test_bytecode_generated_after_selection_does_not_change_source_identity(self):
+        result = self.run_entry(STUB_CREATE_BYTECODE='1')
+        self.assertTrue((self.root / 'Scripts/__pycache__/check-boundaries.fixture.pyc').is_file())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.events()[-1]['event'], 'check-test-results.py')
+        status = subprocess.check_output(['git', 'status', '--porcelain'], cwd=self.root, text=True)
+        self.assertEqual(status, '')
+
+    def assert_source_change_rejected(self, kind, path):
+        result = self.run_entry(STUB_CREATE_BYTECODE='1', STUB_MUTATE_SOURCE=kind)
+        self.assertTrue((self.root / 'Scripts/__pycache__/check-boundaries.fixture.pyc').is_file())
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('TEST-SCOPE: source changed since selection', result.stdout + result.stderr)
+        self.assertNotIn('xcodebuild:test-without-building', [event['event'] for event in self.events()])
+        status = subprocess.check_output(['git', 'status', '--porcelain'], cwd=self.root, text=True)
+        self.assertIn(path, status)
+        self.assertNotIn('__pycache__', status)
+
+    def test_tracked_source_change_still_rejected_with_bytecode_cache(self):
+        self.assert_source_change_rejected('tracked', 'Scripts/check-toolchain.sh')
+
+    def test_untracked_source_change_still_rejected_with_bytecode_cache(self):
+        self.assert_source_change_rejected('untracked', 'Scripts/unexpected.py')
 
     def test_changed_response_or_manifest_cannot_pass_entry(self):
         for value in ['response', 'manifest']:

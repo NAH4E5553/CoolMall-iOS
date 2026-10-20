@@ -151,6 +151,20 @@ public struct HomeEntryView: View {
                 }
                 await viewModel?.drive(active: isActive, retryToken: 0)
             }
+            // R-OWN-01-LIFE: once the first read finishes, this view's
+            // `.task` has RETURNED — a re-tap's 300ms merge timer and any
+            // in-flight refresh are owned only by the view model's single
+            // owner task afterwards, so SwiftUI cancelling this (already
+            // finished) task cannot reach them. `onDisappear` is the
+            // reliable teardown hook for view removal / scene end: it makes
+            // the owner invalidate the current intent, cancel the timer and
+            // the in-flight read, end pull waiters and clear this page's
+            // pending/busy/loading state — without assuming any later
+            // `drive(active:false)` will run. Duplicate notifications (the
+            // `isActive=false` path fires the same cleanup) are idempotent.
+            .onDisappear {
+                viewModel?.pageTeardown()
+            }
         }
     }
 

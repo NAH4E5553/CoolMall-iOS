@@ -488,6 +488,7 @@ F0 系统模块允许列表如下；项目模块依赖仍只读取上方精确�
     "CatalogFeatureTests": [
       "Swift",
       "Foundation",
+      "SwiftUI",
       "Testing"
     ],
     "CartFeatureTests": [

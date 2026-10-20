@@ -312,17 +312,18 @@
             call += 1
             Self.events.calls = call
             if call == 1 { return try await FixtureHomeService().loadHome() }
+            // HOME-RETAP-DEBOUNCE: pending requests are stored PER REQUEST
+            // identity; a NEW arrival neither cancels nor answers an older
+            // one — the cancellation counter moves ONLY in the request's own
+            // cancellation handler (R-LATEST-02).
             let requestID = UUID()
             return try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { continuation in
-                    Self.events.pendingID = requestID
-                    Self.events.pending = continuation
+                    Self.events.register(requestID: requestID, continuation: continuation)
                 }
             } onCancel: {
                 Task { @MainActor in
-                    guard Self.events.pendingID == requestID else { return }
-                    Self.events.cancellations += 1
-                    Self.events.release(.failure(CancellationError()))
+                    Self.events.cancel(requestID: requestID)
                 }
             }
         }
@@ -332,24 +333,46 @@
     final class PageHomeEvents: ObservableObject {
         @Published var calls = 0
         @Published var cancellations = 0
-        var pendingID: UUID?
-        var pending: CheckedContinuation<HomeSnapshot, Error>?
+        /// Pendings keyed by request identity; `latestID` is the CURRENT
+        /// intent the release buttons answer. Superseded-but-uncancelled
+        /// requests stay pending (their tasks still await) until their own
+        /// cancellation handler or a release removes them.
+        private var pendings: [UUID: CheckedContinuation<HomeSnapshot, Error>] = [:]
+        private(set) var latestID: UUID?
+        func register(requestID: UUID, continuation: CheckedContinuation<HomeSnapshot, Error>) {
+            pendings[requestID] = continuation
+            latestID = requestID
+        }
+        /// Real cancellation evidence: ONLY the request's own cancellation
+        /// handler may call this; a new arrival never touches older ones.
+        func cancel(requestID: UUID) {
+            guard let continuation = pendings.removeValue(forKey: requestID) else { return }
+            cancellations += 1
+            if latestID == requestID { latestID = nil }
+            continuation.resume(throwing: CancellationError())
+        }
         func reset() {
-            release(.failure(CancellationError()))
+            for continuation in pendings.values {
+                continuation.resume(throwing: CancellationError())
+            }
+            pendings = [:]
+            latestID = nil
             calls = 0
             cancellations = 0
         }
+        /// Answers the LATEST still-pending request (the current intent).
         func release(_ result: Result<HomeSnapshot, Error>) {
-            let continuation = pending
-            pending = nil
-            pendingID = nil
-            continuation?.resume(with: result)
+            guard let id = latestID, let continuation = pendings.removeValue(forKey: id) else {
+                return
+            }
+            latestID = nil
+            continuation.resume(with: result)
         }
         func succeed() async {
-            guard let requestID = pendingID else { return }
+            guard let requestID = latestID else { return }
             do {
                 let base = try await FixtureHomeService().loadHome()
-                guard pendingID == requestID else { return }
+                guard latestID == requestID else { return }
                 let extra = HomeProductSummary(
                     id: 990_001, title: "刷新商品", subtitle: nil, imageURL: nil, priceYuan: Decimal(88)
                 )
@@ -361,7 +384,7 @@
                             recommendations: base.recommendations, goods: base.goods + [extra],
                             coupons: base.coupons)))
             } catch {
-                if pendingID == requestID { release(.failure(error)) }
+                if latestID == requestID { release(.failure(error)) }
             }
         }
     }

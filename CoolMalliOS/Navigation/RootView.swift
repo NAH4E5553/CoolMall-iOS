@@ -12,6 +12,7 @@ struct RootView: View {
         @Environment(\.scenePhase) private var bannerAuditScenePhase
     #endif
     @State private var unavailableNotice: UUID?
+    @State private var categoryUnavailableNotice: UUID?
     #if DEBUG
         private let navTestControl: NavigationTestControl
     #endif
@@ -64,19 +65,10 @@ struct RootView: View {
             .tabItem { Label("首页", systemImage: "house") }
             .tag(SceneRouter.Tab.home)
             NavigationStack(path: $router.categoryPath) {
-                PendingTabView(
-                    marker: "category.pending",
-                    title: "分类",
-                    detail: "分类页面待接入 · 本入口为导航占位",
-                    pushProbe: { router.categoryPath.append(.fixturePathProbe(label: "category")) },
-                    // NAV-03: non-home source entry with the TC-NAV-05 fixture id.
-                    openProductDetail: {
-                        router.append(.productDetail(goodsID: 830001), on: .category)
+                categoryRoot
+                    .navigationDestination(for: SceneRouter.Route.self) { route in
+                        destination(for: route, on: .category)
                     }
-                )
-                .navigationDestination(for: SceneRouter.Route.self) { route in
-                    destination(for: route, on: .category)
-                }
             }
             .tabItem { Label("分类", systemImage: "square.grid.2x2") }
             .tag(SceneRouter.Tab.category)
@@ -120,6 +112,70 @@ struct RootView: View {
         #else
             return true
         #endif
+    }
+
+    /// Category tab root (CATEGORY-01). Normal Debug/Release show the real
+    /// read page; the existing DEBUG navigation-fixture launch keeps the
+    /// original engineering placeholder root so NAV-02/03 path/identity
+    /// assertions remain unchanged. A present-but-invalid category fixture flag
+    /// fails closed to an explicit configuration error.
+    @ViewBuilder
+    private var categoryRoot: some View {
+        #if DEBUG
+            if dependencies.categoryTesting.configError {
+                CategoryTestConfigErrorView()
+            } else if dependencies.categoryTesting.mode != nil {
+                categoryReadRoot
+            } else if dependencies.homeTesting.root == .catalogFixture {
+                categoryFixtureRoot
+            } else {
+                categoryReadRoot
+            }
+        #else
+            categoryReadRoot
+        #endif
+    }
+
+    private var categoryReadRoot: some View {
+        CategoryEntryView(
+            categories: dependencies.category,
+            isActive: router.selectedTab == .category && router.categoryPath.isEmpty,
+            imagePipeline: dependencies.categoryImagePipeline,
+            showsReadVerification: dependencies.showsCategoryReadVerification,
+            // F-CATEGORY-05 navigation INTENT only: the real direct-child id is
+            // handed to the App; the product list (LIST-01) does not exist yet,
+            // so no list page is faked. The explicit unavailable feedback is not
+            // evidence that F-CATEGORY-05 is implemented.
+            onOpenSubcategory: { _ in categoryUnavailableNotice = UUID() }
+        )
+        .overlay(alignment: .bottom) {
+            if categoryUnavailableNotice != nil {
+                Text("暂未开放").font(.body).padding(12)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding().accessibilityIdentifier("category.unavailable")
+            }
+        }
+        .task(id: categoryUnavailableNotice) {
+            guard let notice = categoryUnavailableNotice else { return }
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            if categoryUnavailableNotice == notice { categoryUnavailableNotice = nil }
+        }
+    }
+
+    /// NAV-02/NAV-03 engineering shell: same per-tab path probe and fixture
+    /// product entry as before the real category page. DEBUG navigation-fixture
+    /// launches only; never reachable in normal Debug/Release.
+    private var categoryFixtureRoot: some View {
+        PendingTabView(
+            marker: "category.pending",
+            title: "分类",
+            detail: "分类页面待接入 · 本入口为导航占位",
+            pushProbe: { router.categoryPath.append(.fixturePathProbe(label: "category")) },
+            // NAV-03: non-home source entry with the TC-NAV-05 fixture id.
+            openProductDetail: {
+                router.append(.productDetail(goodsID: 830001), on: .category)
+            }
+        )
     }
 
     /// HOME-01 root selection. Normal Debug/Release show the real read UI with

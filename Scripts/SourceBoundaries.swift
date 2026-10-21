@@ -91,9 +91,11 @@ final class BoundaryVisitor: SyntaxVisitor {
     /// Registered Feature public entries. Each name is a user-approved public
     /// View entry: the original composition entry per target, plus
     /// CatalogFeature.HomeEntryView (ENGINEERING 4.6.1 H0 v0.2, DEC-008 /
-    /// APPROVAL-HOME-01-H0-20261009). Anything else stays rejected.
+    /// APPROVAL-HOME-01-H0-20261009) and CatalogFeature.CategoryEntryView
+    /// (CATEGORY-01 v0.1, APPROVAL-CATEGORY-01-PUBLIC-20261021). Anything else
+    /// stays rejected.
     static let registeredFeatureEntries: [String: [String]] = [
-        "CatalogFeature": ["CatalogEntryView", "HomeEntryView"],
+        "CatalogFeature": ["CatalogEntryView", "HomeEntryView", "CategoryEntryView"],
         "CartFeature": ["CartEntryView"],
     ]
 

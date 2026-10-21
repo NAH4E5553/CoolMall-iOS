@@ -56,16 +56,30 @@ final class CategoryViewModel {
         self.categories = categories
     }
 
+    /// Synchronous visibility input from the entry's `onChange`. The SwiftUI
+    /// `.task(id:)` may not run its replacement while a TabView child is
+    /// offscreen, and an in-flight service that ignores caller cancellation
+    /// would then commit; invalidating the generation HERE, before any await,
+    /// guarantees the leaving read is stale even if its task is not cancelled.
+    /// Returning only flips activity; the visible `.task` performs the drive.
+    func setActive(_ active: Bool) {
+        guard isActive != active else { return }
+        isActive = active
+        guard !active else { return }
+        generation += 1
+        clearAwaitingScroll()
+        if case .loading = state { state = retainedState }
+    }
+
     /// Single drive entry for the view's `.task(id:)`. `active == false` is the
     /// visibility-loss path: invalidate the in-flight generation and restore
     /// the retained state; returning replays only the visibility path unless
     /// the previous read never committed (idle).
     func drive(active: Bool, ticket: UInt64) async {
-        isActive = active
+        if isActive != active {
+            setActive(active)
+        }
         guard active else {
-            generation += 1
-            clearAwaitingScroll()
-            if case .loading = state { state = retainedState }
             return
         }
         if !startedOnce || ticket != startedTicket {

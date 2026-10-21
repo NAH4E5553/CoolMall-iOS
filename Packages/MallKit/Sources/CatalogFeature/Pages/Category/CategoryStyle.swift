@@ -50,6 +50,10 @@ struct CategoryPalette {
 /// tokens themselves are the dp conversion of the original px specification).
 enum CategoryMetrics {
     static let leftColumnWidth: CGFloat = 100
+    /// Accessibility-size rail width: the reference's fixed 100pt cannot fit the
+    /// 1.2x selected label at large Dynamic Type without clipping; widening the
+    /// rail keeps the label readable and the 3-column grid still fits.
+    static let accessibleLeftColumnWidth: CGFloat = 132
     static let rootRowMinHeight: CGFloat = 50
     static let indicatorWidth: CGFloat = 3
     static let indicatorHeight: CGFloat = 24
@@ -79,6 +83,9 @@ enum CategoryMetrics {
     static let retryBorderWidth: CGFloat = 0.5
     static let retryHorizontalPadding: CGFloat = 50
     static let retryMinWidth: CGFloat = 200
+    /// Accessibility upper bound: the reference widthIn(200) is a MINIMUM, so
+    /// the outlined pill may grow to fit large-type labels instead of clipping.
+    static let retryMaxWidth: CGFloat = 280
     static let retryMinHeight: CGFloat = 40
     static let retryContentHorizontalPadding: CGFloat = 24
     static let statePadding: CGFloat = 16

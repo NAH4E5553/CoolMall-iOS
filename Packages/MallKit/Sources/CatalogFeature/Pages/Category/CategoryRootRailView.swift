@@ -24,7 +24,13 @@ struct CategoryRootRailView: View {
     let palette: CategoryPalette
     let onSelect: (Int64) -> Void
 
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var rowFrames: [Int64: CGRect] = [:]
+
+    private var railWidth: CGFloat {
+        typeSize.isAccessibilitySize
+            ? CategoryMetrics.accessibleLeftColumnWidth : CategoryMetrics.leftColumnWidth
+    }
 
     private static let spaceName = "category.left.viewport"
 
@@ -53,6 +59,7 @@ struct CategoryRootRailView: View {
                             Color.clear.frame(height: CategoryMetrics.rootRowMinHeight)
                         }
                     }
+                    .accessibilityIdentifier("category.left.scroll")
                     .onChange(of: selectedRootID) { _, rootID in
                         guard let rootID else { return }
                         withAnimation(.easeInOut(duration: 0.2)) {
@@ -66,7 +73,7 @@ struct CategoryRootRailView: View {
                 rowFrames = frames
             }
         }
-        .frame(width: CategoryMetrics.leftColumnWidth)
+        .frame(width: railWidth)
     }
 
     @ViewBuilder

@@ -77,9 +77,12 @@ struct CategoryErrorView: View {
                 Text("重新加载")
                     .font(.system(size: retryLabelSize))
                     .foregroundStyle(palette.onSurfaceVariant)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, CategoryMetrics.retryContentHorizontalPadding)
                     .frame(
                         minWidth: CategoryMetrics.retryMinWidth,
+                        maxWidth: CategoryMetrics.retryMaxWidth,
                         minHeight: CategoryMetrics.retryMinHeight
                     )
                     .overlay {

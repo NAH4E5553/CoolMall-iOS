@@ -15,6 +15,10 @@
             case error
             case retry
             case pending
+            case few
+            case many
+            case tabReturn = "tab-return"
+            case slowSequence = "slow-sequence"
         }
 
         let mode: FixtureMode?
@@ -45,6 +49,10 @@
             case .error: service = FixtureCategoryService(mode: .error)
             case .retry: service = RetryCategoryService()
             case .pending: service = PendingCategoryService()
+            case .few: service = FixtureCategoryService(mode: .few)
+            case .many: service = FixtureCategoryService(mode: .many)
+            case .tabReturn: service = TabReturnCategoryService()
+            case .slowSequence: service = SlowSequenceCategoryService()
             }
         }
     }
@@ -55,7 +63,7 @@
     /// an unknown-parent node that must never be displayed. Images are nil so
     /// fixture layout/scroll evidence does not depend on the network.
     final class FixtureCategoryService: CategoryLoading, Sendable {
-        enum Mode { case valid, empty, error }
+        enum Mode { case valid, empty, error, few, many }
 
         private let mode: Mode
 
@@ -68,6 +76,8 @@
             case .valid: return Self.valid
             case .empty: return []
             case .error: throw CategoryLoadFailure.networkUnavailable
+            case .few: return Self.few
+            case .many: return Self.many
             }
         }
 
@@ -110,6 +120,44 @@
             CategoryNode(
                 id: 801098, name: "未知父节点（不应展示）", parentID: 999_999, sortNum: 1, imageURL: nil),
         ]
+
+        /// Three roots for the small-list / full background-block evidence.
+        static let few: [CategoryNode] = [
+            CategoryNode(id: 800001, name: "手机", parentID: nil, sortNum: 1, imageURL: nil),
+            CategoryNode(
+                id: 801001, name: "Xiaomi 数字旗舰", parentID: 800001, sortNum: 1, imageURL: nil),
+            CategoryNode(
+                id: 801002, name: "Xiaomi MIX系列", parentID: 800001, sortNum: 2, imageURL: nil),
+            CategoryNode(id: 800002, name: "平板", parentID: nil, sortNum: 2, imageURL: nil),
+            CategoryNode(id: 801008, name: "REDMI平板", parentID: 800002, sortNum: 1, imageURL: nil),
+            CategoryNode(id: 801009, name: "Xiaomi平板", parentID: 800002, sortNum: 2, imageURL: nil),
+            CategoryNode(id: 800003, name: "穿戴", parentID: nil, sortNum: 3, imageURL: nil),
+            CategoryNode(id: 801010, name: "智能手环", parentID: 800003, sortNum: 1, imageURL: nil),
+        ]
+
+        /// Fifteen roots so the LEFT rail itself scrolls; used for the
+        /// selected-row-offscreen / long-list background evidence.
+        static let many: [CategoryNode] = (1...15).flatMap { index -> [CategoryNode] in
+            let rootID = Int64(900_000 + index)
+            return [
+                CategoryNode(
+                    id: rootID, name: "测试分类\(String(format: "%02d", index))",
+                    parentID: nil, sortNum: index, imageURL: nil),
+                CategoryNode(
+                    id: 910_000 + Int64(index) * 2, name: "子分类A\(index)",
+                    parentID: rootID, sortNum: 1, imageURL: nil),
+                CategoryNode(
+                    id: 910_001 + Int64(index) * 2, name: "子分类B\(index)",
+                    parentID: rootID, sortNum: 2, imageURL: nil),
+            ]
+        }
+
+        /// First-call tree for the slow-sequence cancellation check (2 roots).
+        static let slowFirst: [CategoryNode] = [
+            CategoryNode(id: 800001, name: "首次读取手机", parentID: nil, sortNum: 1, imageURL: nil),
+            CategoryNode(id: 801001, name: "首次读取子项", parentID: 800001, sortNum: 1, imageURL: nil),
+            CategoryNode(id: 800002, name: "首次读取平板", parentID: nil, sortNum: 2, imageURL: nil),
+        ]
     }
 
     actor RetryCategoryService: CategoryLoading {
@@ -128,6 +176,35 @@
                 try Task.checkCancellation()
                 try await Task.sleep(for: .milliseconds(50))
             }
+        }
+    }
+
+    /// First call: the full 7-root tree. Any later call returns the 3-root
+    /// `few` tree, so a Tab return that re-reads is observable as a root-count
+    /// change; a retained page keeps 7.
+    actor TabReturnCategoryService: CategoryLoading {
+        private var calls = 0
+
+        func loadCategories() async throws -> [CategoryNode] {
+            calls += 1
+            return calls == 1 ? FixtureCategoryService.valid : FixtureCategoryService.few
+        }
+    }
+
+    /// First call sleeps 3s and would return a distinct 2-root tree; later calls
+    /// return the 7-root tree immediately. Leaving and returning during the
+    /// first read must cancel or generation-reject the late first result, so the
+    /// page shows 7 roots and never reverts to the 2-root late value.
+    actor SlowSequenceCategoryService: CategoryLoading {
+        private var calls = 0
+
+        func loadCategories() async throws -> [CategoryNode] {
+            calls += 1
+            if calls == 1 {
+                try await Task.sleep(for: .seconds(10))
+                return FixtureCategoryService.slowFirst
+            }
+            return FixtureCategoryService.valid
         }
     }
 

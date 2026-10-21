@@ -143,6 +143,29 @@ final class CategoryLoadTests: XCTestCase {
         XCTAssertTrue(app.buttons["category.root.\(selected)"].isSelected)
         attach(app, name: "category-valid-linked")
 
+        // R-CATEGORY-01-01 minimal repro: the ADJACENT previous group is
+        // likely just above the right viewport and still in the realized frame
+        // cache. Tapping its left root must scroll it back to the top; the old
+        // `minY <= topInset` shortcut skipped this because minY was negative.
+        if index > 0 {
+            let previousRootID = Self.rootIDs[index - 1]
+            let previousRoot = app.buttons["category.root.\(previousRootID)"]
+            XCTAssertTrue(previousRoot.exists)
+            let previousTitle = app.staticTexts["category.group.\(previousRootID).title"]
+            let beforePreviousY: CGFloat? = previousTitle.exists ? previousTitle.frame.minY : nil
+            previousRoot.tap()
+            XCTAssertTrue(wait({ selectedRoot(app) == previousRootID }, timeout: 6))
+            XCTAssertTrue(
+                wait({ abs(previousTitle.frame.minY - scroll.frame.minY) <= 24 }, timeout: 5),
+                "an adjacent previous root tap must scroll the target back to the top")
+            if let beforePreviousY {
+                XCTAssertGreaterThan(
+                    previousTitle.frame.minY, beforePreviousY + 1,
+                    "the right pane moved down to the adjacent previous group")
+            }
+            attach(app, name: "category-valid-adjacent-previous")
+        }
+
         // R-CATEGORY-01-01 regression: a LATER -> EARLIER root tap must really
         // scroll the right pane back to the target, not only move the highlight.
         let backwardRoot = app.buttons["category.root.800002"]
@@ -179,6 +202,96 @@ final class CategoryLoadTests: XCTestCase {
                 { app.staticTexts["category.requestedChild"].label == "请求子分类：801008" },
                 timeout: 5),
             "the Int64 callback receives the real direct-child id")
+    }
+
+    /// The real Entry/Tab wiring: a normal Tab return keeps the retained
+    /// snapshot, selection and right-pane position and does NOT re-read. The
+    /// fixture returns a distinct 3-root tree on any later read, so a re-read
+    /// is observable as a root-count change.
+    @MainActor func testTabReturnRetainsSelectionAndDoesNotReRead() {
+        let app = launch(categoryFixture: "tab-return")
+        openCategory(app)
+        XCTAssertTrue(app.buttons["category.root.800001"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["category.count.roots"].label, "一级分类：7")
+
+        app.buttons["category.root.800002"].tap()
+        XCTAssertTrue(wait({ selectedRoot(app) == 800_002 }, timeout: 6))
+        let scroll = app.scrollViews["category.right.scroll"]
+        let title = app.staticTexts["category.group.800002.title"]
+        XCTAssertTrue(
+            wait({ abs(title.frame.minY - scroll.frame.minY) <= 24 }, timeout: 5),
+            "the selected group reaches the top before leaving")
+
+        app.tabBars.buttons["首页"].tap()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        app.tabBars.buttons["分类"].tap()
+
+        XCTAssertTrue(app.staticTexts["category.count.roots"].waitForExistence(timeout: 10))
+        XCTAssertEqual(
+            app.staticTexts["category.count.roots"].label, "一级分类：7",
+            "a normal Tab return must not re-read (a re-read returns 3 roots)")
+        XCTAssertTrue(wait({ selectedRoot(app) == 800_002 }, timeout: 5), "selection retained")
+        XCTAssertTrue(
+            wait({ abs(title.frame.minY - scroll.frame.minY) <= 24 }, timeout: 5),
+            "right-pane scroll position retained")
+        XCTAssertTrue(app.buttons["category.root.800002"].isSelected)
+    }
+
+    /// Leaving during the first read and returning must cancel or generation-
+    /// reject the late first result: the first call would return a distinct
+    /// 2-root tree after 3s, while the second call returns the 7-root tree.
+    @MainActor func testLeaveDuringReadCancelsAndStaleResultDoesNotCommit() {
+        let app = launch(categoryFixture: "slow-sequence")
+        openCategory(app)
+        XCTAssertTrue(
+            app.staticTexts["category.loading.message"].waitForExistence(timeout: 10))
+
+        app.tabBars.buttons["首页"].tap()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        app.tabBars.buttons["分类"].tap()
+
+        XCTAssertTrue(app.staticTexts["category.count.roots"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.staticTexts["category.count.roots"].label, "一级分类：7")
+        // Wait past the first read's 10s deadline: its 2-root tree must never
+        // replace the newer read.
+        RunLoop.current.run(until: Date().addingTimeInterval(10.5))
+        XCTAssertEqual(app.staticTexts["category.count.roots"].label, "一级分类：7")
+        XCTAssertEqual(selectedRoot(app), 800_001)
+    }
+
+    /// R-CATEGORY-01-01 long-list dynamic case: after selecting the last root
+    /// the adjacent previous root's right group is just above the viewport and
+    /// likely still realized. Tapping it must scroll the right target back to
+    /// the top, not only move the highlight. This is also the scrolled-list
+    /// background/selection case for the left rail.
+    @MainActor func testLongListLastToPreviousRootScrollsRight() {
+        let app = launch(categoryFixture: "many")
+        openCategory(app)
+        XCTAssertTrue(app.buttons["category.root.900001"].waitForExistence(timeout: 15))
+
+        let left = app.scrollViews["category.left.scroll"]
+        XCTAssertTrue(left.exists)
+        let last = app.buttons["category.root.900015"]
+        var tries = 0
+        while !last.isHittable && tries < 6 {
+            left.swipeUp()
+            tries += 1
+        }
+        XCTAssertTrue(last.isHittable)
+        last.tap()
+        XCTAssertTrue(wait({ selectedRoot(app) == 900_015 }, timeout: 6))
+
+        let previous = app.buttons["category.root.900014"]
+        XCTAssertTrue(previous.isHittable)
+        previous.tap()
+        XCTAssertTrue(wait({ selectedRoot(app) == 900_014 }, timeout: 6))
+        let scroll = app.scrollViews["category.right.scroll"]
+        let title = app.staticTexts["category.group.900014.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            wait({ abs(title.frame.minY - scroll.frame.minY) <= 24 }, timeout: 5),
+            "last->previous root must scroll the right target back to the top")
+        attach(app, name: "category-many-previous-selected")
     }
 
     @MainActor func testEmptyErrorRetryAndLoadingStates() {

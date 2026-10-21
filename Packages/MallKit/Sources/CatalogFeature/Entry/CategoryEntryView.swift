@@ -48,6 +48,10 @@ public struct CategoryEntryView: View {
                 CategoryLoadingView(palette: CategoryPalette.resolve(colorScheme))
             }
         }
+        .onChange(of: isActive) { _, active in
+            // Synchronous visibility invalidation; see CategoryViewModel.setActive.
+            viewModel?.setActive(active)
+        }
         .task(id: DriveKey(active: isActive, ticket: viewModel?.readTicket ?? 0)) {
             if viewModel == nil {
                 viewModel = CategoryViewModel(categories: categories)

@@ -68,7 +68,9 @@ enum HomeMapper {
                     title: try nonBlank(item.title, field: "product.title"),
                     subtitle: item.subTitle,
                     imageURL: imageURL(item.mainPic),
-                    priceYuan: Decimal(item.price)
+                    priceYuan: Decimal(item.price),
+                    // Match the reference display default without inventing sales.
+                    sold: item.sold ?? 0
                 )
             )
         }

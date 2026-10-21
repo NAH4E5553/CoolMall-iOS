@@ -1,8 +1,8 @@
+import Foundation
 import MallCore
 import Observation
 
-/// Page state for the HOME-01 minimal read UI plus the HOME-02-R1 re-tap
-/// refresh. The Scene/home-root view identity owns this model; SwiftUI's task
+/// Page state for the integrated home and its shared refresh/recovery slot. The Scene/home-root view identity owns this model; SwiftUI's task
 /// owns every await call.
 ///
 /// Request validity: `generation` bumps on every accepted read and on every
@@ -14,12 +14,20 @@ import Observation
 /// cancellation and returns a value or a plain error — falls back to the
 /// retained state instead of stranding the page in loading (R-HOME-01-01).
 ///
-/// HOME-02-R1 refresh (H0 v0.3/PRD-019): a re-tap refresh keeps the committed
-/// snapshot visible behind a small indicator; success replaces the snapshot
-/// wholesale, failure keeps the old content behind a retryable hint, and a
-/// busy model (first load or active refresh) accepts no second request. The
-/// raw re-tap counter never drives task keys — only the model-accepted
-/// `refreshTicket` does, so ignored re-taps cannot cancel an active request.
+/// HOME-RETAP-DEBOUNCE refresh (2026-10-20, 300ms trailing merge): a real
+/// home re-tap still scrolls to top immediately, but its read is merged —
+/// every DISTINCT re-tap event invalidates the previous identity, cancels
+/// the previous merge timer/read task and ends the waiters of whatever it
+/// superseded, then re-arms "last tap + 300ms". Only after the last tap has
+/// been quiet for the full window (and the page is still active) does ONE
+/// latest read start; a single tap waits the same 300ms. Pulls, recoveries
+/// and accessibility refreshes keep their ORIGINAL immediate-or-rejected
+/// contracts and are busy while a merge wait or a read is pending. A
+/// re-tap may supersede an in-flight pull (its waiter ends promptly, never
+/// cleaning the new task). Losing visibility cancels timer and read and
+/// drops the pending intent without replay. Stale success/error/cancellation
+/// outcomes are rejected by the generation guard; duplicate delivery of the
+/// SAME intent token (retap token / pull interaction) is deduplicated.
 @MainActor @Observable
 final class HomeViewModel {
     enum State: Equatable {
@@ -36,42 +44,212 @@ final class HomeViewModel {
     private var retainedState: State?
     private var lastConsumedRetryToken = 0
 
-    // HOME-02-R1 refresh state (internal projections only).
+    // Refresh state (internal projections only).
     private(set) var isRefreshing = false
     private(set) var refreshFailedHint = false
-    /// Monotonic ticket bumped whenever a refresh intent is ACCEPTED; the
-    /// entry mirrors it into its single drive task key.
+    /// Monotonic ticket bumped whenever an IMMEDIATE refresh intent (pull,
+    /// recovery, hint retry, accessibility) is accepted.
     private(set) var refreshTicket: UInt64 = 0
-    private var acceptedRefreshPending = false
+    /// The ONE owner of EVERY network read — first load, original retry and
+    /// refresh alike: the task holds the trailing 300ms merge sleep and the
+    /// read for the CURRENT intent; a new retap cancels and replaces it
+    /// whole (R-DB-01: also the in-flight first read, for real). Never a
+    /// pending boolean slot consumed by a view task, never two independent
+    /// I/O drivers.
+    private var ownedTask: Task<Void, Never>?
+    /// The generation the current ownedTask serves — lets a cancelled
+    /// CALLER cancel exactly its own request and never a newer one.
+    private var ownedRequest: Int?
+    /// Synchronously occupied at acceptance, cleared only by the CURRENT
+    /// intent's settle: covers the window where the owned Task has been
+    /// created but has not started executing yet (R-DB-02) — isRefreshing
+    /// alone only turns on once the task runs.
+    private(set) var hasPendingOwnedRequest = false
+    /// A retap intent is inside its merge window (busy for other entries).
+    private(set) var isRetapPending = false
+    /// Visibility snapshot owned here so an expired merge can re-check it.
+    private var isActive = true
+    /// Internal merge-window seams for @testable time control; production
+    /// sleeps on the monotonic task clock for 300ms — no public clock or
+    /// API is exposed. `retapElapsed` anchors the ABSOLUTE merge deadline at
+    /// acceptance (R-DB-03): the task only waits the REMAINING time.
+    var retapMergeWindow: ContinuousClock.Duration = .milliseconds(300)
+    var retapMergeSleep: (ContinuousClock.Duration) async throws -> Void = {
+        try await Task.sleep(for: $0)
+    }
+    var retapElapsedOverride: (() -> ContinuousClock.Duration)?
+    private let clockStart = ContinuousClock().now
+
+    private func retapElapsed() -> ContinuousClock.Duration {
+        retapElapsedOverride?() ?? (ContinuousClock().now - clockStart)
+    }
     private var lastHandledReTapToken: UInt64 = 0
+    private var lastHandledPullInteraction: UInt64?
+    private var refreshWaiters: [UInt64: [UUID: CheckedContinuation<Void, Never>]] = [:]
+
+    /// Reserves the same slot as a re-tap; only the single drive performs I/O.
+    /// A rejected pull ends immediately. An accepted pull waits for its ticket.
+    func pullToRefresh(interaction: UInt64? = nil) async {
+        guard !Task.isCancelled else { return }
+        if let interaction {
+            guard interaction != lastHandledPullInteraction else { return }
+            // Consume even while busy: a callback repeated after the current
+            // request ends still belongs to the same rejected interaction.
+            lastHandledPullInteraction = interaction
+        }
+        guard acceptImmediateRefresh() else { return }
+        let ticket = refreshTicket
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                // Covers cancellation before registration, including a handler
+                // that already ran while this MainActor operation was pending.
+                guard !Task.isCancelled else { continuation.resume(); return }
+                refreshWaiters[ticket, default: [:]][waiterID] = continuation
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.cancelPullWaiter(ticket: ticket, waiterID: waiterID)
+            }
+        }
+    }
+
+    /// Non-drag accessibility intent, immediate (original contract).
+    func requestAccessibleRefresh() { acceptImmediateRefresh() }
+
+    /// ORIGINAL immediate acceptance for pull/recovery/hint/accessibility:
+    /// state-gated and busy-rejected. `hasPendingOwnedRequest` is occupied
+    /// SYNCHRONOUSLY at acceptance, so a second immediate entry is rejected
+    /// even in the same actor turn, before the first intent's Task has
+    /// started executing (R-DB-02) — it changes no ticket, cancels nothing
+    /// and ends no waiter. A re-tap may still supersede the accepted intent.
+    @discardableResult
+    private func acceptImmediateRefresh() -> Bool {
+        switch state {
+        case .ready, .empty, .failed: break
+        case .idle, .loading: return false
+        }
+        guard !hasPendingOwnedRequest, !isRefreshing, !isRetapPending else { return false }
+        startOwnedRead(debounced: false, bumpsTicket: true)
+        return true
+    }
+
+    /// Arms the single owner task. `debounced` waits until the ABSOLUTE
+    /// deadline captured synchronously at acceptance — "this event + 300ms"
+    /// on the internal monotonic clock (R-DB-03) — sleeping only the
+    /// REMAINING time and skipping the sleep entirely when the deadline has
+    /// already passed; either way the read re-checks identity, cancellation
+    /// and activity before touching the service. Scheduling ALWAYS
+    /// invalidates the previous identity, REALLY cancels the previous owned
+    /// task (first load, retry, or refresh — R-DB-01) and ends the waiters
+    /// of the intent it superseded; it also occupies the busy slot
+    /// synchronously (R-DB-02). The superseded task's settles are
+    /// generation-guarded and can never pollute this one.
+    @discardableResult
+    private func startOwnedRead(
+        debounced: Bool, bumpsTicket: Bool, fullPageReload: Bool = false
+    ) -> Task<Void, Never> {
+        generation += 1
+        ownedTask?.cancel()
+        finishRefresh(refreshTicket)
+        refreshFailedHint = false
+        hasPendingOwnedRequest = true
+        if debounced {
+            isRetapPending = true
+        } else if bumpsTicket {
+            // Immediate entries (pull/recovery/hint/accessibility) own the
+            // ticket their waiters are registered under.
+            refreshTicket &+= 1
+        }
+        let request = generation
+        ownedRequest = request
+        let ticket = refreshTicket
+        let deadline = retapElapsed() + retapMergeWindow
+        let sleep = retapMergeSleep
+        let elapsed = retapElapsed
+        let task = Task { [weak self] in
+            guard let self else { return }
+            if debounced {
+                // Only the time the deadline still has left — never a fresh
+                // full-window sleep from whenever the task happens to start.
+                let remaining = deadline - elapsed()
+                if remaining > .zero {
+                    do {
+                        try await sleep(remaining)
+                    } catch {
+                        return
+                    }
+                }
+            }
+            await self.performOwnedRead(
+                request: request, ticket: ticket, fullPageReload: fullPageReload)
+        }
+        ownedTask = task
+        return task
+    }
+
+    /// Awaits the owned read for the given request and propagates CALLER /
+    /// view-task cancellation into that same read (R-OWN-01): the SwiftUI
+    /// task that started a first load or original retry may be cancelled
+    /// without any later drive(active:false) running (view removal, scene
+    /// end), and even a service that IGNORES the cancellation must not then
+    /// commit. The cancellation is bound to the request identity: a stale
+    /// caller's cancellation can never touch a request that has since been
+    /// taken over by a re-tap, pull or any newer intent.
+    private func awaitOwnedRead(request: Int, _ task: Task<Void, Never>) async {
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard let self, self.ownedRequest == request else { return }
+                self.ownedTask?.cancel()
+            }
+        }
+    }
+
+    private func finishRefresh(_ ticket: UInt64) {
+        for waiter in (refreshWaiters.removeValue(forKey: ticket) ?? [:]).values { waiter.resume() }
+    }
+
+    private func cancelPullWaiter(ticket: UInt64, waiterID: UUID) {
+        guard var waiters = refreshWaiters[ticket],
+            let waiter = waiters.removeValue(forKey: waiterID)
+        else { return }
+        if waiters.isEmpty {
+            refreshWaiters.removeValue(forKey: ticket)
+        } else {
+            refreshWaiters[ticket] = waiters
+        }
+        // Cancellation ends this wait only. The single drive remains the
+        // request owner; an old waiter cannot clear a newer accepted ticket.
+        waiter.resume()
+    }
 
     init(home: any HomeLoading) {
         self.home = home
     }
 
-    /// Single drive entry for the view's one `.task(id:)`. The key covers
-    /// visibility, the original retry trigger and the model-ACCEPTED refresh
-    /// ticket, so ANY key change cancels the in-flight await — the first
+    /// Single drive entry for the view's one `.task(id:)`, keyed by visibility
+    /// and the model-accepted ticket. Recovery buttons share that slot; the
+    /// original retry token remains supported for internal callers. Visibility
+    /// changes cancel the in-flight await — the first
     /// read and a refresh are cancelled alike by an explicit visibility loss,
     /// never only by onDisappear. Losing visibility is routed FIRST: an
     /// accepted-but-unstarted refresh is dropped (no hidden off-page request)
     /// and the indicator closes. A retry token is consumed exactly once;
     /// rejected re-taps never change the key.
     func drive(active: Bool, retryToken: Int) async {
-        // R-HOME-02-R1-01: losing visibility always wins — an accepted but
-        // not-yet-started refresh is dropped here (suspend clears it), so an
-        // off-page drive can never issue a hidden request. An original-retry
-        // intent that already arrived but has not started is likewise
-        // consumed WITHOUT running (R-HOME-02-R1-04): returning replays the
-        // visibility path only and never auto-retries; a later explicit
-        // retry still can.
+        // R-HOME-02-R1-01: losing visibility always wins — suspend cancels
+        // the merge timer and the in-flight read and drops a pending retap
+        // intent (returning never replays it), so an off-page drive can
+        // never issue a hidden request. An original-retry intent that
+        // already arrived but has not started is likewise consumed WITHOUT
+        // running (R-HOME-02-R1-04): returning replays the visibility path
+        // only and never auto-retries; a later explicit retry still can.
+        isActive = active
         guard active else {
             lastConsumedRetryToken = retryToken
             suspend()
-            return
-        }
-        if acceptedRefreshPending {
-            await runAcceptedRefresh()
             return
         }
         if retryToken != lastConsumedRetryToken {
@@ -79,7 +257,7 @@ final class HomeViewModel {
             await retry()
             return
         }
-        await handleVisibility(active)
+        await loadIfNeeded()
     }
 
     /// Visibility half of the drive contract. `active` triggers the first
@@ -94,124 +272,125 @@ final class HomeViewModel {
         }
     }
 
+    /// R-OWN-01-LIFE: page REMOVAL / teardown cleanup. The entry's `.task`
+    /// has long returned once the first read finished, and a re-tap's merge
+    /// timer / in-flight read is owned ONLY by `ownedTask` afterwards — so
+    /// cancelling the (already finished) view task cannot reach it. This
+    /// entry is the reliable teardown hook the view calls from
+    /// `onDisappear`: it invalidates the current intent, REALLY cancels the
+    /// timer/read, ends pull waiters and clears this page's pending/busy/
+    /// loading state. Idempotent with the `isActive=false` suspend path
+    /// (duplicate notifications are no-ops) and generation-safe: a teardown
+    /// racing a NEWER request cannot touch it — a teardown always wins
+    /// because it bumps the generation past everything.
+    func pageTeardown() {
+        suspend()
+    }
+
     /// Original user retry — allowed only from failed/empty; loading accepts
     /// no second action, ready keeps no refresh entry in HOME-01 semantics.
+    /// R-DB-01: retries run in the owned task too, so a re-tap really
+    /// cancels an in-flight retry.
     func retry() async {
         switch state {
-        case .failed, .empty: await load()
+        case .failed, .empty:
+            let request = generation + 1
+            await awaitOwnedRead(
+                request: request,
+                startOwnedRead(debounced: false, bumpsTicket: false, fullPageReload: true))
         case .idle, .loading, .ready: break
         }
     }
 
     /// Synchronous re-tap entry from the App's read-only event counter.
-    /// Deduplicates by token; rejects while a first load or a refresh is in
-    /// flight (busy ⇒ scroll-to-top only, no stacking/restart/queueing); an
-    /// accepted intent clears the previous failure hint and bumps the ticket
-    /// the drive key mirrors.
+    /// Deduplicates by token (a redelivered SAME token neither re-processes
+    /// nor re-arms the window); every DISTINCT real re-tap immediately
+    /// invalidates the old identity, cancels the old merge timer/read and
+    /// ends superseded waiters, then re-arms "this tap + 300ms" — the
+    /// trailing merge (HOME-RETAP-DEBOUNCE, 2026-10-20).
     func requestRefresh(_ token: UInt64) {
         guard token != lastHandledReTapToken else { return }
         lastHandledReTapToken = token
+        startOwnedRead(debounced: true, bumpsTicket: false)
+    }
+
+    /// Failed/empty recovery reserves the same synchronous immediate slot
+    /// as pulls; a second recovery cannot start while busy.
+    func requestUserRetry() {
         switch state {
-        case .ready, .empty, .failed:
-            break
-        case .idle, .loading:
-            return
+        case .failed, .empty: acceptImmediateRefresh()
+        case .idle, .loading, .ready: break
         }
-        // R-HOME-02-R1-02: acceptance itself reserves the busy slot — a
-        // second token in the accepted-but-not-started window is rejected
-        // (ticket unchanged, nothing queued or restarted).
-        guard !isRefreshing, !acceptedRefreshPending else { return }
-        refreshFailedHint = false
-        acceptedRefreshPending = true
-        refreshTicket &+= 1
     }
 
     /// Retry entry for the refresh-failure hint row — a NEW refresh action,
-    /// distinct from the original failed/empty retry; still the same model.
+    /// distinct from the original failed/empty retry; still immediate.
     func requestRetryRefresh() {
         guard refreshFailedHint else { return }
-        switch state {
-        case .ready, .empty: break
-        case .idle, .loading, .failed: return
-        }
-        // Same busy/acceptance-slot contract as re-tap refreshes.
-        guard !isRefreshing, !acceptedRefreshPending else { return }
-        refreshFailedHint = false
-        acceptedRefreshPending = true
-        refreshTicket &+= 1
-    }
-
-    private func runAcceptedRefresh() async {
-        guard acceptedRefreshPending else { return }
-        acceptedRefreshPending = false
-        await performRefresh()
+        acceptImmediateRefresh()
     }
 
     private func loadIfNeeded() async {
         switch state {
-        case .idle: await load()
+        case .idle:
+            // R-DB-01: the first read runs in the SAME owned task as every
+            // other read, so a re-tap (or visibility loss) really cancels it.
+            // R-OWN-01: cancelling the awaiting caller cancels its own read
+            // too. performOwnedRead from .idle is the original first-load UI
+            // path (full-page loading, no indicator, cancel restores idle).
+            let request = generation + 1
+            await awaitOwnedRead(
+                request: request, startOwnedRead(debounced: false, bumpsTicket: false))
         case .loading, .ready, .empty, .failed: break
         }
     }
 
-    private func load() async {
-        generation += 1
-        let request = generation
-        state = .loading
-        do {
-            let snapshot = try await home.loadHome()
-            guard request == generation, !Task.isCancelled else {
-                // Superseded (suspend or a newer request took over): leave the
-                // newer state untouched. Still-current but cancelled — even a
-                // service that ignored cancellation and returned a value —
-                // falls back to the retained state, never strands loading.
-                if request == generation {
-                    state = retainedState ?? .idle
-                }
-                return
-            }
-            commitDisplayState(for: snapshot)
-        } catch is CancellationError {
-            // A cancelled read leaves the latest committed state in place; an
-            // unfinished first read falls back to idle.
+    /// The owner task's read stage. Re-checks the LATEST identity,
+    /// cancellation and page activity BEFORE touching the service (the
+    /// debounce may have expired into a superseded or inactive page); with
+    /// committed content (ready/empty) the snapshot stays visible behind
+    /// `isRefreshing`, without any it reloads through the first-load UI.
+    /// Only the current generation may commit or clear flags.
+    private func performOwnedRead(request: Int, ticket: UInt64, fullPageReload: Bool = false)
+        async
+    {
+        guard request == generation, isActive, !Task.isCancelled else {
             if request == generation {
-                state = retainedState ?? .idle
+                isRetapPending = false
+                hasPendingOwnedRequest = false
             }
-        } catch {
-            guard request == generation, !Task.isCancelled else {
-                // A plain error arriving after cancellation is a cancellation
-                // outcome: restore the retained state, do not surface it as a
-                // fresh failure.
-                if request == generation {
-                    state = retainedState ?? .idle
-                }
-                return
-            }
-            let next = State.failed(error as? HomeLoadFailure ?? .networkUnavailable)
-            state = next
-            retainedState = next
+            return
         }
-    }
-
-    /// HOME-02-R1 refresh. With committed content (ready/empty) the snapshot
-    /// stays visible behind `isRefreshing`; without any committed result a
-    /// re-tap on the full-page failure simply reloads through the H0 first
-    /// -load UI. The old task can only settle its own generation: every flag
-    /// cleanup is generation-guarded so a superseded completion never clears
-    /// a newer refresh's state.
-    private func performRefresh() async {
-        generation += 1
-        let request = generation
+        isRetapPending = false
+        defer { finishRefresh(ticket) }
         let keepsOldContent: Bool
-        switch state {
-        case .ready, .empty:
-            keepsOldContent = true
-            isRefreshing = true
-        case .failed:
+        if fullPageReload {
+            // R-OWN-02: the ORIGINAL retry()/drive-retry is a full-page
+            // RELOAD with the first-load state model — even from empty the
+            // page enters loading, and a failure becomes failed(error),
+            // never a retained empty plus refresh hint.
             keepsOldContent = false
             state = .loading
-        case .idle, .loading:
-            return
+        } else {
+            switch state {
+            case .ready, .empty:
+                keepsOldContent = true
+                isRefreshing = true
+            case .failed, .idle:
+                keepsOldContent = false
+                state = .loading
+            case .loading:
+                // A merged re-tap that superseded a first read/retry (or an
+                // in-flight reload): the full-page loading UI already shows.
+                keepsOldContent = false
+            }
+        }
+        defer {
+            if request == generation {
+                isRefreshing = false
+                hasPendingOwnedRequest = false
+                ownedTask = nil
+            }
         }
         do {
             let snapshot = try await home.loadHome()
@@ -220,7 +399,6 @@ final class HomeViewModel {
                 return
             }
             commitDisplayState(for: snapshot)
-            isRefreshing = false
         } catch is CancellationError {
             // Cancelled: close the indicator; a cancellation is never shown
             // as a failure, and a cancelled reload restores retained state.
@@ -230,7 +408,6 @@ final class HomeViewModel {
                 settleCancelledRefresh(request: request, keepsOldContent: keepsOldContent)
                 return
             }
-            isRefreshing = false
             if keepsOldContent {
                 // Old ready/empty stays; only the hint asks for a retry.
                 refreshFailedHint = true
@@ -275,7 +452,11 @@ final class HomeViewModel {
     /// stale commit is rejected by the generation guard.
     private func suspend() {
         generation += 1
-        acceptedRefreshPending = false
+        ownedTask?.cancel()
+        ownedTask = nil
+        isRetapPending = false
+        hasPendingOwnedRequest = false
+        finishRefresh(refreshTicket)
         isRefreshing = false
         if case .loading = state {
             state = retainedState ?? .idle

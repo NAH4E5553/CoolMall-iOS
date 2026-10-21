@@ -74,13 +74,18 @@ public struct HomeProductSummary: Equatable, Sendable {
     public let subtitle: String?
     public let imageURL: URL?
     public let priceYuan: Decimal
+    public let sold: Int64
 
-    public init(id: Int64, title: String, subtitle: String?, imageURL: URL?, priceYuan: Decimal) {
+    public init(
+        id: Int64, title: String, subtitle: String?, imageURL: URL?, priceYuan: Decimal,
+        sold: Int64 = 0
+    ) {
         self.id = id
         self.title = title
         self.subtitle = subtitle
         self.imageURL = imageURL
         self.priceYuan = priceYuan
+        self.sold = sold
     }
 }
 

@@ -2,104 +2,44 @@ import MallCore
 import MallImages
 import SwiftUI
 
-/// HOME-02 content container: composes the six PRD-015 section skeletons from
-/// a single read-only `HomeSnapshot`. A section appears only when its OWN
-/// array is non-empty, in the fixed order 轮播 → 优惠券 → 分类 → 限时精选 →
-/// 推荐商品 → 全部商品; an empty section hides together with its title,
-/// placeholder and reserved area. Pure display: no service, no view model,
-/// no second writable copy of data, no filtering/sorting of the source arrays.
-/// `allCategories` stays auxiliary and never becomes a seventh business
-/// section.
+/// Six source-ordered sections, each hidden with its own empty array.
 struct HomeContentView: View {
-    private enum Section: CaseIterable {
-        case banner
-        case coupon
-        case category
-        case flashSale
-        case recommend
-        case goods
-
-        var title: String {
-            switch self {
-            case .banner: "轮播"
-            case .coupon: "优惠券"
-            case .category: "分类"
-            case .flashSale: "限时精选"
-            case .recommend: "推荐商品"
-            case .goods: "全部商品"
-            }
-        }
-
-        /// Engineering placeholder for this card only; real content belongs
-        /// to HOME-04—HOME-10 cards.
-        var pendingText: String { "\(title)内容待接入" }
-
-        var accessibilityKey: String {
-            switch self {
-            case .banner: "banner"
-            case .coupon: "coupon"
-            case .category: "category"
-            case .flashSale: "flashSale"
-            case .recommend: "recommend"
-            case .goods: "goods"
-            }
-        }
-
-        func isVisible(in snapshot: HomeSnapshot) -> Bool {
-            switch self {
-            case .banner: !snapshot.banners.isEmpty
-            case .coupon: !snapshot.coupons.isEmpty
-            case .category: !snapshot.categories.isEmpty
-            case .flashSale: !snapshot.featured.isEmpty
-            case .recommend: !snapshot.recommendations.isEmpty
-            case .goods: !snapshot.goods.isEmpty
-            }
-        }
-    }
-
-    private let snapshot: HomeSnapshot
-    private let imagePipeline: MallImagePipeline?
-    private let isActive: Bool
-
-    init(snapshot: HomeSnapshot, imagePipeline: MallImagePipeline? = nil, isActive: Bool = true) {
-        self.snapshot = snapshot
-        self.imagePipeline = imagePipeline
-        self.isActive = isActive
-    }
-
+    let snapshot: HomeSnapshot
+    var imagePipeline: MallImagePipeline? = nil
+    var isActive = true
+    var allowsBannerAutoplay = true
+    var bannerViewport = CGRect.zero
+    var isUserDragging = false
+    @Environment(\.colorScheme) private var colorScheme
+    var onUnavailableAction: () -> Void = {}
     var body: some View {
-        // Non-lazy on purpose: all six skeletons are cheap placeholders, and
-        // eager composition keeps empty-section hiding structural.
         VStack(spacing: 16) {
-            ForEach(Section.allCases.filter { $0.isVisible(in: snapshot) }, id: \.self) { section in
-                HomeSectionView(
-                    title: section.title,
-                    pendingText: section.pendingText,
-                    titleAccessibilityID: "home.section.\(section.accessibilityKey).title",
-                    pendingAccessibilityID: "home.section.\(section.accessibilityKey).pending"
+            if !snapshot.banners.isEmpty {
+                HomeBannerCarouselView(
+                    banners: snapshot.banners, imagePipeline: imagePipeline, isActive: isActive,
+                    allowsAutoplay: allowsBannerAutoplay, visibleViewport: bannerViewport,
+                    isUserDragging: isUserDragging,
+                    onUnavailableAction: onUnavailableAction
                 )
-                if section == .banner, let banner = snapshot.banners.first {
-                    Color.clear.aspectRatio(2, contentMode: .fit)
-                        .overlay {
-                            GeometryReader { geometry in
-                                if let imagePipeline {
-                                    RemoteImage(
-                                        url: banner.imageURL, targetSize: geometry.size,
-                                        pipeline: imagePipeline, isEnabled: isActive)
-                                } else {
-                                    Rectangle().fill(.quaternary)
-                                        .overlay {
-                                            Image(systemName: "photo").foregroundStyle(.secondary)
-                                        }
-                                        .accessibilityIdentifier("home.image.unavailable")
-                                        .accessibilityHidden(true)
-                                }
-                            }
-                        }
-                }
             }
+            if !snapshot.coupons.isEmpty {
+                HomeCouponSectionView(coupons: snapshot.coupons) { _ in onUnavailableAction() }
+                    .background(surface, in: RoundedRectangle(cornerRadius: 12))
+            }
+            if !snapshot.categories.isEmpty {
+                HomeCategorySectionView(
+                    categories: snapshot.categories, pipeline: imagePipeline, isActive: isActive,
+                    action: onUnavailableAction
+                )
+                .padding(.vertical, 12)
+                .background(surface, in: RoundedRectangle(cornerRadius: 12))
+            }
+            HomeProductSectionsView(
+                snapshot: snapshot, pipeline: imagePipeline, isActive: isActive,
+                action: onUnavailableAction)
         }
     }
+    private var surface: Color { colorScheme == .dark ? Color(white: 0.12) : .white }
 }
 
 #if DEBUG

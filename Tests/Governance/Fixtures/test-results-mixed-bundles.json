@@ -1,0 +1,103 @@
+{
+  "summary": {
+    "result": "Passed",
+    "failedTests": 0,
+    "skippedTests": 0,
+    "expectedFailures": 0,
+    "totalTestCount": 3,
+    "passedTests": 3
+  },
+  "tree": {
+    "testNodes": [
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "duration": "0.084s",
+                        "durationInSeconds": 0.08370208740234375,
+                        "name": "false",
+                        "nodeIdentifierURL": "test://com.apple.xcode/MallKit/MallImagesTests/ImagePipelineTests/oldSuccessOrErrorAfterCancelCannotReplaceB(isError:)?args=fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa",
+                        "nodeType": "Arguments",
+                        "result": "Passed"
+                      },
+                      {
+                        "duration": "0.057s",
+                        "durationInSeconds": 0.05690193176269531,
+                        "name": "true",
+                        "nodeIdentifierURL": "test://com.apple.xcode/MallKit/MallImagesTests/ImagePipelineTests/oldSuccessOrErrorAfterCancelCannotReplaceB(isError:)?args=b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
+                        "nodeType": "Arguments",
+                        "result": "Passed"
+                      }
+                    ],
+                    "duration": "0.07s",
+                    "durationInSeconds": 0.07030200958251953,
+                    "name": "oldSuccessOrErrorAfterCancelCannotReplaceB(isError:)",
+                    "nodeIdentifier": "ImagePipelineTests/oldSuccessOrErrorAfterCancelCannotReplaceB(isError:)",
+                    "nodeIdentifierURL": "test://com.apple.xcode/MallKit/MallImagesTests/ImagePipelineTests/oldSuccessOrErrorAfterCancelCannotReplaceB(isError:)",
+                    "nodeType": "Test Case",
+                    "result": "Passed"
+                  }
+                ],
+                "name": "ImagePipelineTests",
+                "nodeIdentifierURL": "test://com.apple.xcode/MallKit/MallImagesTests/ImagePipelineTests",
+                "nodeType": "Test Suite",
+                "result": "Passed"
+              }
+            ],
+            "name": "MallImagesTests",
+            "nodeIdentifierURL": "test://com.apple.xcode/MallKit/MallImagesTests",
+            "nodeType": "Unit test bundle",
+            "result": "Passed"
+          },
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "duration": "38s",
+                    "durationInSeconds": 38.09272801876068,
+                    "name": "testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()",
+                    "nodeIdentifier": "HomeLoadTests/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()",
+                    "nodeIdentifierURL": "test://com.apple.xcode/CoolMalliOS/CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag",
+                    "nodeType": "Test Case",
+                    "result": "Passed"
+                  },
+                  {
+                    "duration": "48s",
+                    "durationInSeconds": 48.23363995552063,
+                    "name": "testBannerAutoplayPausesWhileAwayAndResumesFullInterval()",
+                    "nodeIdentifier": "HomeLoadTests/testBannerAutoplayPausesWhileAwayAndResumesFullInterval()",
+                    "nodeIdentifierURL": "test://com.apple.xcode/CoolMalliOS/CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayPausesWhileAwayAndResumesFullInterval",
+                    "nodeType": "Test Case",
+                    "result": "Passed"
+                  }
+                ],
+                "name": "HomeLoadTests",
+                "nodeIdentifierURL": "test://com.apple.xcode/CoolMalliOS/CoolMalliOSUITests/HomeLoadTests",
+                "nodeType": "Test Suite",
+                "result": "Passed"
+              }
+            ],
+            "name": "CoolMalliOSUITests",
+            "nodeIdentifierURL": "test://com.apple.xcode/CoolMalliOS/CoolMalliOSUITests",
+            "nodeType": "UI test bundle",
+            "result": "Passed"
+          }
+        ],
+        "name": "CoolMalliOS",
+        "nodeType": "Test Plan",
+        "result": "Passed"
+      }
+    ]
+  },
+  "expected": [
+    "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()",
+    "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayPausesWhileAwayAndResumesFullInterval()",
+    "MallImagesTests/ImagePipelineTests/oldSuccessOrErrorAfterCancelCannotReplaceB(isError:)"
+  ]
+}

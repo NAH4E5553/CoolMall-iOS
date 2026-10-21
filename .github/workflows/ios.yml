@@ -7,27 +7,64 @@ on:
   schedule:
     - cron: '23 3 * * 1'
   workflow_dispatch:
+    inputs:
+      collect_diagnostics:
+        description: Collect detailed Xcode diagnostics on failure (may take several minutes)
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: ios-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  classify:
+    name: Classify change scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      run_verification: ${{ steps.scope.outputs.run_verification }}
+      reason: ${{ steps.scope.outputs.reason }}
+    steps:
+      - name: Checkout complete diff history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Classify documentation, placeholders and implemented changes
+        id: scope
+        env:
+          MALL_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          MALL_DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 Scripts/classify-ci-changes.py
+
   verify:
+    needs: [classify]
+    if: ${{ needs.classify.outputs.run_verification == 'true' }}
     name: F0 verification
     runs-on: xcode-27
     timeout-minutes: 120
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      MALL_TEST_DIAGNOSTICS: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_diagnostics && 'on-failure' || 'never' }}
+      GITHUB_TOKEN: ${{ github.token }}
+      MALL_PR_NUMBER: ${{ github.event.pull_request.number }}
+      MALL_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      MALL_DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
       MALL_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
       - name: Record environment and select exact runtime
         shell: bash
         run: |
@@ -44,9 +81,13 @@ jobs:
           } 2>&1 | tee .build/verification/environment.log
           MALL_SIMULATOR_ID=$(python3 Scripts/select-simulator.py --runtime-version 27.0)
           echo "MALL_SIMULATOR_ID=$MALL_SIMULATOR_ID" >> "$GITHUB_ENV"
-      - name: Policy, format, boundaries, negative controls, builds and full Test Plan
+      - name: Policy, format, boundaries, negative controls, builds, discovered test scope and exact results
         shell: bash
         run: Scripts/verify-local.sh
+      - name: Summarize executed verification stages
+        if: ${{ always() }}
+        shell: bash
+        run: python3 Scripts/verification-timing.py report-all .build/verification >> "$GITHUB_STEP_SUMMARY"
       - name: Retain evidence on success or failure
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 (Node 24)
@@ -55,7 +96,12 @@ jobs:
           path: |
             .build/verification/*.log
             .build/verification/*/*.log
+            .build/verification/*/stage-timings.json
+            .build/verification/*/stage-timings.md
             .build/verification/*/Tests.*.json
+            .build/verification/*/test-scope.json
+            .build/verification/*/test-enumeration.json
+            .build/verification/*/expected-tests.txt
             .build/verification/*/Tests.xcresult/**
           include-hidden-files: true
           if-no-files-found: error
@@ -68,7 +114,7 @@ jobs:
   required-checks:
     name: required-checks
     if: ${{ always() }}
-    needs: [verify]
+    needs: [classify, verify]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -76,6 +122,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Require every verification job to succeed
         env:
           MALL_CI_NEEDS: ${{ toJSON(needs) }}

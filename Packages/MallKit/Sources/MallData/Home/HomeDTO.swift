@@ -32,6 +32,7 @@ struct HomeProductDTO: Decodable {
     let subTitle: String?
     let mainPic: String?
     let price: Int64
+    let sold: Int64?
 }
 
 struct HomeCouponDTO: Decodable {

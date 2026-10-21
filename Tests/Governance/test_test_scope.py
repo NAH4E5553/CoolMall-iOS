@@ -99,6 +99,31 @@ class SelectionTests(unittest.TestCase):
         self.write('Unknown.swift','changedBody\n'); self.commit()
         self.assertEqual(self.plan()['mode'], 'full')
 
+    def test_banner_timing_map_unions_real_consumers(self):
+        timing = 'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeBannerTiming.swift'
+        hosted = 'Packages/MallKit/Tests/CatalogFeatureTests/Home/HomeBannerProductionTimingTests.swift'
+        self.assertEqual(S.PATH_TARGETS[timing], [S.CATALOG, S.HOME])
+        self.assertEqual(S.PATH_TARGETS[hosted], [S.CATALOG])
+        self.write(hosted, 'changedBody\n'); self.commit()
+        self.assertEqual(self.plan()['targets'], [S.CATALOG])
+        self.write(timing, 'changedBody\n'); self.commit()
+        self.assertEqual(self.plan()['targets'], sorted([S.CATALOG, S.HOME]))
+
+    def test_new_mapped_timing_files_and_declarations_still_require_full(self):
+        paths = [
+            'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeBannerTiming.swift',
+            'Packages/MallKit/Tests/CatalogFeatureTests/Home/HomeBannerProductionTimingTests.swift',
+        ]
+        for path in paths:
+            with self.subTest(path=path):
+                (self.root / path).unlink(); self.base = self.commit()
+                self.write(path, 'newBody\n'); self.commit()
+                self.assertEqual(self.plan()['mode'], 'full')
+                self.base = self.git('rev-parse', 'HEAD')
+                self.write(path, 'func newDiscovery() {}\n'); self.commit()
+                self.assertEqual(self.plan()['mode'], 'full')
+                self.assertEqual(self.plan()['reason'], 'declaration-api-or-test-discovery-change')
+
     def test_new_file_delete_and_non_pr_full(self):
         (self.root/'CoolMalliOSUITests/HomeLoadTests.swift').unlink(); self.commit()
         self.assertEqual(self.plan()['mode'], 'full')

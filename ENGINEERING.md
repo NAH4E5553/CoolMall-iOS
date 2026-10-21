@@ -901,6 +901,8 @@ xcrun swift-format --version
 
 ### 6.2 UI 组件验收
 
+轮播时序按7.2的2026-10-21获批分层合同：精确规则经生产计时宿主路径，四条真实UI保生命周期/可见结果及原观察预算，并必须通过真实事件审计。详细对应在IMPLEMENTATION_PLAN9.12.8.1；新合同不倒写旧失败为通过。
+
 | 组件类别 | 必须验证 |
 | --- | --- |
 | 按钮/提交动作 | 可用、禁用、提交中；重复点击只产生规定次数的动作；与业务提交状态一致 |
@@ -994,6 +996,17 @@ Keychain 适配的真实读写另用独立测试 service/account 标识验证，
 每个 Feature 暴露的 public 入口、能力协议和依赖边在 PR 中列差异。公共合同被删除/改变时，编译并测试全部消费者；非破坏性内部重构不需要单独架构审批。单人维护时，维护者做明确的差异复核；后续多人协作应由非作者审查。审批对象是具体合同或例外，不是每次执行工具。
 
 ### 7.2 自动验证：准确的触发与失败规则
+
+2026-10-21 轮播分层验收合同（用户批准具体设计，APPROVAL-CAROUSEL-CONTRACT-20261021）：仅cycle/away/offscreen/push四条真实UI方法迁移混合时序检查，四条方法、完整操作链及默认60/away120秒不变。生产HomeBannerCarouselView保留@State与单一结构化.task；内部可控时钟的真实宿主测试验证截止前不推进、到期实际选中、真实取消、忽略取消旧wake拒绝、返回完整五秒、快速往返无重复任务和宿主移除；隔离生产源码反例必须以对应业务断言失败证明敏感性，纯gate/合成日志不替代实际生产路径。上述前置未成立前，不移除旧UI时序断言。
+
+前置通过后，UI原3/4.4/4.5秒业务下界迁移至精确五秒生产路径测试；原离页准备<5秒被实际App/组件离开检查点替代。隐藏及拖动期间必须有连续真实事件、实际选中变化revision和自动推进序号，确认没有推进/绕回；恢复task入口在重新arm前记录保持快照。日志补充真实UI断言，保留实际导航/后台/滚动/命中、同次叶/点一致、三次相邻推进完整回环及可见恢复。缺记录、异常实例重建、采集错误、未到达分支不得判通过，旧失败记录和三个历史问题独立保留。
+
+UI观察预算保留原数值并统一绝对截止点：Tab点击/activate/短拖API返回立即起算9秒；Back tap返回立即起算14秒，包含loaded/滚动/命中/AX/重试，不能在查询后重置。cycle冷启动15秒、后续两个相邻推进阶段各10秒、wrap叶曝光2秒，push局部hit原3秒；offscreen回屏真实命中确认后立即开始原10秒恢复推进阶段。helper仅消费剩余预算，任何阻塞AX调用晚返回仍为观察超支。Tab/Scene隐藏5.6秒、离屏6.2秒与job120分钟不变。上述9/14等是未校准的迁移观察约束，不能当产品体验标准或以慢基线放宽。
+
+实际交付边界补充：原生tap/activate返回是观察预算起点，不保证SwiftUI环境输入已经送达。Scene恢复边配对最多到该操作后既有第一条叶/点一致快照结束（仍在原9秒内）；不得挑后续快照、加等待或挪预算起点。真实隐藏保持仍按最早实际App/组件边及连续选择账验证。seed push若冻结源码的inactive→不首读→无ready内容控制流与从seq1连续事件联合证明轮播直到pop后才首次创建，则仅记录“初始未挂载→首次创建新五秒任务”；不能伪造inactive组件事件或称验证了mounted取消。任何先存实例/重建/缺失证据继续拒绝或走原mounted链。
+
+正式入口在测试执行后（包括原测试失败）运行最小轮播生命周期离线审计；只审实际选中并执行的四方法，无该范围明确not-required，部分失败仅recorded-prefix/未到达。审计缺失/失败拒绝成功，保留先前非零测试退出码。共享TestPlan真实发现及exact-set核对、现有PR累计范围选测/完整回退与required-checks不变，不重构项目CI分层。性能/线程诊断单独记录，不以新合同通过倒推旧away或晚唤醒根因闭环。
+
 
 2026-10-21 approved cumulative CI selection (supersedes older no-selection/main-docskip wording): only PRs may select behavior tests, using the current target-base/PR-head merge-base → head cumulative diff and an exact-head clean checkout. `Scripts/select-test-scope.py` owns the explicit path → whole test class/target consumer map; HomeLoad/NavigationSmoke changes include their entire classes and private helpers; known home carousel/layout/VM wiring takes the union of CatalogFeatureTests and its HomeLoad/NavigationSmoke consumers. No method-level Swift parser is claimed. Declaration/API/test-discovery edits, new/deleted/renamed or unknown paths, resources with unknown consumers, shared Core/Data/App/configuration, unavailable history and unbounded cross-module effects use the full plan. A bounded branch-filtered Actions query requires the latest same-PR/workflow ancestor verification and required-checks to succeed before narrowing; newer failure/cancellation/in-progress, rerun attempts, missing/ambiguous or incomplete history use full. A latest valid success closes older failures; no manual failure-clear flag exists. PR docs/placeholders retain DEC-014 exclusions; main push, schedule and manual always run full even for docs. All policy/format/negative/Debug+Release gates, business assertions, 60/120-second allowances and 120-minute job limit remain.
 

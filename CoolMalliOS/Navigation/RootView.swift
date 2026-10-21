@@ -8,6 +8,9 @@ import SwiftUI
 struct RootView: View {
     let dependencies: AppDependencies
     @State private var router = SceneRouter()
+    #if DEBUG
+        @Environment(\.scenePhase) private var bannerAuditScenePhase
+    #endif
     @State private var unavailableNotice: UUID?
     #if DEBUG
         private let navTestControl: NavigationTestControl
@@ -27,6 +30,9 @@ struct RootView: View {
     var body: some View {
         tabs
             #if DEBUG
+                .onChange(of: bannerAuditScenePhase, initial: true) { _, phase in
+                    router.recordBannerSceneInput(isActive: phase == .active)
+                }
                 // R-NAV-02-AT05-01: the control strip reserves layout space at the
                 // bottom instead of floating over the top, so it can never cover
                 // the navigation title/back area at any content size.

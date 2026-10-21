@@ -7,6 +7,17 @@ import SwiftUI
 struct HomeBannerSelection {
     private(set) var selectedID: Int64?
     private var validIDs: [Int64] = []
+    #if DEBUG
+        private(set) var selectionRevision: UInt64 = 0
+        private(set) var advanceSequence: UInt64 = 0
+    #endif
+
+    private mutating func commit(_ id: Int64?) {
+        #if DEBUG
+            if selectedID != id { selectionRevision &+= 1 }
+        #endif
+        selectedID = id
+    }
 
     func currentID(in ids: [Int64]) -> Int64? {
         if let selectedID, ids.contains(selectedID) { return selectedID }
@@ -14,13 +25,18 @@ struct HomeBannerSelection {
     }
 
     mutating func reconcile(with ids: [Int64]) {
-        selectedID = currentID(in: ids)
+        commit(currentID(in: ids))
         validIDs = ids
     }
 
-    mutating func select(_ id: Int64) {
-        guard validIDs.contains(id) else { return }
-        selectedID = id
+    @discardableResult
+    mutating func select(_ id: Int64, autoplay: Bool = false) -> Bool {
+        guard validIDs.contains(id), selectedID != id else { return false }
+        commit(id)
+        #if DEBUG
+            if autoplay { advanceSequence &+= 1 }
+        #endif
+        return true
     }
 
     func adjacentID(offset: Int, in ids: [Int64]) -> Int64? {
@@ -88,6 +104,7 @@ struct HomeBannerCarouselView: View {
     /// gesture is deliberately NOT used: it breaks pull-to-refresh.
     var isUserDragging = false
     var onUnavailableAction: () -> Void = {}
+    @Environment(\.bannerTiming) private var timing
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
@@ -95,6 +112,61 @@ struct HomeBannerCarouselView: View {
     @State private var autoplay = HomeBannerAutoplay()
     @State private var bannerFrame = CGRect.zero
     @State private var interaction: UInt64 = 0
+
+    #if DEBUG
+        @State private var traceInstance = UUID()
+        @State private var auditLedger = BannerAuditLedger()
+        @Environment(\.bannerAuditSink) private var auditSink
+    #endif
+
+    private func tracePlayback(_ event: String, token: UInt64) {
+        #if DEBUG
+            guard ProcessInfo.processInfo.arguments.contains("--ui-banner-trace") else { return }
+            NSLog(
+                "AUTOTRACE %@",
+                "t=\(ProcessInfo.processInfo.systemUptime) instance=\(traceInstance) token=\(token) event=\(event) id=\(currentID ?? 0) eligible=\(canAutoplay) home=\(isActive) scene=\(scenePhase) drag=\(isUserDragging) motion=\(reduceMotion) voice=\(voiceOver) allowed=\(allowsAutoplay) count=\(ids.count) interaction=\(interaction) frame=\(bannerFrame) viewport=\(visibleViewport)"
+            )
+        #endif
+    }
+
+    #if DEBUG
+        private var auditGate: BannerGateSnapshot {
+            let intersection = bannerFrame.intersection(visibleViewport)
+            return BannerGateSnapshot(
+                homeActive: isActive, sceneActive: scenePhase == .active,
+                drag: isUserDragging,
+                visible: !intersection.isNull && intersection.width > 0 && intersection.height > 0,
+                allowed: allowsAutoplay, reduceMotion: reduceMotion, voiceOver: voiceOver,
+                count: ids.count,
+                frame: [bannerFrame.minX, bannerFrame.minY, bannerFrame.width, bannerFrame.height],
+                viewport: [
+                    visibleViewport.minX, visibleViewport.minY, visibleViewport.width,
+                    visibleViewport.height,
+                ])
+        }
+
+        private func audit(
+            _ event: String, taskID: String? = nil, revision: UInt64? = nil,
+            previousGate: BannerGateSnapshot? = nil, oldSelectedID: Int64? = nil,
+            cause: String? = nil
+        ) {
+            guard let auditSink else { return }
+            auditLedger.sequence &+= 1
+            let bounds = auditLedger.deadline(for: taskID)
+            auditSink.receive(
+                BannerAuditEvent(
+                    runID: auditSink.runID, processID: ProcessInfo.processInfo.processIdentifier,
+                    instanceID: auditLedger.instanceID, eventSequence: auditLedger.sequence,
+                    monotonicTime: timing.monotonicTime(),
+                    inputRevision: revision ?? auditLedger.revision(for: auditGate),
+                    taskID: taskID, generation: autoplay.generation, event: event,
+                    selectedID: currentID, selectionRevision: selection.selectionRevision,
+                    advanceSequence: selection.advanceSequence, deadline: bounds?.lower,
+                    deadlineUpper: bounds?.upper,
+                    gate: auditGate, previousGate: previousGate, oldSelectedID: oldSelectedID,
+                    cause: cause))
+        }
+    #endif
 
     private var ids: [Int64] { banners.map(\.id) }
     private var currentID: Int64? { selection.currentID(in: ids) }
@@ -137,19 +209,79 @@ struct HomeBannerCarouselView: View {
                     bannerFrame = $0
                 }
                 .onChange(of: ids, initial: true) { _, newIDs in
+                    let oldID = selection.selectedID
                     selection.reconcile(with: newIDs)
+                    #if DEBUG
+                        if oldID != selection.selectedID {
+                            audit("selectionCommit", oldSelectedID: oldID, cause: "reconcile")
+                        }
+                    #endif
                 }
+                #if DEBUG
+                    .onChange(of: auditGate, initial: true) { old, new in
+                        guard auditSink != nil else { return }
+                        let initial = auditLedger.rawGate == nil
+                        auditLedger.rawGate = new
+                        audit(initial ? "initial" : "rawInput", previousGate: initial ? nil : old)
+                    }
+                #endif
                 .task(id: playbackKey) { @MainActor in
-                    let clock = ContinuousClock()
-                    let token = autoplay.restart(at: clock.now, eligible: canAutoplay)
+                    #if DEBUG
+                        let taskID = UUID().uuidString
+                        let revision = auditSink == nil ? 0 : auditLedger.revision(for: auditGate)
+                        audit("taskEntry", taskID: taskID, revision: revision)
+                        let restartLower = auditSink == nil ? 0 : timing.monotonicTime()
+                    #endif
+                    let token = autoplay.restart(at: timing.now(), eligible: canAutoplay)
+                    #if DEBUG
+                        if auditSink != nil {
+                            let restartUpper = timing.monotonicTime()
+                            auditLedger.recordDeadline(
+                                taskID: taskID,
+                                lower: autoplay.deadline == nil ? nil : restartLower + 5,
+                                upper: autoplay.deadline == nil ? nil : restartUpper + 5)
+                        }
+                        audit("arm", taskID: taskID, revision: revision)
+                    #endif
+                    tracePlayback(
+                        "arm deadline=\(String(describing: autoplay.deadline))", token: token)
                     guard let deadline = autoplay.deadline else { return }
-                    do { try await clock.sleep(until: deadline) } catch { return }
+                    do { try await timing.sleepUntil(deadline) } catch {
+                        tracePlayback("cancel", token: token)
+                        #if DEBUG
+                            audit("cancel", taskID: taskID, revision: revision)
+                        #endif
+                        return
+                    }
+                    #if DEBUG
+                        audit("wake", taskID: taskID, revision: revision)
+                    #endif
+                    tracePlayback("wake cancelled=\(Task.isCancelled)", token: token)
                     guard !Task.isCancelled, canAutoplay,
-                        autoplay.consume(token, at: clock.now), !ids.isEmpty
-                    else { return }
+                        autoplay.consume(token, at: timing.now()), !ids.isEmpty
+                    else {
+                        #if DEBUG
+                            audit("reject", taskID: taskID, revision: revision)
+                        #endif
+                        tracePlayback("reject currentToken=\(autoplay.generation)", token: token)
+                        return
+                    }
                     // No copied sentinel pages; the last-to-first wrap may visibly reverse.
                     let next = ids[(currentIndex + 1) % ids.count]
-                    withAnimation { selection.select(next) }
+                    tracePlayback("advance to=\(next)", token: token)
+                    #if DEBUG
+                        audit("advanceAttempt", taskID: taskID, revision: revision)
+                    #endif
+                    let oldID = selection.selectedID
+                    let committed = withAnimation { selection.select(next, autoplay: true) }
+                    #if DEBUG
+                        if committed {
+                            audit(
+                                "advanceCommit", taskID: taskID, revision: revision,
+                                oldSelectedID: oldID, cause: "autoplay")
+                        }
+                    #endif
+                    tracePlayback("selected", token: token)
                 }
         }
     }
@@ -178,12 +310,20 @@ struct HomeBannerCarouselView: View {
     private var pagerSelection: Binding<Int64> {
         Binding(
             get: { currentID ?? 0 },
-            set: { selection.select($0) })
+            set: { selectManually($0) })
     }
 
     private func move(offset: Int) {
         guard let id = selection.adjacentID(offset: offset, in: ids) else { return }
-        selection.select(id)
+        selectManually(id)
+    }
+
+    private func selectManually(_ id: Int64) {
+        let oldID = selection.selectedID
+        let committed = selection.select(id)
+        #if DEBUG
+            if committed { audit("selectionCommit", oldSelectedID: oldID, cause: "manual") }
+        #endif
     }
 
     private func bannerPage(_ banner: HomeBanner, size: CGSize) -> some View {

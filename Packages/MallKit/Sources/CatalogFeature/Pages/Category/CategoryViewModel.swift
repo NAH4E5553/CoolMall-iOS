@@ -64,7 +64,7 @@ final class CategoryViewModel {
         isActive = active
         guard active else {
             generation += 1
-            awaitingScrollTarget = nil
+            clearAwaitingScroll()
             if case .loading = state { state = retainedState }
             return
         }
@@ -110,7 +110,7 @@ final class CategoryViewModel {
     func selectFromScroll(_ id: Int64) {
         guard case .ready(let snapshot) = state, snapshot.contains(rootID: id) else { return }
         if let awaiting = awaitingScrollTarget {
-            if id == awaiting { awaitingScrollTarget = nil }
+            if id == awaiting { clearAwaitingScroll() }
             return
         }
         guard selectedRootID != id else { return }
@@ -120,6 +120,10 @@ final class CategoryViewModel {
     /// A real user drag interrupts a programmatic scroll: stop suppressing
     /// observations so the next visible group can drive the selection.
     func userInterruptedProgrammaticScroll() {
+        clearAwaitingScroll()
+    }
+
+    private func clearAwaitingScroll() {
         awaitingScrollTarget = nil
     }
 
@@ -128,7 +132,7 @@ final class CategoryViewModel {
     func pageTeardown() {
         isActive = false
         generation += 1
-        awaitingScrollTarget = nil
+        clearAwaitingScroll()
         if case .loading = state { state = retainedState }
     }
 
@@ -164,7 +168,7 @@ final class CategoryViewModel {
     }
 
     private func commit(_ snapshot: CategorySnapshot) {
-        awaitingScrollTarget = nil
+        clearAwaitingScroll()
         if snapshot.isEmpty {
             state = .empty
             retainedState = .empty

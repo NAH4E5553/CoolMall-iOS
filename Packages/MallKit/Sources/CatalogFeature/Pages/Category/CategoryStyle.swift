@@ -78,7 +78,9 @@ enum CategoryMetrics {
     static let stateRetrySpacing: CGFloat = 24
     static let retryBorderWidth: CGFloat = 0.5
     static let retryHorizontalPadding: CGFloat = 50
-    static let retryMaxWidth: CGFloat = 200
+    static let retryMinWidth: CGFloat = 200
+    static let retryMinHeight: CGFloat = 40
+    static let retryContentHorizontalPadding: CGFloat = 24
     static let statePadding: CGFloat = 16
 
     static let bottomPaddingFloor: CGFloat = 16

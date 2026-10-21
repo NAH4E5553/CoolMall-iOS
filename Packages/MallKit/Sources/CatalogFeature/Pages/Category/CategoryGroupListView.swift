@@ -23,7 +23,10 @@ struct CategoryGroupListView: View {
     let onUserDrag: () -> Void
     let onOpenSubcategory: (Int64) -> Void
 
-    @State private var groupFrames: [Int64: CGRect] = [:]
+    /// Reference cache for the at-top check only. Mutations must NOT be view
+    /// state: updating SwiftUI state on every scroll frame interrupts the
+    /// in-flight programmatic scroll animation.
+    @State private var frameCache = CategoryFrameCache()
 
     private static let spaceName = "category.right.viewport"
 
@@ -55,17 +58,23 @@ struct CategoryGroupListView: View {
                 .coordinateSpace(name: Self.spaceName)
                 .accessibilityIdentifier("category.right.scroll")
                 .onPreferenceChange(CategoryGroupFrameKey.self) { frames in
-                    groupFrames = frames
+                    frameCache.frames = frames
                     guard let firstVisible = firstVisibleGroupID(in: frames) else { return }
                     onScrollSelection(firstVisible)
                 }
                 .onChange(of: scrollRequest) { _, request in
                     guard let request else { return }
-                    if let frame = groupFrames[request.rootID],
-                        frame.minY <= CategoryMetrics.rightTopPadding + 1
+                    // Only a group genuinely at the top may skip the scroll:
+                    // minY == 0 after scrolling, or the first group's 16pt top
+                    // inset at the very beginning. A negative minY means the
+                    // group is ABOVE the viewport and must be scrolled back to
+                    // the top (R-CATEGORY-01-01).
+                    let isFirstGroup = snapshot.groups.first?.root.id == request.rootID
+                    if let frame = frameCache.frames[request.rootID],
+                        abs(frame.minY) <= 1
+                            || (isFirstGroup
+                                && abs(frame.minY - CategoryMetrics.rightTopPadding) <= 1)
                     {
-                        // Already at the top: complete the pending intent without
-                        // animating, so it can never suppress later observations.
                         onScrollSelection(request.rootID)
                         return
                     }
@@ -109,6 +118,10 @@ struct CategoryGroupListView: View {
             viewportHeight - CategoryMetrics.bottomPaddingReserve,
             CategoryMetrics.bottomPaddingFloor)
     }
+}
+
+private final class CategoryFrameCache {
+    var frames: [Int64: CGRect] = [:]
 }
 
 private struct CategoryGroupFrameKey: PreferenceKey {

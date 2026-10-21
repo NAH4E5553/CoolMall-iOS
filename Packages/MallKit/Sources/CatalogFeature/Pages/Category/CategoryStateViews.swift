@@ -50,6 +50,7 @@ struct CategoryErrorView: View {
     let onRetry: () -> Void
     @ScaledMetric(relativeTo: .headline) private var titleSize = 16.0
     @ScaledMetric(relativeTo: .caption) private var subtitleSize = 12.0
+    @ScaledMetric(relativeTo: .caption) private var retryLabelSize = 12.0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -67,12 +68,29 @@ struct CategoryErrorView: View {
                 .multilineTextAlignment(.center)
                 .accessibilityIdentifier("category.error.detail")
             Color.clear.frame(height: CategoryMetrics.stateRetrySpacing)
-            Button("重新加载", action: onRetry)
-                .buttonStyle(.bordered)
-                .tint(palette.primary)
-                .frame(maxWidth: CategoryMetrics.retryMaxWidth)
-                .padding(.horizontal, CategoryMetrics.retryHorizontalPadding)
-                .accessibilityIdentifier("category.retry")
+            // Reference OutlinedButton: CornerFull shape, explicit 0.5dp
+            // primary BorderStroke, 200dp minimum width, 40dp minimum height,
+            // 24dp content padding and M3 1.4 outlined label color
+            // (onSurfaceVariant). The system .bordered style cannot express the
+            // explicit 0.5pt outline contract.
+            Button(action: onRetry) {
+                Text("重新加载")
+                    .font(.system(size: retryLabelSize))
+                    .foregroundStyle(palette.onSurfaceVariant)
+                    .padding(.horizontal, CategoryMetrics.retryContentHorizontalPadding)
+                    .frame(
+                        minWidth: CategoryMetrics.retryMinWidth,
+                        minHeight: CategoryMetrics.retryMinHeight
+                    )
+                    .overlay {
+                        Capsule().stroke(
+                            palette.primary, lineWidth: CategoryMetrics.retryBorderWidth)
+                    }
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, CategoryMetrics.retryHorizontalPadding)
+            .accessibilityIdentifier("category.retry")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(CategoryMetrics.statePadding)

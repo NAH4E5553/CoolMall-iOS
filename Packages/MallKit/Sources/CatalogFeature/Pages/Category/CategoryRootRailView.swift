@@ -14,6 +14,12 @@ struct CategoryRootRailView: View {
     let palette: CategoryPalette
     let onSelect: (Int64) -> Void
 
+    /// Measured height of the root rows only (the filler is excluded). The
+    /// reference Canvas paints the whole viewport, so the remaining viewport
+    /// below a short list must be an explicit, measured background region — a
+    /// Spacer inside an unbounded ScrollView is not guaranteed to expand.
+    @State private var rowsHeight: CGFloat = 0
+
     private var selectedIndex: Int? {
         guard let selectedRootID else { return nil }
         return snapshot.index(ofRoot: selectedRootID)
@@ -24,35 +30,46 @@ struct CategoryRootRailView: View {
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 0) {
-                        ForEach(Array(snapshot.groups.enumerated()), id: \.element.id) {
-                            index, group in
-                            CategoryRootRow(
-                                id: group.root.id,
-                                name: group.root.name,
-                                isSelected: group.root.id == selectedRootID,
-                                hasSelection: selectedIndex != nil,
-                                palette: palette,
-                                topTrailingRadius: topTrailingRadius(at: index),
-                                bottomTrailingRadius: bottomTrailingRadius(at: index),
-                                onSelect: { onSelect(group.root.id) }
-                            )
-                            .id(group.root.id)
-                        }
-                        // Reference bottom placeholder plus the reference canvas'
-                        // grey region below the rows; the rail itself stays
-                        // surface so the rounded boundary reveals white.
-                        Spacer(minLength: CategoryMetrics.rootRowMinHeight)
-                            .background(
-                                UnevenRoundedRectangle(
-                                    topLeadingRadius: 0,
-                                    bottomLeadingRadius: 0,
-                                    bottomTrailingRadius: 0,
-                                    topTrailingRadius: fillerTopTrailingRadius
+                        VStack(spacing: 0) {
+                            ForEach(Array(snapshot.groups.enumerated()), id: \.element.id) {
+                                index, group in
+                                CategoryRootRow(
+                                    id: group.root.id,
+                                    name: group.root.name,
+                                    isSelected: group.root.id == selectedRootID,
+                                    hasSelection: selectedIndex != nil,
+                                    palette: palette,
+                                    topTrailingRadius: topTrailingRadius(at: index),
+                                    bottomTrailingRadius: bottomTrailingRadius(at: index),
+                                    onSelect: { onSelect(group.root.id) }
                                 )
-                                .fill(palette.background)
-                            )
+                                .id(group.root.id)
+                            }
+                        }
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: CategoryRowsHeightKey.self, value: proxy.size.height)
+                            }
+                        )
+                        // Reference bottom placeholder plus the Canvas' grey
+                        // region for the remaining viewport; the rail itself
+                        // stays surface so the rounded boundary reveals white.
+                        // The filler lives inside the scroll content and its
+                        // height is measured, so a short list always fills the
+                        // viewport and a long list still scrolls.
+                        UnevenRoundedRectangle(
+                            topLeadingRadius: 0,
+                            bottomLeadingRadius: 0,
+                            bottomTrailingRadius: 0,
+                            topTrailingRadius: fillerTopTrailingRadius
+                        )
+                        .fill(palette.background)
+                        .frame(height: fillerHeight(viewportHeight: geometry.size.height))
                     }
-                    .frame(minHeight: geometry.size.height, alignment: .top)
+                }
+                .onPreferenceChange(CategoryRowsHeightKey.self) { height in
+                    rowsHeight = height
                 }
                 .onChange(of: selectedRootID) { _, rootID in
                     guard let rootID else { return }
@@ -64,6 +81,13 @@ struct CategoryRootRailView: View {
         }
         .frame(width: CategoryMetrics.leftColumnWidth)
         .background(palette.surface)
+    }
+
+    /// Reference list bottom padding is 50dp; the filler is at least that tall
+    /// and otherwise fills exactly the remaining viewport (measured rows only).
+    private func fillerHeight(viewportHeight: CGFloat) -> CGFloat {
+        let measuredRows = rowsHeight > 0 ? rowsHeight : CategoryMetrics.rootRowMinHeight
+        return max(CategoryMetrics.rootRowMinHeight, viewportHeight - measuredRows)
     }
 
     /// Below the rows the reference draws the page background to the viewport
@@ -81,6 +105,14 @@ struct CategoryRootRailView: View {
             return index == selectedIndex + 1 ? CategoryMetrics.groupCornerRadius : 0
         }
         return 0
+    }
+
+    private struct CategoryRowsHeightKey: PreferenceKey {
+        static let defaultValue: CGFloat = 0
+
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+            value = max(value, nextValue())
+        }
     }
 
     private func bottomTrailingRadius(at index: Int) -> CGFloat {

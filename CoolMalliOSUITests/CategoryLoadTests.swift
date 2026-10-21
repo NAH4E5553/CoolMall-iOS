@@ -83,15 +83,7 @@ final class CategoryLoadTests: XCTestCase {
         XCTAssertLessThan(first.frame.minX, second.frame.minX)
         XCTAssertLessThan(second.frame.minX, third.frame.minX)
 
-        // F-CATEGORY-05 navigation INTENT only: tapping the real direct-child id
-        // shows the explicit unavailable feedback; no list page is faked.
         attach(app, name: "category-valid-layout")
-
-        first.tap()
-        XCTAssertTrue(app.staticTexts["category.unavailable"].waitForExistence(timeout: 5))
-        XCTAssertTrue(
-            wait({ !app.staticTexts["category.unavailable"].exists }, timeout: 4),
-            "the unavailable feedback clears itself")
 
         // Left tap scrolls the right pane to that root and highlights it.
         let targetRoot = app.buttons["category.root.800005"]
@@ -150,6 +142,43 @@ final class CategoryLoadTests: XCTestCase {
         XCTAssertEqual(selectedRoot(app), selected)
         XCTAssertTrue(app.buttons["category.root.\(selected)"].isSelected)
         attach(app, name: "category-valid-linked")
+
+        // R-CATEGORY-01-01 regression: a LATER -> EARLIER root tap must really
+        // scroll the right pane back to the target, not only move the highlight.
+        let backwardRoot = app.buttons["category.root.800002"]
+        XCTAssertTrue(backwardRoot.exists)
+        let beforeTitle = app.staticTexts["category.group.800002.title"]
+        let beforeY: CGFloat? = beforeTitle.exists ? beforeTitle.frame.minY : nil
+        backwardRoot.tap()
+        XCTAssertTrue(wait({ selectedRoot(app) == 800_002 }, timeout: 6))
+        let backwardTitle = app.staticTexts["category.group.800002.title"]
+        XCTAssertTrue(backwardTitle.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            wait({ abs(backwardTitle.frame.minY - scroll.frame.minY) <= 24 }, timeout: 5),
+            "a backward root tap actually positions the target at the top")
+        if let beforeY {
+            XCTAssertGreaterThan(
+                backwardTitle.frame.minY, beforeY + 1,
+                "the right pane moved down to the earlier group")
+        }
+        // The target group's real content is visible with it, not just a title.
+        let backwardChild = app.buttons["category.sub.801008"]
+        XCTAssertTrue(backwardChild.waitForExistence(timeout: 5))
+        XCTAssertLessThan(backwardChild.frame.midY, scroll.frame.maxY)
+        XCTAssertTrue(backwardRoot.isSelected)
+        XCTAssertEqual(selectedRoot(app), 800_002)
+
+        // F-CATEGORY-05 navigation contract only, checked LAST so the
+        // placeholder feedback's transient timer cannot disturb any scroll
+        // assertion: the controlled DEBUG consumer records the real
+        // direct-child id passed to the approved Int64 callback. The
+        // unavailable placeholder and LIST-01 are NOT asserted (DEC-014).
+        backwardChild.tap()
+        XCTAssertTrue(
+            wait(
+                { app.staticTexts["category.requestedChild"].label == "请求子分类：801008" },
+                timeout: 5),
+            "the Int64 callback receives the real direct-child id")
     }
 
     @MainActor func testEmptyErrorRetryAndLoadingStates() {
@@ -162,6 +191,7 @@ final class CategoryLoadTests: XCTestCase {
         let retryApp = launch(categoryFixture: "retry")
         openCategory(retryApp)
         XCTAssertTrue(retryApp.staticTexts["category.error"].waitForExistence(timeout: 15))
+        attach(retryApp, name: "category-error")
         XCTAssertTrue(retryApp.staticTexts["category.error.detail"].exists)
         let retry = retryApp.buttons["category.retry"]
         XCTAssertTrue(retry.exists)

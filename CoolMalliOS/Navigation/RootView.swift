@@ -13,6 +13,7 @@ struct RootView: View {
     #endif
     @State private var unavailableNotice: UUID?
     @State private var categoryUnavailableNotice: UUID?
+    @State private var categoryRequestedChildID: Int64?
     #if DEBUG
         private let navTestControl: NavigationTestControl
     #endif
@@ -146,8 +147,26 @@ struct RootView: View {
             // handed to the App; the product list (LIST-01) does not exist yet,
             // so no list page is faked. The explicit unavailable feedback is not
             // evidence that F-CATEGORY-05 is implemented.
-            onOpenSubcategory: { _ in categoryUnavailableNotice = UUID() }
+            onOpenSubcategory: { id in
+                categoryRequestedChildID = id
+                categoryUnavailableNotice = UUID()
+            }
         )
+        .overlay(alignment: .topTrailing) {
+            // Controlled DEBUG consumer marker for the approved Int64 callback
+            // contract (F-CATEGORY-05 design only): records the real direct-child
+            // id without asserting the unavailable placeholder or LIST-01.
+            if dependencies.showsCategoryReadVerification {
+                Text(verbatim: "请求子分类：\(categoryRequestedChildID.map { String($0) } ?? "无")")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(8)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("category.requestedChild")
+            }
+        }
         .overlay(alignment: .bottom) {
             if categoryUnavailableNotice != nil {
                 Text("暂未开放").font(.body).padding(12)

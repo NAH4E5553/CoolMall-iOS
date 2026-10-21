@@ -759,7 +759,10 @@ extension HomeLoadTests {
     /// is waited for, never scrolled away from; a banner fully ABOVE the
     /// viewport is recovered with a directional drag. The original four
     /// attempts and the exact in-bounds geometry are unchanged.
-    @MainActor private func revealBanner(_ app: XCUIApplication) {
+    /// Return the actual successful hit-test observation so callers do not
+    /// re-query a different selected leaf during the next autoplay animation.
+    @MainActor @discardableResult
+    private func revealBanner(_ app: XCUIApplication) -> Bool {
         for _ in 0..<4 {
             let banner = currentBanner(app)
             let scroll = app.scrollViews["home.scroll"].frame.intersection(app.frame)
@@ -767,10 +770,10 @@ extension HomeLoadTests {
             if banner.exists {
                 let frame = banner.frame
                 if frame.minY >= scroll.minY, frame.maxY <= bottom {
-                    if banner.isHittable { return }
+                    if banner.isHittable { return true }
                     let settled = XCTNSPredicateExpectation(
                         predicate: NSPredicate { _, _ in banner.isHittable }, object: nil)
-                    if XCTWaiter.wait(for: [settled], timeout: 3) == .completed { return }
+                    if XCTWaiter.wait(for: [settled], timeout: 3) == .completed { return true }
                     continue
                 }
                 if frame.maxY < scroll.minY {
@@ -785,7 +788,9 @@ extension HomeLoadTests {
             let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.42))
             start.press(forDuration: 0.01, thenDragTo: end)
         }
-        XCTAssertTrue(currentBanner(app).isHittable)
+        let hittable = currentBanner(app).isHittable
+        XCTAssertTrue(hittable)
+        return hittable
     }
 
     @MainActor func testBannerSingleHidesControlsAndUpdatesSameIDURL() {
@@ -1704,6 +1709,27 @@ extension HomeLoadTests {
     @MainActor func testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag() throws {
         continueAfterFailure = false
         let app = bannerApp("banner-multiple", automatic: true)
+        // A paginated SwiftUI node can change AX representation while the
+        // selected page changes. Observe a fresh tree for each poll instead
+        // of retaining a dynamically resolved dots element across advances.
+        func waitObservedAdvance(from page: String, timeout: TimeInterval = 10) -> String {
+            var observed = page
+            let advanced = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in
+                    do {
+                        let value = try self.autoplayObservation(app).page
+                        if !value.isEmpty, value != page { observed = value }
+                        return !value.isEmpty && value != page
+                    } catch {
+                        XCTFail("cannot observe autoplay advance: \(error)")
+                        return false
+                    }
+                }, object: nil)
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [advanced], timeout: timeout), .completed,
+                "autoplay must advance away from \(page)")
+            return observed
+        }
         revealBanner(app)
         XCTAssertFalse(app.staticTexts["home.banner.page"].exists)
         XCTAssertFalse(app.buttons["home.banner.previous"].exists)
@@ -1719,7 +1745,7 @@ extension HomeLoadTests {
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: y))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.52, dy: y))
         let coldStart = Date()
-        let heldPage = waitAdvance(app, from: indicatorPage(app), timeout: 15)
+        let heldPage = waitObservedAdvance(from: try autoplayObservation(app).page, timeout: 15)
         print("autoplay cold-start advance after \(Date().timeIntervalSince(coldStart))s")
         // Dots expose the real selected index. Derive the expected fixture
         // leaf directly, with no settling sleep or moving-frame lookup
@@ -1735,15 +1761,15 @@ extension HomeLoadTests {
         let released = Date()
         XCTAssertEqual(
             try autoplayObservation(app).leafID, baseline, "unchanged drag keeps the page")
-        var page = waitAdvance(app, from: heldPage)
+        var page = waitObservedAdvance(from: heldPage)
         let rearmElapsed = Date().timeIntervalSince(released)
         XCTAssertGreaterThanOrEqual(
             rearmElapsed, 4.5, "release must re-arm one full five-second interval")
         XCTAssertLessThanOrEqual(rearmElapsed, 9)
         // Two more genuine advances from the CURRENT page complete the
         // approved wrap back to the page held before the drag.
-        page = waitAdvance(app, from: page)
-        page = waitAdvance(app, from: page)
+        page = waitObservedAdvance(from: page)
+        page = waitObservedAdvance(from: page)
         XCTAssertEqual(page, heldPage, "three advances wrap back to the held page")
         // Both public AX surfaces must agree after the wrap settles: the leaf
         // exposure can trail the indicator value by one AX beat.
@@ -1942,8 +1968,9 @@ extension HomeLoadTests {
                 "autoplay must advance away from \(page)")
             return observed
         }
-        revealBanner(app)
-        XCTAssertTrue(currentBanner(app).isHittable)
+        // Assert the hit-test result already obtained by reveal, before a
+        // legal autoplay advance can replace the selected accessibility leaf.
+        XCTAssertTrue(revealBanner(app))
         let scroll = app.scrollViews["home.scroll"].frame.intersection(app.frame)
         func bannerAboveViewport() -> Bool {
             currentBanner(app).frame.maxY < scroll.minY

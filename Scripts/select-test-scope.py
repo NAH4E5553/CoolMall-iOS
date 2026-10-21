@@ -115,6 +115,23 @@ def prior_verification(root, env, fetch=api):
         named = {job['name']: job for job in jobs['jobs']}
         require(all(named[name]['conclusion'] == 'success' and named[name]['status'] == 'completed'
                     for name in ['F0 verification', 'required-checks']), 'previous full verification missing')
+        verdicts = [step for step in named['F0 verification'].get('steps', [])
+                    if step.get('name', '').startswith('Verification verdict:')]
+        if verdicts:
+            if len(verdicts) != 1 or verdicts[0].get('conclusion') != 'success':
+                return False, 'previous-verdict-missing-or-invalid'
+            if verdicts[0]['name'] == 'Verification verdict: core-passed-with-deferred':
+                return False, 'previous-verification-has-deferred-issues'
+            if verdicts[0]['name'] != 'Verification verdict: core-passed':
+                return False, 'previous-verdict-missing-or-invalid'
+        else:
+            # Old commits predate structured verdicts. New configurations must
+            # not omit their verdict and masquerade as an old complete run.
+            try:
+                workflow = git(root, 'show', latest['head_sha'] + ':.github/workflows/ios.yml')
+            except subprocess.SubprocessError:
+                return False, 'previous-workflow-unavailable'
+            require('Verification verdict:' not in workflow, 'previous structured verdict missing')
         return True, 'previous-verification-success:' + str(latest['id'])
     except (KeyError, TypeError, ValueError, OSError, subprocess.SubprocessError):
         return False, 'history-unavailable-or-untrusted'

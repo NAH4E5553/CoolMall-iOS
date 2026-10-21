@@ -67,6 +67,7 @@ class SelectionTests(unittest.TestCase):
         for path in S.PATH_TARGETS:
             self.write(path, 'existingBody\n')
         self.write('README.md','docs\n')
+        self.write('.github/workflows/ios.yml','name: legacy\n')
         self.base = self.commit()
 
     def git(self, *args):
@@ -149,6 +150,11 @@ class SelectionTests(unittest.TestCase):
             if '/workflows/' in path: return data
             return run
         self.assertTrue(S.prior_verification(self.root,env,fetch)[0])
+        for status, allowed in [('core-passed',True),('core-passed-with-deferred',False),
+                                ('unknown',False),('',False)]:
+            jobs['jobs'][0]['steps']=[{'name':'Verification verdict: '+status,'conclusion':'success'}]
+            self.assertEqual(S.prior_verification(self.root,env,fetch)[0],allowed)
+        jobs['jobs'][0]['steps']=[]
         for state in ['failure','cancelled',None]:
             prior['conclusion']=state
             self.assertFalse(S.prior_verification(self.root,env,fetch)[0])

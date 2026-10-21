@@ -997,6 +997,14 @@ Keychain 适配的真实读写另用独立测试 service/account 标识验证，
 
 ### 7.2 自动验证：准确的触发与失败规则
 
+2026-10-21 最新维护者决定 DEC-016 / APPROVAL-CI-DEFERRED-01：为继续已明确的分类→购物车→我的功能开发，将 `CI-DEFER-HOME-TIMEOUT-01` 和 `CI-DEFER-CYCLE-EVIDENCE-01` 登记为有期限的延期修复、未闭环项；范围和到期/复核见7.5的CI专用登记及 `Scripts/ci-deferred-checks.json`。本段仅覆盖以下两类CI结果，优先于本节旧“任意非零/审计缺失即阻塞”表述的对应部分，不批准模块/权限豁免、跳过测试或扩大失败白名单。
+
+- 仅 `CoolMalliOSUITests/HomeLoadTests/testSelectedBannerAndBottomPositionRetainedAcrossTabs()` 的整条60秒执行预算超时可非阻塞。方法仍被真实发现、完整选中和执行；原断言/时限不变，原生失败及原命令退出码必须保存。必须核对完整原生清单、唯一明确超时issue及无额外崩溃/业务失败；同方法混合assert/crash、其他方法超时、未知失败、结果/清单缺失、跳过或重复仍阻塞。
+- 仅 cycle `testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag` 已登记的生命周期证据连续性失败临时非阻塞；末尾日志缺失可能漏检尚未修复，cycle被执行时必须主动披露这项完整性风险，不能把内部序号连续冒称尾部已验证。按方法继续审计其他链，完整证据中发现的真实生命周期违规仍阻塞；未知/编码/格式错误不得以“已知问题”统统降级。
+- 编译、源码/模块边界、核心单测、业务断言不相等、App崩溃、结果发现/exact-set/源码身份、后置报告写入失败及其他未登记失败继续阻塞。不得在UI任务使用 `continue-on-error`，不得把任意exit65当超时。执行失败后仍导出保存的xcresult、原始日志及逐项审计和延期报告；这是继续判定，不是把原生Failed改成Passed。
+- runner、结果解析和required-checks共同区分“核心检查通过，但存在延期问题”和完整无延期结果；保留所有原退出码/事实，汇总不能称全部验收通过。延期结果不抹掉历史失败，也不作为完整闭环的历史证明缩窄后续选测；原consumer union/未知范围full回退及source identity保持。未选中对应范围时不为延期机械追加首页测试。
+- 不在本轮继续追查根因、修改生产业务代码、删断言或加时；仅现有夹具/保存工件的定向正负验证。首页生产逻辑修改或准备对外发布前重新评估；可复现用户卡顿、状态丢失或崩溃立即提高优先级，明确产品失败不能落入延期类别。历史返回静止和晚唤醒仍独立跟踪，原失败及工件不可改写。
+
 2026-10-21 轮播分层验收合同（用户批准具体设计，APPROVAL-CAROUSEL-CONTRACT-20261021）：仅cycle/away/offscreen/push四条真实UI方法迁移混合时序检查，四条方法、完整操作链及默认60/away120秒不变。生产HomeBannerCarouselView保留@State与单一结构化.task；内部可控时钟的真实宿主测试验证截止前不推进、到期实际选中、真实取消、忽略取消旧wake拒绝、返回完整五秒、快速往返无重复任务和宿主移除；隔离生产源码反例必须以对应业务断言失败证明敏感性，纯gate/合成日志不替代实际生产路径。上述前置未成立前，不移除旧UI时序断言。
 
 前置通过后，UI原3/4.4/4.5秒业务下界迁移至精确五秒生产路径测试；原离页准备<5秒被实际App/组件离开检查点替代。隐藏及拖动期间必须有连续真实事件、实际选中变化revision和自动推进序号，确认没有推进/绕回；恢复task入口在重新arm前记录保持快照。日志补充真实UI断言，保留实际导航/后台/滚动/命中、同次叶/点一致、三次相邻推进完整回环及可见恢复。缺记录、异常实例重建、采集错误、未到达分支不得判通过，旧失败记录和三个历史问题独立保留。
@@ -1130,6 +1138,17 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 
 ### 7.5 例外与规则变更
 
+#### CI专用延期登记（DEC-016，2026-10-21）
+
+此表只登记CI结果判定的两项临时范围；上方由MOD-06检查的模块/权限例外表仍为“无”，不因此开放任何import、public API、依赖或架构豁免。精确机器策略为 `Scripts/ci-deferred-checks.json`，未知策略/范围或到期不得默认放行。默认14自然日，2026-11-04到期；如下一次对外发布更早，以发布前复核为准。未复核不得将这两个已知失败继续自动非阻塞；修复后从机器策略撤销对应项并保留历史记录。
+
+| 延期ID / 原规则 | 精确范围 / 状态 | 证据、影响与关闭条件 | 负责人 / 批准 | 复核、到期与撤销 |
+| --- | --- | --- | --- | --- |
+| CI-DEFER-HOME-TIMEOUT-01 / 7.2测试执行预算 | CoolMalliOSUITests/HomeLoadTests/testSelectedBannerAndBottomPositionRetainedAcrossTabs()；仅整条60秒执行超时；延期修复、未闭环 | [main CI39605435062](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/39605435062) native200/1；启动/AX/多轮往返累计超时，原因未确认，未完成断言不算通过；后续区分App实际响应与自动化操作/查询。关闭：证据定位、最小修正、保留完整链/全部断言/60秒并定向验证，普通CI证据有效；发现真实卡顿/状态丢失/崩溃立即提级 | 项目维护者（Codex落实、Astra复核）/ 用户2026-10-21明确批准 | 下次首页相关逻辑变更前、发布前或2026-11-04，以更早者；修复后删精确延期项，核对新旧失败仍正确分类，不删测试 |
+| CI-DEFER-CYCLE-EVIDENCE-01 / 7.2轮播审计完整性 | 仅cycle方法证据连续性失败和尾完整性未证明风险；延期修复、未闭环 | [同次CI](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/39605435062) cycle序号36→38缺37，后续实际推进39；输出/系统日志/收集环节未唯一定位；尾缺失可能漏检，不能声称完整审计通过。关闭：补来源可核验的完整性合同，正式正负例检出中段/末尾缺失，完整证据真实生命周期违规仍阻塞，定向及普通CI验明 | 项目维护者（Codex落实、Astra复核）/ 用户2026-10-21明确批准 | 同上；真实生命周期违规不在延期范围，立即提级；修复后撤销精确延期和尾风险告知，不删审计 |
+
+历史H2返回第2页静止、H3晚唤醒继续沿原跟踪及复发条件，不纳入“已解决”或扩充本表范围；历史H1测量缺陷的关闭结论不改。项目待办/原始证据链接维护于IMPLEMENTATION_PLAN9.12.9与Evidence/iOS/2026-10-21-CI-DEFERRED-01；本地实现未推送前不宣称远端配置已生效。
+
 规则有三个等级：MOD/STATE/VM/CHANGE 与“必须”条款是阻断规则；REVIEW 是必须给出结论的评审触发器；标为建议/候选的选型可在约定内决定。检查脚本暂未实现的阻断规则仍需人工核对，不能因没报错而视为允许；F0 未完成不能开始 F1 扩展。
 
 普通功能改动由开发者按既定规则推进；改变规则或申请临时例外由**项目维护者**批准。AI 不得自行批准自己的规则豁免。此次手册细化是用户授权的规则制定，不为日常动作新增重复确认。
@@ -1146,6 +1165,7 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 
 | 决策 | 日期 | 结论与理由 | 生效阶段 |
 | --- | --- | --- | --- |
+| DEC-016 | 2026-10-21 | 用户明确批准两项精确CI延期：指定整条60秒超时、cycle证据连续性与尾部未证明风险非阻塞；核心编译/单测/业务不等/崩溃及完整证据生命周期违规仍阻塞。保留执行/报告/工件/原预算与断言，无通用continue-on-error，汇总显式核心通过但存在延期，状态未闭环。 | 用户本次决定起适用；实现/验收进度单列，至2026-11-04或发布前更早复核；详见7.2/7.5，未推送不称远端配置生效 |
 | DEC-014 | 2026-10-19 | 用户明确未实现功能不纳入CI行为测试，并补充“同时让纯占位/文档改动跳过流水线”。按7.2移除占位操作/提示验收；纯文档/可确认占位diff经classify后跳过重验证，required-checks明确区分不需运行和实际成功，拒绝其他失败/取消/未知/缺失。部分功能中已有展示、图片、切换、导航与状态合同仍验证，真实实现随变更补测；旧失败保留。 | 用户本次指令起；本地配置与正反例已落地，尚未推送/远端运行验证 |
 | DEC-015 | 2026-10-21 | User approved cumulative PR scope selection with explicit consumer unions and actual compiled discovery/exact result validation; main/schedule/manual full, PR DEC-014 exclusions only. Unknown or unresolved failures fall back full; diagnostics/timing remain independent. | Local tooling implementation; independent and remote validation tracked separately, no App behavior or timeout change |
 | DEC-001 | 2026-10-07 | 从单一 MallUI 改为 Core/Data/DesignSystem/CatalogFeature/CartFeature；当前无迁移成本，需要隐藏业务内部模型；细节见 3.1 | F0 创建工程即遵循 |

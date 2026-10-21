@@ -1091,6 +1091,8 @@ xcodebuild test \
 
 完整本地与 CI 验收使用 `MALL_SIMULATOR_ID=<实际UDID> Scripts/verify-local.sh`。该入口在计时 UI 测试前启动选定模拟器、安装并预启动 Debug App，然后以 `-parallel-testing-enabled NO` 串行执行测试进程，避免冷启动和模拟器克隆竞争影响 UI 的原定时限。Swift Testing 用例内部的 Task 并发竞争仍照常验证；共享 Test Plan 的 60 秒默认/120 秒最大时限、全部 Target 和断言保持不变。上面的独立 xcodebuild 命令用于排查，不能替代完整入口的环境准备与结果计数检查。
 
+2026-10-22 UI运行器准备：真实枚举和选测完成后，仅在选中`CoolMalliOSUITests`时，根据本次Debug产物校验精确运行器身份，卸载枚举留下的`com.coolmall.CoolMallIOSUITests.xctrunner`，再由原执行命令重新安装。正式App及其数据不清理；运行器缺失/身份不符/卸载失败仍阻塞，保留独立阶段与日志。无自动重试、固定等待、测试预算或延期范围变更；本地及远端验证状态单列，不能据此宣称历史Busy根因已确认。
+
 结果目录必须不存在；重复运行改用新的结果路径，CI 使用每次运行唯一目录。确认 Test Plan 真正包含清单中已登记的全部 Package 测试 Target 和 App UI 测试；只显示 build succeeded 不代表测试运行，零测试也不能算验收通过。
 
 不要把 `swift test` 直接视作 iOS 模拟器测试：它默认面向主机。包含 iOS 专属 UI/SDK 的 Package 应通过 Xcode 的模拟器测试入口执行。只有独立验证为主机兼容的纯 Swift 目标才另设主机测试作业。

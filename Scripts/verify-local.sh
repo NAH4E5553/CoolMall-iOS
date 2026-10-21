@@ -95,6 +95,11 @@ xcodebuild test -collect-test-diagnostics "$MALL_TEST_DIAGNOSTICS" -enumerate-te
 python3 Scripts/select-test-scope.py resolve "$MALL_RUN/test-scope.json" "$MALL_RUN/test-enumeration.json" "$MALL_RUN/expected-tests.txt"
 python3 Scripts/select-test-scope.py check-source "$MALL_RUN/test-scope.json" "$MALL_RUN/expected-tests.txt"
 stage_end
+# Enumeration can launch the UI runner. Remove only that built runner so the
+# execution phase installs it afresh; never remove the App or its data.
+stage_start test-runner-prepare
+python3 Scripts/prepare-ui-test-runner.py "$MALL_RUN/expected-tests.txt" "$MALL_RUN/DerivedData/Build/Products/Debug-iphonesimulator" "$MALL_SIMULATOR_ID" > "$MALL_RUN/ui-test-runner-prepare.log" 2>&1
+stage_end
 # Full inventories also use explicit methods, so execution cannot silently drift.
 stage_start test-execute-diagnostics
 MALL_TEST_STARTED=1

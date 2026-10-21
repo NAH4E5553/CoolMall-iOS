@@ -39,9 +39,11 @@ def validate_inventory(summary, tree, scope):
     counts = validate(summary, tree, targets)
     actual, arguments = set(), set()
     def visit(node, bundle=None):
-        if node.get('nodeType') == 'Unit test bundle':
+        if node.get('nodeType') in ('Unit test bundle', 'UI test bundle'):
+            POLICY.require(node.get('name') in targets, 'TEST-RESULT: unregistered test bundle')
             bundle = node['name']
         if node.get('nodeType') == 'Test Case':
+            POLICY.require(bundle in targets, 'TEST-RESULT: missing or unsupported test bundle')
             method = bundle + '/' + node['nodeIdentifier']
             POLICY.require(method in expected and method not in actual, 'TEST-RESULT: unexpected/duplicate method: ' + method)
             actual.add(method)

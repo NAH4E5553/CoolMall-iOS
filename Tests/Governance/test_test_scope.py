@@ -45,7 +45,7 @@ class InventoryTests(unittest.TestCase):
         tree = {'testNodes': [{'name': 'CoreTests', 'nodeType': 'Unit test bundle', 'children': [
             {'nodeType':'Test Case','name':'display label', 'nodeIdentifier':'Contract/test(value:)', 'result':'Passed',
              'children':[{'nodeType':'Arguments','nodeIdentifierURL':'test://one?arg=1','result':'Passed'}]}]},
-            {'name':'UITests','nodeType':'Unit test bundle','children':[
+            {'name':'UITests','nodeType':'UI test bundle','children':[
                 {'nodeType':'Test Case','nodeIdentifier':'Screen/testUI()','result':'Passed'}]}]}
         summary = dict(result='Passed', failedTests=0, skippedTests=0, expectedFailures=0, totalTestCount=2, passedTests=2)
         self.assertEqual(R.validate_inventory(summary, tree, {'expected':methods}), {'methodCounts':{'CoreTests':1,'UITests':1},'parameterArgumentRecordCount':1})

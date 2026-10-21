@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 
 /// Each RootView/Scene owns its router. Features only send navigation intents.
@@ -18,11 +19,39 @@ final class SceneRouter {
         /// real typed routes replace it. Not a business destination.
         case fixturePathProbe(label: String)
     }
-    var selectedTab: Tab = .home
-    var homePath: [Route] = []
+    var selectedTab: Tab = .home {
+        didSet {
+            #if DEBUG
+                if oldValue != selectedTab { recordBannerRouteInput() }
+            #endif
+        }
+    }
+    var homePath: [Route] = [] {
+        didSet {
+            #if DEBUG
+                if oldValue != homePath { recordBannerRouteInput() }
+            #endif
+        }
+    }
     var categoryPath: [Route] = []
     var cartPath: [Route] = []
     var mePath: [Route] = []
+    #if DEBUG
+        @ObservationIgnored private var bannerLifecycle = BannerAppLifecycle()
+
+        /// Observe the actual Scene phase received by the App. The logger has
+        /// no navigation/timer write authority and does not infer OS timing.
+        func recordBannerSceneInput(isActive: Bool) {
+            bannerLifecycle.sceneInput(
+                homeActive: selectedTab == .home && homePath.isEmpty, sceneActive: isActive)
+        }
+
+        private func recordBannerRouteInput() {
+            // didSet runs after the real router assignment, before yielding.
+            bannerLifecycle.routeInput(homeActive: selectedTab == .home && homePath.isEmpty)
+        }
+    #endif
+
     func openCart() { homePath.append(.cart) }
     /// Appends a route onto the owning tab's stack, so a destination pushed
     /// from that stack (e.g. the independent cart from a detail page) returns
@@ -55,3 +84,77 @@ final class SceneRouter {
         selectedTab = tab
     }
 }
+
+#if DEBUG
+    /// Opt-in evidence owned by the existing Scene router. It records real
+    /// assignments only; no timer, route, or feature state reads this ledger.
+    @MainActor
+    final class BannerAppLifecycle {
+        private let runID: String?
+        private let instanceID = UUID().uuidString
+        private var sequence: UInt64 = 0
+        private var inputRevision: UInt64 = 0
+        private var homeActive: Bool?
+        private var sceneActive: Bool?
+
+        init() {
+            let arguments = ProcessInfo.processInfo.arguments
+            if let flag = arguments.firstIndex(of: "--ui-banner-audit-run-id"),
+                arguments.indices.contains(flag + 1), !arguments[flag + 1].isEmpty
+            {
+                runID = arguments[flag + 1]
+            } else {
+                runID = nil
+            }
+        }
+
+        func sceneInput(homeActive: Bool, sceneActive: Bool) {
+            guard runID != nil else { return }
+            if self.homeActive == nil {
+                self.homeActive = homeActive
+                self.sceneActive = sceneActive
+                record("initial", oldHome: homeActive, oldScene: sceneActive)
+            } else if self.sceneActive != sceneActive {
+                let oldHome = self.homeActive ?? homeActive
+                let oldScene = self.sceneActive ?? sceneActive
+                self.homeActive = homeActive
+                self.sceneActive = sceneActive
+                inputRevision &+= 1
+                record("sceneInput", oldHome: oldHome, oldScene: oldScene)
+            }
+        }
+
+        func routeInput(homeActive: Bool) {
+            // Initial is captured after seeded routing and the real Scene
+            // environment arrive; unused pre-render routers emit no events.
+            guard let oldHome = self.homeActive, let sceneActive,
+                oldHome != homeActive
+            else { return }
+            self.homeActive = homeActive
+            inputRevision &+= 1
+            record("routeInput", oldHome: oldHome, oldScene: sceneActive)
+        }
+
+        private func record(_ event: String, oldHome: Bool, oldScene: Bool) {
+            guard let runID, let homeActive, let sceneActive else { return }
+            sequence &+= 1
+            let value: [String: Any] = [
+                "schemaVersion": 1, "runID": runID, "origin": "app",
+                "processID": ProcessInfo.processInfo.processIdentifier,
+                "instanceID": instanceID, "eventSequence": sequence,
+                "monotonicTime": ProcessInfo.processInfo.systemUptime,
+                "inputRevision": inputRevision, "event": event,
+                "homeActive": homeActive, "sceneActive": sceneActive,
+                "oldHomeActive": oldHome, "oldSceneActive": oldScene,
+            ]
+            guard
+                let data = try? JSONSerialization.data(withJSONObject: value, options: .sortedKeys),
+                let json = String(data: data, encoding: .utf8)
+            else {
+                NSLog("BANNERAUDIT_ERROR encoding-failed runID=%@", runID)
+                return
+            }
+            NSLog("BANNERAUDIT %@", json)
+        }
+    }
+#endif

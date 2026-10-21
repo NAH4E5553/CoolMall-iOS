@@ -102,6 +102,7 @@ jobs:
             .build/verification/*/test-scope.json
             .build/verification/*/test-enumeration.json
             .build/verification/*/expected-tests.txt
+            .build/verification/*/banner-audit.json
             .build/verification/*/Tests.xcresult/**
           include-hidden-files: true
           if-no-files-found: error

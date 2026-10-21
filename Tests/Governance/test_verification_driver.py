@@ -65,6 +65,8 @@ if event == 'xcodebuild:test-without-building' and os.environ.get('STUB_CORRUPT'
     next(Path('.build/verification').glob('*/stage-timings.json')).write_text('{broken')
 if event == os.environ.get('STUB_FAIL'):
     sys.exit(int(os.environ.get('STUB_RC', '42')))
+if event == 'check-banner-lifecycle.py' and os.environ.get('STUB_AUDIT_RC'):
+    sys.exit(int(os.environ['STUB_AUDIT_RC']))
 if event == 'xcrun:trace':
     print('AUTOTRACE fixture stream', flush=True)
     Path('.build/trace-ready').write_text('ready')
@@ -82,7 +84,7 @@ class VerificationDriverTests(unittest.TestCase):
         for name in ['verify-local.sh', 'verification-timing.py', 'select-test-scope.py', 'classify-ci-changes.py', 'check-boundaries.py', 'with-banner-trace.py']:
             shutil.copy2(ROOT / 'Scripts' / name, self.root / 'Scripts' / name)
         for name in ['check-toolchain.sh', 'check-format.sh', 'check-boundary-negative.sh',
-                     'check-test-results.py']:
+                     'check-test-results.py', 'check-banner-lifecycle.py']:
             self.stub(self.root / 'Scripts' / name)
         for name in ['xcodebuild', 'xcrun']:
             self.stub(self.root / 'bin' / name)
@@ -115,7 +117,7 @@ class VerificationDriverTests(unittest.TestCase):
     def events(self):
         path = self.root / 'events.jsonl'
         return [json.loads(line) for line in path.read_text().splitlines()
-                if json.loads(line)['event'] != 'xcrun:trace'] if path.exists() else []
+                if json.loads(line)['event'] not in {'xcrun:trace', 'check-banner-lifecycle.py'}] if path.exists() else []
 
     def test_default_keeps_complete_order_and_never_diagnostics(self):
         result = self.run_entry()
@@ -275,6 +277,27 @@ class VerificationDriverTests(unittest.TestCase):
         self.assertEqual(data['phases'][-1]['status'], 'not-run')
         self.assertTrue((path.parent / 'tests.log').exists())
         self.assertEqual(self.events()[-1]['event'], 'xcodebuild:test-without-building')
+
+    def test_lifecycle_audit_runs_on_success_and_failed_prefix(self):
+        for failure in ['', 'xcodebuild:test-without-building']:
+            with self.subTest(failure=failure):
+                (self.root / 'events.jsonl').unlink(missing_ok=True)
+                result = self.run_entry(STUB_FAIL=failure, STUB_RC='42')
+                self.assertEqual(result.returncode, 42 if failure else 0, result.stdout)
+                events = [json.loads(line) for line in (self.root / 'events.jsonl').read_text().splitlines()]
+                audit = next(e for e in events if e['event'] == 'check-banner-lifecycle.py')
+                self.assertEqual(audit['args'][audit['args'].index('--test-exit') + 1], '42' if failure else '0')
+                self.assertEqual(events[-1]['event'], 'check-banner-lifecycle.py')
+
+    def test_lifecycle_audit_failure_cannot_report_pass(self):
+        result = self.run_entry(STUB_FAIL='check-banner-lifecycle.py', STUB_RC='71')
+        self.assertEqual(result.returncode, 71, result.stdout)
+        self.assertNotIn('PASS: local F0 gates', result.stdout)
+
+    def test_lifecycle_audit_failure_preserves_original_test_exit(self):
+        result = self.run_entry(STUB_FAIL='xcodebuild:test-without-building', STUB_RC='42', STUB_AUDIT_RC='71')
+        self.assertEqual(result.returncode, 42, result.stdout)
+        self.assertNotIn('PASS: local F0 gates', result.stdout)
 
     def test_result_validator_failure_is_not_a_pass(self):
         result = self.run_entry(STUB_FAIL='check-test-results.py', STUB_RC='67')

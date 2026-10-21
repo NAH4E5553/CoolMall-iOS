@@ -67,6 +67,24 @@ if event == os.environ.get('STUB_FAIL'):
     sys.exit(int(os.environ.get('STUB_RC', '42')))
 if event == 'check-banner-lifecycle.py' and os.environ.get('STUB_AUDIT_RC'):
     sys.exit(int(os.environ['STUB_AUDIT_RC']))
+if event == 'check-test-results.py':
+    if os.environ.get('STUB_FAIL') == 'xcodebuild:test-without-building' and not os.environ.get('STUB_NATIVE_DEFER'):
+        sys.exit(1)
+    native = {'status':'passed', 'deferred':[], 'nativeExitCode':0, 'wrapperExitCode':0}
+    if os.environ.get('STUB_NATIVE_DEFER'):
+        native.update(status='core-passed-with-deferred', nativeExitCode=65, wrapperExitCode=65,
+                      deferred=[{'id':'CI-DEFER-HOME-TIMEOUT-01','state':'deferred-unresolved',
+                      'method':'CoolMalliOSUITests/HomeLoadTests/testSelectedBannerAndBottomPositionRetainedAcrossTabs()',
+                      'reason':'fixture original timeout retained'}])
+    Path(args[args.index('--output')+1]).write_text(json.dumps(native))
+if event == 'check-banner-lifecycle.py':
+    audit = {'status':'passed','methods':{},'deferred':[]}
+    if os.environ.get('STUB_AUDIT_DEFER'):
+        audit.update(status='core-passed-with-deferred', deferred=[{
+            'id':'CI-DEFER-CYCLE-EVIDENCE-01','state':'deferred-unresolved',
+            'method':'CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()',
+            'reason':'fixture unproven tail'}])
+    Path(args[args.index('--output')+1]).write_text(json.dumps(audit))
 if event == 'xcrun:trace':
     print('AUTOTRACE fixture stream', flush=True)
     Path('.build/trace-ready').write_text('ready')
@@ -81,7 +99,9 @@ class VerificationDriverTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         (self.root / 'Scripts').mkdir()
         (self.root / 'bin').mkdir()
-        for name in ['verify-local.sh', 'verification-timing.py', 'select-test-scope.py', 'classify-ci-changes.py', 'check-boundaries.py', 'with-banner-trace.py']:
+        (self.root / '.github/workflows').mkdir(parents=True)
+        (self.root / '.github/workflows/ios.yml').write_text('name: legacy fixture\\n')
+        for name in ['verify-local.sh', 'verification-timing.py', 'select-test-scope.py', 'classify-ci-changes.py', 'check-boundaries.py', 'with-banner-trace.py', 'finalize-verification.py', 'ci-deferred-policy.py', 'ci-deferred-checks.json']:
             shutil.copy2(ROOT / 'Scripts' / name, self.root / 'Scripts' / name)
         for name in ['check-toolchain.sh', 'check-format.sh', 'check-boundary-negative.sh',
                      'check-test-results.py', 'check-banner-lifecycle.py']:
@@ -268,15 +288,40 @@ class VerificationDriverTests(unittest.TestCase):
         self.assertEqual(result.returncode, 66)
         self.assertEqual(self.events()[-1]['event'], 'xcodebuild:build:Debug')
 
-    def test_test_failure_preserves_65_and_skips_result_validator(self):
-        result = self.run_entry(STUB_FAIL='xcodebuild:test-without-building', STUB_RC='65')
+    def test_test_failure_preserves_65_and_still_runs_result_validator(self):
+        result = self.run_entry(STUB_FAIL='xcodebuild:test-without-building', STUB_RC='65', STUB_NATIVE_DEFER='')
         self.assertEqual(result.returncode, 65)
         path, data = self.ledger()
         self.assertEqual(data['verificationExitCode'], 65)
         self.assertEqual(data['phases'][-2]['status'], 'failed')
-        self.assertEqual(data['phases'][-1]['status'], 'not-run')
+        self.assertEqual(data['phases'][-1]['status'], 'failed')
         self.assertTrue((path.parent / 'tests.log').exists())
-        self.assertEqual(self.events()[-1]['event'], 'xcodebuild:test-without-building')
+        self.assertEqual(self.events()[-1]['event'], 'check-test-results.py')
+
+
+    def test_exact_deferred_native_failure_continues_and_keeps_raw_code(self):
+        result = self.run_entry(STUB_FAIL='xcodebuild:test-without-building', STUB_RC='65', STUB_NATIVE_DEFER='1', STUB_AUDIT_DEFER='1')
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+        path, ledger = self.ledger()
+        phase = next(p for p in ledger['phases'] if p['name']=='test-execute-diagnostics')
+        self.assertEqual((phase['status'],phase['exitCode']), ('deferred-unresolved',65))
+        verdict = json.loads((path.parent/'verification-verdict.json').read_text())
+        self.assertEqual(verdict['status'], 'core-passed-with-deferred')
+        self.assertEqual(verdict['nativeExitCode'], 65)
+        self.assertIn('核心检查通过，但存在延期问题', result.stdout)
+        self.assertNotIn('PASS: local F0 gates', result.stdout)
+
+    def test_deferred_native_cannot_hide_source_identity_failure(self):
+        result = self.run_entry(STUB_FAIL='xcodebuild:test-without-building', STUB_RC='65', STUB_NATIVE_DEFER='1', STUB_TAMPER='response')
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('TEST-SCOPE:',result.stdout)
+        verdict = json.loads((self.ledger()[0].parent/'verification-verdict.json').read_text())
+        self.assertEqual(verdict['status'],'failed')
+
+    def test_deferred_native_cannot_hide_other_gate_failure(self):
+        result = self.run_entry(STUB_FAIL='check-format.sh', STUB_RC='23', STUB_NATIVE_DEFER='1')
+        self.assertEqual(result.returncode,23)
+        self.assertNotIn('Core checks passed with deferred issues',result.stdout)
 
     def test_lifecycle_audit_runs_on_success_and_failed_prefix(self):
         for failure in ['', 'xcodebuild:test-without-building']:

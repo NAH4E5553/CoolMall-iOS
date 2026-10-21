@@ -50,6 +50,9 @@ jobs:
     name: F0 verification
     runs-on: xcode-27
     timeout-minutes: 120
+    outputs:
+      verification_status: ${{ steps.gates.outputs.verification_status }}
+      deferred_count: ${{ steps.gates.outputs.deferred_count }}
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
       MALL_TEST_DIAGNOSTICS: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_diagnostics && 'on-failure' || 'never' }}
@@ -82,12 +85,27 @@ jobs:
           MALL_SIMULATOR_ID=$(python3 Scripts/select-simulator.py --runtime-version 27.0)
           echo "MALL_SIMULATOR_ID=$MALL_SIMULATOR_ID" >> "$GITHUB_ENV"
       - name: Policy, format, boundaries, negative controls, builds, discovered test scope and exact results
+        id: gates
         shell: bash
         run: Scripts/verify-local.sh
       - name: Summarize executed verification stages
         if: ${{ always() }}
         shell: bash
-        run: python3 Scripts/verification-timing.py report-all .build/verification >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          python3 Scripts/verification-timing.py report-all .build/verification >> "$GITHUB_STEP_SUMMARY"
+          for report in .build/verification/*/verification-verdict.md; do
+            if [ -f "$report" ]; then cat "$report" >> "$GITHUB_STEP_SUMMARY"; fi
+          done
+      - name: "Verification verdict: ${{ steps.gates.outputs.verification_status }}"
+        if: ${{ always() }}
+        shell: bash
+        env:
+          MALL_VERDICT: ${{ steps.gates.outputs.verification_status }}
+        run: |
+          case "$MALL_VERDICT" in
+            core-passed|core-passed-with-deferred|failed) printf '%s\n' "$MALL_VERDICT" ;;
+            *) echo 'Missing verification verdict'; exit 1 ;;
+          esac
       - name: Retain evidence on success or failure
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 (Node 24)
@@ -103,6 +121,9 @@ jobs:
             .build/verification/*/test-enumeration.json
             .build/verification/*/expected-tests.txt
             .build/verification/*/banner-audit.json
+            .build/verification/*/native-results.json
+            .build/verification/*/verification-verdict.json
+            .build/verification/*/verification-verdict.md
             .build/verification/*/Tests.xcresult/**
           include-hidden-files: true
           if-no-files-found: error

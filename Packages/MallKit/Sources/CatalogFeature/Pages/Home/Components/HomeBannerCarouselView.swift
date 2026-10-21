@@ -96,6 +96,20 @@ struct HomeBannerCarouselView: View {
     @State private var bannerFrame = CGRect.zero
     @State private var interaction: UInt64 = 0
 
+    #if DEBUG
+        @State private var traceInstance = UUID()
+    #endif
+
+    private func tracePlayback(_ event: String, token: UInt64) {
+        #if DEBUG
+            guard ProcessInfo.processInfo.arguments.contains("--ui-banner-trace") else { return }
+            NSLog(
+                "AUTOTRACE %@",
+                "t=\(ProcessInfo.processInfo.systemUptime) instance=\(traceInstance) token=\(token) event=\(event) id=\(currentID ?? 0) eligible=\(canAutoplay) home=\(isActive) scene=\(scenePhase) drag=\(isUserDragging) motion=\(reduceMotion) voice=\(voiceOver) allowed=\(allowsAutoplay) count=\(ids.count) interaction=\(interaction) frame=\(bannerFrame) viewport=\(visibleViewport)"
+            )
+        #endif
+    }
+
     private var ids: [Int64] { banners.map(\.id) }
     private var currentID: Int64? { selection.currentID(in: ids) }
     private var currentIndex: Int { ids.firstIndex(of: currentID ?? 0) ?? 0 }
@@ -142,14 +156,25 @@ struct HomeBannerCarouselView: View {
                 .task(id: playbackKey) { @MainActor in
                     let clock = ContinuousClock()
                     let token = autoplay.restart(at: clock.now, eligible: canAutoplay)
+                    tracePlayback(
+                        "arm deadline=\(String(describing: autoplay.deadline))", token: token)
                     guard let deadline = autoplay.deadline else { return }
-                    do { try await clock.sleep(until: deadline) } catch { return }
+                    do { try await clock.sleep(until: deadline) } catch {
+                        tracePlayback("cancel", token: token)
+                        return
+                    }
+                    tracePlayback("wake cancelled=\(Task.isCancelled)", token: token)
                     guard !Task.isCancelled, canAutoplay,
                         autoplay.consume(token, at: clock.now), !ids.isEmpty
-                    else { return }
+                    else {
+                        tracePlayback("reject currentToken=\(autoplay.generation)", token: token)
+                        return
+                    }
                     // No copied sentinel pages; the last-to-first wrap may visibly reverse.
                     let next = ids[(currentIndex + 1) % ids.count]
+                    tracePlayback("advance to=\(next)", token: token)
                     withAnimation { selection.select(next) }
+                    tracePlayback("selected", token: token)
                 }
         }
     }

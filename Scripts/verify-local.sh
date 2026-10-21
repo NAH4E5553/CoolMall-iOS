@@ -82,7 +82,7 @@ python3 Scripts/select-test-scope.py check-source "$MALL_RUN/test-scope.json" "$
 stage_end
 # Full inventories also use explicit methods, so execution cannot silently drift.
 stage_start test-execute-diagnostics
-xcodebuild test-without-building -only-testing "@$MALL_RUN/expected-tests.txt" -collect-test-diagnostics "$MALL_TEST_DIAGNOSTICS" -project CoolMalliOS.xcodeproj -scheme CoolMalliOS -testPlan CoolMalliOS -configuration Debug -parallel-testing-enabled NO -destination "platform=iOS Simulator,id=$MALL_SIMULATOR_ID" -derivedDataPath "$MALL_RUN/DerivedData" -resultBundlePath "$MALL_RUN/Tests.xcresult" CODE_SIGNING_ALLOWED=NO > "$MALL_RUN/tests.log" 2>&1
+python3 Scripts/with-banner-trace.py "$MALL_SIMULATOR_ID" "$MALL_RUN/banner-trace.log" -- xcodebuild test-without-building -only-testing "@$MALL_RUN/expected-tests.txt" -collect-test-diagnostics "$MALL_TEST_DIAGNOSTICS" -project CoolMalliOS.xcodeproj -scheme CoolMalliOS -testPlan CoolMalliOS -configuration Debug -parallel-testing-enabled NO -destination "platform=iOS Simulator,id=$MALL_SIMULATOR_ID" -derivedDataPath "$MALL_RUN/DerivedData" -resultBundlePath "$MALL_RUN/Tests.xcresult" CODE_SIGNING_ALLOWED=NO > "$MALL_RUN/tests.log" 2>&1
 stage_end
 stage_start test-result-validation
 python3 Scripts/check-test-results.py "$MALL_RUN/Tests.xcresult" --scope "$MALL_RUN/test-scope.json"

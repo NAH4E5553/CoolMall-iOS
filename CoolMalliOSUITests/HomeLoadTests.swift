@@ -1676,13 +1676,20 @@ extension HomeLoadTests {
     @MainActor private func waitAdvance(
         _ app: XCUIApplication, from page: String, timeout: TimeInterval = 10
     ) -> String {
-        let indicators = bannerIndicators(app)
+        // The page node changes AX representation during pagination and Tab
+        // restoration. A retained element may retry resolution across the
+        // whole observation window; take one current tree per poll instead.
         var observed = page
         let advanced = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
-                let value = indicators.value as? String ?? ""
-                if !value.isEmpty, value != page { observed = value }
-                return !value.isEmpty && value != page
+                do {
+                    let value = try self.autoplayObservation(app).page
+                    if !value.isEmpty, value != page { observed = value }
+                    return !value.isEmpty && value != page
+                } catch {
+                    XCTFail("cannot observe autoplay advance: \(error)")
+                    return false
+                }
             }, object: nil)
         XCTAssertEqual(
             XCTWaiter.wait(for: [advanced], timeout: timeout), .completed,
@@ -1699,10 +1706,17 @@ extension HomeLoadTests {
             [node] + node.children.flatMap { descendants($0) }
         }
         let began = ProcessInfo.processInfo.systemUptime
+        if app.launchArguments.contains("--ui-banner-trace") {
+            print("AUTOTEST t=\(began) snapshot begin")
+        }
         let nodes = descendants(try app.snapshot())
         let leaf = nodes.first { $0.identifier.hasPrefix("home.banner.current.") }
         let dots = nodes.first { $0.identifier == "home.banner.indicators" }
-        print("autoplay checkpoint \(ProcessInfo.processInfo.systemUptime - began)s")
+        if app.launchArguments.contains("--ui-banner-trace") {
+            print(
+                "AUTOTEST t=\(ProcessInfo.processInfo.systemUptime) snapshot end leaf=\(leaf?.identifier ?? "") page=\(dots?.value as? String ?? "") duration=\(ProcessInfo.processInfo.systemUptime - began)"
+            )
+        }
         return (leaf?.identifier ?? "", dots?.value as? String ?? "")
     }
 
@@ -1818,7 +1832,10 @@ extension HomeLoadTests {
         // APPROVAL-AWAY-BUSY-120-20261019: several mandated five-second waits
         // plus two away windows exceed the default allowance on slow runners.
         executionTimeAllowance = 120
-        let app = bannerApp("banner-multiple", automatic: true)
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-home-fixture", "banner-multiple", "--ui-banner-trace"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
         revealBanner(app)
         // Cache geometry before establishing a fresh timer period. No dynamic
         // element lookup is needed when the native tab touch is delivered.
@@ -1871,6 +1888,7 @@ extension HomeLoadTests {
         // Away on another tab for MORE than one interval: any pre-leave arm's
         // deadline falls inside the away window, so a still-running timer
         // would have advanced exactly once by the time home returns.
+        print("AUTOTEST t=\(ProcessInfo.processInfo.systemUptime) category-tap begin")
         categoryTab.tap()
         let categoryLoaded = app.staticTexts["category.pending"]
         XCTAssertTrue(categoryLoaded.exists || categoryLoaded.waitForExistence(timeout: 5))
@@ -1882,11 +1900,13 @@ extension HomeLoadTests {
                 "driver precondition: confirm departure before the fresh period expires")
         }
         waitQuiet(5.6)
+        print("AUTOTEST t=\(ProcessInfo.processInfo.systemUptime) home-tap begin")
         homeTab.tap()
         // ORIGINAL timing scope (R-LATEST-04): sample the anchor immediately
         // after the tap returns, BEFORE the currentBanner AX query, so the
         // original bounds cover the query too.
         let returned = Date()
+        print("AUTOTEST t=\(ProcessInfo.processInfo.systemUptime) home-tap end")
         let returnedObservation = try autoplayObservation(app)
         XCTAssertEqual(returnedObservation.leafID, baseline, "no advance while away")
         let resumedPage = waitAdvance(app, from: returnedObservation.page)
@@ -1902,6 +1922,7 @@ extension HomeLoadTests {
         }
         let resumedLeafID = "home.banner.current.\(910_000 + pageNumber)"
         let tabReleased = stableBannerDrag(hold: 0.5)
+        print("AUTOTEST t=\(ProcessInfo.processInfo.systemUptime) drag-release")
         let draggedObservation = try autoplayObservation(app)
         XCTAssertEqual(
             draggedObservation.leafID, resumedLeafID, "unchanged drag keeps the page")
@@ -1917,6 +1938,7 @@ extension HomeLoadTests {
             XCTFail("indicator and leaf never agreed before backgrounding")
             return
         }
+        print("AUTOTEST t=\(ProcessInfo.processInfo.systemUptime) background begin")
         XCUIDevice.shared.press(.home)
         let backgrounded = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in app.state != .runningForeground }, object: nil)
@@ -1931,8 +1953,10 @@ extension HomeLoadTests {
                 "driver precondition: confirm backgrounding before the fresh period expires")
         }
         waitQuiet(5.6)
+        print("AUTOTEST t=\(ProcessInfo.processInfo.systemUptime) activate begin")
         app.activate()
         let foregrounded = Date()
+        print("AUTOTEST t=\(ProcessInfo.processInfo.systemUptime) activate end")
         // ONE early preserved read: the resumed timer legitimately advances
         // five seconds after activation, and a slow post-restart read can land
         // after that advance, so a second (indicator) preserved read is racy.
@@ -2060,7 +2084,57 @@ extension HomeLoadTests {
             poppedObservation.leafID, "home.banner.current.910001",
             "home was inactive for the whole pushed period")
         XCTAssertFalse(poppedObservation.page.isEmpty, "indicator page must be exposed")
-        revealBanner(app)
+        // Keep reveal inside the original pop-to-advance budget, but obtain
+        // its geometry from one tree instead of independently resolving the
+        // scroll, app, tab bar, existence and animated page frame. This local
+        // path leaves other reveal consumers unchanged.
+        func revealPoppedBanner() throws {
+            func descendants(_ node: any XCUIElementSnapshot) -> [any XCUIElementSnapshot] {
+                [node] + node.children.flatMap { descendants($0) }
+            }
+            for _ in 0..<4 {
+                let snapshot = try app.snapshot()
+                let nodes = descendants(snapshot)
+                guard
+                    let scrollNode = nodes.first(where: {
+                        $0.identifier == "home.scroll" && $0.elementType == .scrollView
+                    }),
+                    let tabBar = nodes.first(where: { $0.elementType == .tabBar })
+                else {
+                    XCTFail("cannot observe the home scroll viewport and tab bar")
+                    return
+                }
+                let scroll = scrollNode.frame.intersection(snapshot.frame)
+                let bottom = min(scroll.maxY, tabBar.frame.minY)
+                if let bannerNode = nodes.first(where: {
+                    $0.identifier.hasPrefix("home.banner.current.")
+                }) {
+                    let frame = bannerNode.frame
+                    if frame.minY >= scroll.minY, frame.maxY <= bottom {
+                        // Geometry is not a hit test: retain the real check
+                        // and original three-second settlement allowance.
+                        let banner = currentBanner(app)
+                        if banner.isHittable { return }
+                        let settled = XCTNSPredicateExpectation(
+                            predicate: NSPredicate { _, _ in banner.isHittable }, object: nil)
+                        if XCTWaiter.wait(for: [settled], timeout: 3) == .completed { return }
+                        continue
+                    }
+                    if frame.maxY < scroll.minY {
+                        let start = app.coordinate(
+                            withNormalizedOffset: CGVector(dx: 0.97, dy: 0.42))
+                        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.75))
+                        start.press(forDuration: 0.01, thenDragTo: end)
+                        continue
+                    }
+                }
+                let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.75))
+                let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.42))
+                start.press(forDuration: 0.01, thenDragTo: end)
+            }
+            XCTAssertTrue(currentBanner(app).isHittable)
+        }
+        try revealPoppedBanner()
         waitAdvance(app, from: poppedObservation.page, timeout: 15)
         let elapsed = Date().timeIntervalSince(popped)
         XCTAssertGreaterThanOrEqual(

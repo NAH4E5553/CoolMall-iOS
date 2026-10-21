@@ -17,6 +17,8 @@ from pathlib import Path
 name = Path(sys.argv[0]).name
 args = sys.argv[1:]
 event = name
+if name == 'xcrun' and 'stream' in args:
+    event = 'xcrun:trace'
 if name == 'xcodebuild':
     event += ':' + args[0]
     if '-enumerate-tests' in args:
@@ -44,6 +46,10 @@ if event == 'xcodebuild:discovery':
             source.write('\n# genuine tracked source change\n')
     elif os.environ.get('STUB_MUTATE_SOURCE') == 'untracked':
         Path('Scripts/unexpected.py').write_text('unexpected = True\n')
+if event == 'xcodebuild:test-without-building':
+    deadline = time.monotonic() + 5
+    while not Path('.build/trace-ready').exists() and time.monotonic() < deadline:
+        time.sleep(.01)
 if event == 'xcodebuild:test-without-building' and os.environ.get('STUB_TAMPER'):
     response = Path(args[args.index('-only-testing') + 1][1:])
     if os.environ['STUB_TAMPER'] == 'response':
@@ -59,6 +65,10 @@ if event == 'xcodebuild:test-without-building' and os.environ.get('STUB_CORRUPT'
     next(Path('.build/verification').glob('*/stage-timings.json')).write_text('{broken')
 if event == os.environ.get('STUB_FAIL'):
     sys.exit(int(os.environ.get('STUB_RC', '42')))
+if event == 'xcrun:trace':
+    print('AUTOTRACE fixture stream', flush=True)
+    Path('.build/trace-ready').write_text('ready')
+    while True: time.sleep(1)
 '''
 
 
@@ -69,7 +79,7 @@ class VerificationDriverTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         (self.root / 'Scripts').mkdir()
         (self.root / 'bin').mkdir()
-        for name in ['verify-local.sh', 'verification-timing.py', 'select-test-scope.py', 'classify-ci-changes.py', 'check-boundaries.py']:
+        for name in ['verify-local.sh', 'verification-timing.py', 'select-test-scope.py', 'classify-ci-changes.py', 'check-boundaries.py', 'with-banner-trace.py']:
             shutil.copy2(ROOT / 'Scripts' / name, self.root / 'Scripts' / name)
         for name in ['check-toolchain.sh', 'check-format.sh', 'check-boundary-negative.sh',
                      'check-test-results.py']:
@@ -104,7 +114,8 @@ class VerificationDriverTests(unittest.TestCase):
 
     def events(self):
         path = self.root / 'events.jsonl'
-        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+        return [json.loads(line) for line in path.read_text().splitlines()
+                if json.loads(line)['event'] != 'xcrun:trace'] if path.exists() else []
 
     def test_default_keeps_complete_order_and_never_diagnostics(self):
         result = self.run_entry()
@@ -129,6 +140,19 @@ class VerificationDriverTests(unittest.TestCase):
         self.assertEqual(data['verificationExitCode'], 0)
         self.assertTrue(all(p['status'] == 'passed' and p['durationSeconds'] >= 0 for p in data['phases']))
         self.assertTrue(path.with_suffix('.md').exists())
+
+    def test_live_trace_is_retained_without_changing_business_checks(self):
+        result = self.run_entry()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        events = [json.loads(line) for line in (self.root / 'events.jsonl').read_text().splitlines()]
+        self.assertEqual(sum(event['event'] == 'xcrun:trace' for event in events), 1)
+        trace = next((self.root / '.build/verification').glob('*/banner-trace.log'))
+        self.assertIn('AUTOTRACE fixture stream', trace.read_text())
+        status = json.loads(trace.with_suffix('.status.log').read_text())
+        self.assertEqual(status['exitCode'], 0)
+        self.assertTrue(status['eventsObserved'])
+        self.assertEqual(status['diagnosticErrors'], [])
+        self.assertEqual(self.events()[-1]['event'], 'check-test-results.py')
 
     def test_pr_selected_entry_uses_discovered_class_and_exact_head(self):
         # Replace only the remote transport in this isolated copy, retaining the

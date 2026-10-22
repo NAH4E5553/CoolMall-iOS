@@ -19,6 +19,7 @@
             case many
             case tabReturn = "tab-return"
             case slowSequence = "slow-sequence"
+            case real10 = "real10"
         }
 
         let mode: FixtureMode?
@@ -53,6 +54,7 @@
             case .many: service = FixtureCategoryService(mode: .many)
             case .tabReturn: service = TabReturnCategoryService()
             case .slowSequence: service = SlowSequenceCategoryService()
+            case .real10: service = FixtureCategoryService(mode: .real10)
             }
         }
     }
@@ -63,7 +65,7 @@
     /// an unknown-parent node that must never be displayed. Images are nil so
     /// fixture layout/scroll evidence does not depend on the network.
     final class FixtureCategoryService: CategoryLoading, Sendable {
-        enum Mode { case valid, empty, error, few, many }
+        enum Mode { case valid, empty, error, few, many, real10 }
 
         private let mode: Mode
 
@@ -78,6 +80,7 @@
             case .error: throw CategoryLoadFailure.networkUnavailable
             case .few: return Self.few
             case .many: return Self.many
+            case .real10: return Self.real10
             }
         }
 
@@ -151,6 +154,57 @@
                     parentID: rootID, sortNum: 2, imageURL: nil),
             ]
         }
+
+        /// The captured 43-node response's ten real roots and their direct
+        /// children (names/sort order from the production response; images nil).
+        static let real10: [CategoryNode] = [
+            CategoryNode(id: 800001, name: "手机", parentID: nil, sortNum: 1, imageURL: nil),
+            CategoryNode(
+                id: 801001, name: "Xiaomi 数字旗舰", parentID: 800001, sortNum: 1, imageURL: nil),
+            CategoryNode(
+                id: 801002, name: "Xiaomi MIX系列", parentID: 800001, sortNum: 2, imageURL: nil),
+            CategoryNode(
+                id: 801003, name: "Xiaomi Civi", parentID: 800001, sortNum: 3, imageURL: nil),
+            CategoryNode(id: 801004, name: "K系列", parentID: 800001, sortNum: 4, imageURL: nil),
+            CategoryNode(id: 801005, name: "Note系列", parentID: 800001, sortNum: 5, imageURL: nil),
+            CategoryNode(id: 801006, name: "Turbo系列", parentID: 800001, sortNum: 6, imageURL: nil),
+            CategoryNode(id: 801007, name: "数字系列", parentID: 800001, sortNum: 7, imageURL: nil),
+            CategoryNode(id: 800002, name: "平板", parentID: nil, sortNum: 2, imageURL: nil),
+            CategoryNode(id: 801008, name: "REDMI平板", parentID: 800002, sortNum: 1, imageURL: nil),
+            CategoryNode(id: 801009, name: "Xiaomi平板", parentID: 800002, sortNum: 2, imageURL: nil),
+            CategoryNode(id: 800003, name: "穿戴", parentID: nil, sortNum: 3, imageURL: nil),
+            CategoryNode(id: 801010, name: "智能手环", parentID: 800003, sortNum: 1, imageURL: nil),
+            CategoryNode(id: 801011, name: "智能手表", parentID: 800003, sortNum: 2, imageURL: nil),
+            CategoryNode(id: 801012, name: "智能耳机", parentID: 800003, sortNum: 3, imageURL: nil),
+            CategoryNode(id: 801013, name: "其他穿戴", parentID: 800003, sortNum: 4, imageURL: nil),
+            CategoryNode(id: 800004, name: "电脑办公", parentID: nil, sortNum: 4, imageURL: nil),
+            CategoryNode(id: 801014, name: "笔记本", parentID: 800004, sortNum: 1, imageURL: nil),
+            CategoryNode(id: 801015, name: "显示器", parentID: 800004, sortNum: 2, imageURL: nil),
+            CategoryNode(id: 801016, name: "办公配件", parentID: 800004, sortNum: 3, imageURL: nil),
+            CategoryNode(id: 800005, name: "电视影音", parentID: nil, sortNum: 5, imageURL: nil),
+            CategoryNode(id: 801017, name: "旗舰系列", parentID: 800005, sortNum: 1, imageURL: nil),
+            CategoryNode(id: 801018, name: "性价比爆款", parentID: 800005, sortNum: 2, imageURL: nil),
+            CategoryNode(id: 801019, name: "巨幕影院", parentID: 800005, sortNum: 3, imageURL: nil),
+            CategoryNode(id: 800006, name: "生活家电", parentID: nil, sortNum: 6, imageURL: nil),
+            CategoryNode(id: 801020, name: "热销推荐", parentID: 800006, sortNum: 1, imageURL: nil),
+            CategoryNode(id: 801021, name: "主推新品", parentID: 800006, sortNum: 2, imageURL: nil),
+            CategoryNode(id: 801022, name: "波轮洗衣机", parentID: 800006, sortNum: 3, imageURL: nil),
+            CategoryNode(id: 800007, name: "智能家居", parentID: nil, sortNum: 7, imageURL: nil),
+            CategoryNode(id: 801023, name: "小爱音箱", parentID: 800007, sortNum: 1, imageURL: nil),
+            CategoryNode(id: 801024, name: "路由器", parentID: 800007, sortNum: 2, imageURL: nil),
+            CategoryNode(id: 801025, name: "智能安防", parentID: 800007, sortNum: 3, imageURL: nil),
+            CategoryNode(id: 801026, name: "智能控制", parentID: 800007, sortNum: 4, imageURL: nil),
+            CategoryNode(id: 800008, name: "出行箱包", parentID: nil, sortNum: 8, imageURL: nil),
+            CategoryNode(id: 801027, name: "户外出行", parentID: 800008, sortNum: 1, imageURL: nil),
+            CategoryNode(id: 801028, name: "运动健康", parentID: 800008, sortNum: 2, imageURL: nil),
+            CategoryNode(id: 801029, name: "箱包", parentID: 800008, sortNum: 3, imageURL: nil),
+            CategoryNode(id: 800009, name: "清洁电器", parentID: nil, sortNum: 9, imageURL: nil),
+            CategoryNode(id: 801030, name: "清洁电器", parentID: 800009, sortNum: 1, imageURL: nil),
+            CategoryNode(id: 801031, name: "环境电器", parentID: 800009, sortNum: 2, imageURL: nil),
+            CategoryNode(id: 800010, name: "厨房个护", parentID: nil, sortNum: 10, imageURL: nil),
+            CategoryNode(id: 801032, name: "厨房小电", parentID: 800010, sortNum: 1, imageURL: nil),
+            CategoryNode(id: 801033, name: "个护电器", parentID: 800010, sortNum: 2, imageURL: nil),
+        ]
 
         /// First-call tree for the slow-sequence cancellation check (2 roots).
         static let slowFirst: [CategoryNode] = [

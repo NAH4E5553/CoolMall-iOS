@@ -1,23 +1,23 @@
 import SwiftUI
 
-/// Left rail: 100pt wide, surface background, 50pt rows. The selected row is
-/// surface and the unselected areas are two CONTINUOUS background blocks (above
-/// and below the selected row) drawn against the viewport, matching the
-/// reference Canvas:
+/// Left rail: default 100pt (132pt at accessibility Dynamic Type), surface
+/// background, 50pt rows. The selected row is surface; the unselected rows form
+/// ONE continuous background block per side, but only across the ACTUAL rows —
+/// never to the viewport top or bottom (user clarification 2026-10-22):
 ///
-/// - upper block: viewport top → selected row top; trailing bottom corner 16pt
-///   (top corner 16pt only while the first row touches the viewport top);
-/// - lower block: selected row bottom → viewport bottom; trailing top corner
-///   16pt and, per the confirmed iOS requirement (2026-10-22), trailing bottom
-///   corner 16pt as the whole block's outer contour;
-/// - when the selected row is scrolled out of the viewport, one full-viewport
-///   unselected block is drawn (no fictional row).
+/// - selecting the first row: no upper block; the lower block runs from the
+///   second row to the last row, with trailing top/bottom corners;
+/// - selecting a middle row: upper block from the first row to selected-1
+///   (top+bottom trailing corners), lower block from selected+1 to the last row
+///   (top+bottom trailing corners);
+/// - selecting the last row: no lower block; the upper block ends at the row
+///   before the selected row.
 ///
-/// The blocks are viewport-fixed geometry, measured from the real row frames;
-/// they are NOT inside the row selection animation, so their corner radii snap
-/// to the target shape instead of interpolating from 0 (R-CATEGORY-01-05).
-/// Only the text color/size and the 3x24 indicator keep the reference
-/// animations.
+/// The empty viewport above/below the row range is the rail's surface (white),
+/// not a background mask. Rows are contiguous, so the block has no per-row
+/// notches; only the first/last rows of each block carry the 16pt trailing
+/// corner. The background shape has no animation (R-CATEGORY-01-05); the text
+/// color/size and the 3x24 indicator keep the reference animations.
 struct CategoryRootRailView: View {
     let snapshot: CategorySnapshot
     let selectedRootID: Int64?
@@ -25,128 +25,73 @@ struct CategoryRootRailView: View {
     let onSelect: (Int64) -> Void
 
     @Environment(\.dynamicTypeSize) private var typeSize
-    @State private var rowFrames: [Int64: CGRect] = [:]
 
     private var railWidth: CGFloat {
         typeSize.isAccessibilitySize
             ? CategoryMetrics.accessibleLeftColumnWidth : CategoryMetrics.leftColumnWidth
     }
 
-    private static let spaceName = "category.left.viewport"
+    private var selectedIndex: Int? {
+        guard let selectedRootID else { return nil }
+        return snapshot.index(ofRoot: selectedRootID)
+    }
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .topLeading) {
-                palette.surface
-                backgroundBlocks(viewport: geometry.size)
-                ScrollViewReader { proxy in
-                    ScrollView(.vertical, showsIndicators: false) {
-                        VStack(spacing: 0) {
-                            ForEach(Array(snapshot.groups.enumerated()), id: \.element.id) {
-                                _, group in
-                                CategoryRootRow(
-                                    id: group.root.id,
-                                    name: group.root.name,
-                                    isSelected: group.root.id == selectedRootID,
-                                    palette: palette,
-                                    onSelect: { onSelect(group.root.id) }
-                                )
-                                .id(group.root.id)
-                                .background(frameReader(for: group.root.id))
-                            }
-                            // Reference bottom placeholder; transparent so the
-                            // lower viewport block stays visible behind it.
-                            Color.clear.frame(height: CategoryMetrics.rootRowMinHeight)
-                        }
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 0) {
+                    ForEach(Array(snapshot.groups.enumerated()), id: \.element.id) {
+                        index, group in
+                        CategoryRootRow(
+                            id: group.root.id,
+                            name: group.root.name,
+                            isSelected: group.root.id == selectedRootID,
+                            hasSelection: selectedIndex != nil,
+                            palette: palette,
+                            topTrailingRadius: topTrailingRadius(at: index),
+                            bottomTrailingRadius: bottomTrailingRadius(at: index),
+                            onSelect: { onSelect(group.root.id) }
+                        )
+                        .id(group.root.id)
                     }
-                    .accessibilityIdentifier("category.left.scroll")
-                    .onChange(of: selectedRootID) { _, rootID in
-                        guard let rootID else { return }
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            proxy.scrollTo(rootID, anchor: .top)
-                        }
-                    }
+                    // Reference list bottom padding; transparent so the rail
+                    // surface (not an unselected mask) remains below the rows.
+                    Color.clear.frame(height: CategoryMetrics.rootRowMinHeight)
                 }
             }
-            .coordinateSpace(name: Self.spaceName)
-            .onPreferenceChange(CategoryRootFrameKey.self) { frames in
-                rowFrames = frames
+            .accessibilityIdentifier("category.left.scroll")
+            .onChange(of: selectedRootID) { _, rootID in
+                guard let rootID else { return }
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo(rootID, anchor: .top)
+                }
             }
         }
         .frame(width: railWidth)
+        .background(palette.surface)
     }
 
-    @ViewBuilder
-    private func backgroundBlocks(viewport: CGSize) -> some View {
-        let width = viewport.width
-        let height = viewport.height
-        Group {
-            if let frame = selectedRootID.flatMap({ rowFrames[$0] }) {
-                if frame.maxY <= 0 {
-                    // Selected row is above the viewport: the whole viewport is one
-                    // lower-style unselected block.
-                    block(width: width, height: height, topTrailing: 0, bottomTrailing: 16)
-                } else if frame.minY >= height {
-                    // Selected row is below the viewport: the whole viewport is one
-                    // upper-style unselected block.
-                    block(
-                        width: width, height: height,
-                        topTrailing: upperTopTrailing, bottomTrailing: 16)
-                } else {
-                    let upperHeight = max(0, min(frame.minY, height))
-                    if upperHeight > 0 {
-                        block(
-                            width: width, height: upperHeight,
-                            topTrailing: upperTopTrailing, bottomTrailing: 16)
-                    }
-                    let lowerY = max(0, frame.maxY)
-                    let lowerHeight = max(0, height - lowerY)
-                    if lowerHeight > 0 {
-                        block(
-                            width: width, height: lowerHeight,
-                            topTrailing: 16, bottomTrailing: 16
-                        )
-                        .offset(y: lowerY)
-                    }
-                }
-            }
+    /// Upper block: rows 0..<selected; lower block: rows selected+1..<count.
+    /// Only the first row of each block gets the top-trailing corner and only
+    /// the last row gets the bottom-trailing corner.
+    private func topTrailingRadius(at index: Int) -> CGFloat {
+        guard let selectedIndex else { return 0 }
+        if index < selectedIndex { return index == 0 ? CategoryMetrics.groupCornerRadius : 0 }
+        if index > selectedIndex {
+            return index == selectedIndex + 1 ? CategoryMetrics.groupCornerRadius : 0
         }
-        // Background geometry and corner radii must snap; only the text and
-        // indicator keep their animations (R-CATEGORY-01-05).
-        .transaction { transaction in
-            transaction.animation = nil
+        return 0
+    }
+
+    private func bottomTrailingRadius(at index: Int) -> CGFloat {
+        guard let selectedIndex else { return 0 }
+        if index < selectedIndex {
+            return index == selectedIndex - 1 ? CategoryMetrics.groupCornerRadius : 0
         }
-    }
-
-    private func block(
-        width: CGFloat, height: CGFloat, topTrailing: CGFloat, bottomTrailing: CGFloat
-    ) -> some View {
-        UnevenRoundedRectangle(
-            topLeadingRadius: 0,
-            bottomLeadingRadius: 0,
-            bottomTrailingRadius: bottomTrailing,
-            topTrailingRadius: topTrailing
-        )
-        .fill(palette.background)
-        .frame(width: width, height: height)
-    }
-
-    /// The reference rounds the upper block's top corner only while the first
-    /// row still touches the viewport top (firstVisibleItemIndex == 0).
-    private var upperTopTrailing: CGFloat {
-        guard let firstRoot = snapshot.groups.first?.root.id,
-            let firstFrame = rowFrames[firstRoot], firstFrame.minY >= -0.5
-        else { return 0 }
-        return CategoryMetrics.groupCornerRadius
-    }
-
-    private func frameReader(for id: Int64) -> some View {
-        GeometryReader { proxy in
-            Color.clear.preference(
-                key: CategoryRootFrameKey.self,
-                value: [id: proxy.frame(in: .named(Self.spaceName))]
-            )
+        if index > selectedIndex {
+            return index == snapshot.groups.count - 1 ? CategoryMetrics.groupCornerRadius : 0
         }
+        return 0
     }
 }
 
@@ -154,10 +99,17 @@ private struct CategoryRootRow: View {
     let id: Int64
     let name: String
     let isSelected: Bool
+    let hasSelection: Bool
     let palette: CategoryPalette
+    let topTrailingRadius: CGFloat
+    let bottomTrailingRadius: CGFloat
     let onSelect: () -> Void
 
     @ScaledMetric(relativeTo: .caption) private var baseFontSize = 12.0
+
+    private var fill: Color {
+        (!hasSelection || isSelected) ? palette.surface : palette.background
+    }
 
     var body: some View {
         Button(action: onSelect) {
@@ -186,17 +138,23 @@ private struct CategoryRootRow: View {
                     .animation(.easeInOut(duration: 0.3), value: isSelected)
             }
             .frame(maxWidth: .infinity, minHeight: CategoryMetrics.rootRowMinHeight)
+            .background(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 0,
+                    bottomLeadingRadius: 0,
+                    bottomTrailingRadius: bottomTrailingRadius,
+                    topTrailingRadius: topTrailingRadius
+                )
+                .fill(fill)
+            )
+            // The block geometry/corners must snap; the row's text and
+            // indicator animations are declared on those leaves above.
+            .transaction { transaction in
+                transaction.animation = nil
+            }
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier("category.root.\(id)")
-    }
-}
-
-private struct CategoryRootFrameKey: PreferenceKey {
-    static let defaultValue: [Int64: CGRect] = [:]
-
-    static func reduce(value: inout [Int64: CGRect], nextValue: () -> [Int64: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { $1 })
     }
 }

@@ -3,6 +3,9 @@ import copy
 from datetime import date
 import importlib.util
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -220,6 +223,143 @@ class VerdictPolicyTests(unittest.TestCase):
             with self.assertRaises(ValueError): FINAL.verdict(native,audit,0)
         native['deferred'][0]['id']='arbitrary-waiver'
         with self.assertRaises(ValueError): FINAL.verdict(native,{'status':'passed'},0)
+
+
+class SummaryDisclosureTests(unittest.TestCase):
+    def reports(self):
+        return {
+            'native-results.json': {'status': 'failed', 'error': 'TEST-RESULT: not an isolated native test failure', 'deferred': []},
+            'banner-audit.json': {'status': 'failed', 'methods': {'away': {'status': 'failed', 'error': 'source event after method end'}},
+                'deferred': [POLICY.warning('CI-DEFER-CYCLE-EVIDENCE-01', 'Terminal source completeness is unproven', method=POLICY.CYCLE_METHOD)]},
+            'banner-trace.status.log': {'commandExitCode': 65, 'exitCode': 65},
+        }
+
+    def publish(self, reports, prior=65):
+        with tempfile.TemporaryDirectory() as td:
+            directory = Path(td)
+            for name, value in reports.items():
+                (directory/name).write_text(value if isinstance(value, str) else json.dumps(value))
+            originals = {name: (directory/name).read_bytes() for name in reports}
+            output = directory/'github-output.txt'
+            result = subprocess.run([sys.executable, str(ROOT/'Scripts/finalize-verification.py'), str(directory),
+                                     '--prior-exit', str(prior)], capture_output=True, text=True,
+                                    env=dict(os.environ, GITHUB_OUTPUT=str(output), PYTHONDONTWRITEBYTECODE='1'))
+            self.assertEqual({name: (directory/name).read_bytes() for name in reports}, originals)
+            data = json.loads((directory/'verification-verdict.json').read_text())
+            markdown = (directory/'verification-verdict.md').read_text()
+            return result, data, markdown, output.read_text()
+
+    def test_blocking_summary_keeps_recognized_cycle_warning_and_raw_exits(self):
+        result, data, markdown, output = self.publish(self.reports())
+        self.assertEqual(result.returncode, 65, result.stderr)
+        self.assertEqual((data['status'], data['deferredIssueCount']), ('failed', 1))
+        self.assertEqual(data['deferred'][0]['id'], 'CI-DEFER-CYCLE-EVIDENCE-01')
+        self.assertEqual((data['nativeExitCode'], data['wrapperExitCode'], data['priorExitCode']), (65, 65, 65))
+        self.assertIn('banner-trace.status.log', data['nativeExitCodeSource'])
+        self.assertIn('Blocking verification failure', markdown)
+        self.assertIn('已识别的延期项（阻塞失败保持不变）', markdown)
+        self.assertIn('CI-DEFER-CYCLE-EVIDENCE-01', markdown)
+        self.assertIn('Original native/wrapper exits: 65/65', markdown)
+        self.assertNotIn('核心检查通过', markdown)
+        self.assertEqual(output, 'verification_status=failed\ndeferred_count=1\n')
+
+    def test_unknown_mismatched_or_malformed_warning_never_becomes_an_allowed_issue(self):
+        for kind in ['id', 'method', 'state', 'reason', 'not-object', 'list', 'report-status']:
+            with self.subTest(kind=kind):
+                reports = self.reports()
+                warning = copy.deepcopy(reports['banner-audit.json']['deferred'][0])
+                if kind == 'id': warning['id'] = 'allow-all-timeouts'
+                if kind == 'method': warning['method'] = POLICY.TIMEOUT_METHOD
+                if kind == 'state': warning['state'] = 'closed'
+                if kind == 'reason': warning['reason'] = ''
+                if kind == 'not-object': warning = 'not-a-warning'
+                if kind == 'report-status': reports['banner-audit.json']['status'] = 'unknown-source'
+                if kind == 'list': reports['banner-audit.json']['deferred'] = 'not-a-list'
+                else: reports['banner-audit.json']['deferred'].append(warning)
+                result, data, _, _ = self.publish(reports)
+                self.assertEqual((result.returncode, data['status']), (65, 'failed'))
+                self.assertEqual(data['deferredIssueCount'], 0 if kind in ['list', 'report-status'] else 1)
+                self.assertTrue(data['disclosureErrors'])
+                self.assertTrue(all(item['id'] in POLICY.IDS for item in data['deferred']))
+
+    def test_duplicate_reasons_count_unique_ids_without_changing_blocking_exit(self):
+        reports = self.reports()
+        reports['banner-audit.json']['deferred'].append(copy.deepcopy(reports['banner-audit.json']['deferred'][0]))
+        reports['native-results.json']['deferred'] = [POLICY.warning('CI-DEFER-HOME-TIMEOUT-01', 'recognized timeout', method=POLICY.TIMEOUT_METHOD)]
+        result, data, _, output = self.publish(reports, prior=23)
+        self.assertEqual((result.returncode, data['status'], data['deferredIssueCount']), (23, 'failed', 2))
+        self.assertIn('deferred_count=2', output)
+
+    def test_missing_or_damaged_report_keeps_other_valid_disclosure_and_failure(self):
+        for kind in ['missing', 'malformed', 'non-object']:
+            with self.subTest(kind=kind):
+                reports = self.reports()
+                if kind == 'missing': del reports['native-results.json']
+                if kind == 'malformed': reports['native-results.json'] = '{broken'
+                if kind == 'non-object': reports['native-results.json'] = []
+                result, data, _, _ = self.publish(reports, prior=42)
+                self.assertEqual((result.returncode, data['status'], data['deferredIssueCount']), (42, 'failed', 1))
+                self.assertEqual((data['nativeExitCode'], data['wrapperExitCode']), (65, 65))
+                self.assertTrue(data['disclosureErrors'])
+
+    def test_original_command_wrapper_and_prior_codes_are_not_collapsed(self):
+        reports = self.reports()
+        reports['banner-trace.status.log'] = {'commandExitCode': 0, 'exitCode': 65}
+        reports['native-results.json'].update(nativeExitCode=65, wrapperExitCode=65)
+        result, data, markdown, _ = self.publish(reports, prior=42)
+        self.assertEqual(result.returncode, 42)
+        self.assertEqual((data['nativeExitCode'], data['wrapperExitCode'], data['priorExitCode']), (0, 65, 42))
+        self.assertIn('records disagree', ' '.join(data['disclosureErrors']))
+        self.assertIn('Original native/wrapper exits: 0/65', markdown)
+
+    def test_unavailable_original_codes_are_explicit_not_inferred_from_prior(self):
+        reports = self.reports(); del reports['banner-trace.status.log']
+        result, data, markdown, _ = self.publish(reports, prior=42)
+        self.assertEqual(result.returncode, 42)
+        self.assertEqual((data['nativeExitCode'], data['wrapperExitCode']), (None, None))
+        self.assertIn('Original native/wrapper exits: unavailable/unavailable', markdown)
+        self.assertIn('Prior gate/entry exit: 42', markdown)
+
+    def test_failed_result_with_disclosures_still_blocks_required_checks(self):
+        result, data, _, output = self.publish(self.reports())
+        checks = load('disclosure_required', ROOT/'Scripts/check-ci-results.py')
+        for job_result in ['failure', 'success']:
+            with self.subTest(job_result=job_result), self.assertRaises(ValueError):
+                checks.validate({'classify': {'result': 'success', 'outputs': {'run_verification': 'true'}},
+                                 'verify': {'result': job_result, 'outputs': dict(line.split('=',1) for line in output.splitlines())}})
+        self.assertEqual(result.returncode, 65)
+        self.assertEqual(data['status'], 'failed')
+
+    def test_business_or_crash_failure_never_turns_green_with_a_known_warning(self):
+        for error in ['XCTAssertEqual failed: 1 != 2', 'App crashed: signal 11']:
+            with self.subTest(error=error):
+                reports = self.reports(); reports['native-results.json']['error'] = error
+                result, data, markdown, _ = self.publish(reports, prior=0)
+                self.assertEqual((result.returncode, data['status'], data['deferredIssueCount']), (65, 'failed', 1))
+                self.assertNotIn('核心检查通过', markdown)
+
+    def test_summary_error_preserves_original_zero_prior_while_returning_failure(self):
+        reports = self.reports(); del reports['native-results.json']
+        reports['banner-trace.status.log'] = {'commandExitCode': 0, 'exitCode': 0}
+        result, data, markdown, output = self.publish(reports, prior=0)
+        self.assertEqual((result.returncode, data['status']), (65, 'failed'))
+        self.assertEqual((data['priorExitCode'], data['nativeExitCode'], data['wrapperExitCode']), (0, 0, 0))
+        self.assertIn('Prior gate/entry exit: 0', markdown)
+        self.assertEqual(output, 'verification_status=failed\ndeferred_count=1\n')
+        self.assertTrue(data['disclosureErrors'])
+
+    def test_existing_passing_verdicts_and_warning_labels_remain(self):
+        for deferred in [False, True]:
+            with self.subTest(deferred=deferred):
+                reports = self.reports()
+                reports['native-results.json'] = {'status': 'passed', 'nativeExitCode': 0, 'wrapperExitCode': 0, 'deferred': []}
+                reports['banner-trace.status.log'] = {'commandExitCode': 0, 'exitCode': 0}
+                reports['banner-audit.json'].update(status='core-passed-with-deferred' if deferred else 'not-required', methods={})
+                if not deferred: reports['banner-audit.json']['deferred'] = []
+                result, data, markdown, _ = self.publish(reports, prior=0)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(data['status'], 'core-passed-with-deferred' if deferred else 'core-passed')
+                self.assertEqual('核心检查通过，但存在延期问题' in markdown, deferred)
 
 
 if __name__=='__main__': unittest.main()

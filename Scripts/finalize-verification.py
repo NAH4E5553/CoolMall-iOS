@@ -12,11 +12,62 @@ POLICY = importlib.util.module_from_spec(spec); spec.loader.exec_module(POLICY)
 STATUSES = {'core-passed', 'core-passed-with-deferred', 'failed'}
 
 
-def verdict(native, audit, prior_exit):
-    POLICY.load(active=False)
+def failed_verdict(native, audit, prior_exit, execution=None, errors=()):
+    # Disclosure is independent of acceptance. A known warning must survive an
+    # unrelated blocking failure, but never authorize a successful verdict.
+    warnings, problems = [], list(errors)
+    try:
+        POLICY.load(active=False)
+        for source, report, allowed in [('native', native, 'CI-DEFER-HOME-TIMEOUT-01'),
+                                         ('lifecycle', audit, 'CI-DEFER-CYCLE-EVIDENCE-01')]:
+            if report.get('status') not in {'passed', 'core-passed-with-deferred', 'failed', 'recorded-prefix', 'not-required'}:
+                problems.append(source + ': unknown report status')
+                continue
+            items = report.get('deferred', [])
+            if not isinstance(items, list):
+                problems.append(source + ': invalid deferred list')
+                continue
+            for warning in items:
+                if (not isinstance(warning, dict) or warning.get('id') != allowed
+                        or warning.get('state') != 'deferred-unresolved'
+                        or warning.get('method') != POLICY.IDS[allowed][0]
+                        or not isinstance(warning.get('reason'), str) or not warning['reason'].strip()):
+                    problems.append(source + ': unknown/invalid deferred result')
+                    continue
+                warnings.append(warning)
+    except (ValueError, OSError, KeyError, TypeError) as error:
+        warnings = []
+        problems.append(str(error))
+    data = dict(status='failed', deferred=warnings,
+                deferredIssueCount=len({warning['id'] for warning in warnings}),
+                priorExitCode=prior_exit, nativeResult=native.get('status', 'unavailable'),
+                lifecycleResult=audit.get('status', 'unavailable'),
+                reason='An earlier gate/recording/audit failed')
+    # The execution sidecar is the original command/wrapper record. A failed
+    # native classifier may intentionally omit those fields; never infer them
+    # from the prior gate code or replace distinct command and wrapper exits.
+    for field, raw_field in [('nativeExitCode', 'commandExitCode'), ('wrapperExitCode', 'exitCode')]:
+        original = (execution or {}).get(raw_field)
+        classified = native.get(field)
+        if type(original) is int:
+            data[field] = original
+            data[field + 'Source'] = 'banner-trace.status.log.' + raw_field
+            if type(classified) is int and classified != original:
+                problems.append(field + ': execution/native records disagree')
+        elif type(classified) is int:
+            data[field] = classified
+            data[field + 'Source'] = 'native-results.json.' + field
+        else:
+            data[field] = None
+    if problems:
+        data['disclosureErrors'] = problems
+    return data
+
+
+def verdict(native, audit, prior_exit, execution=None, errors=()):
     if prior_exit != 0:
-        return dict(status='failed', deferred=[], priorExitCode=prior_exit,
-                    reason='An earlier gate/recording/audit failed')
+        return failed_verdict(native, audit, prior_exit, execution, errors)
+    POLICY.load(active=False)
     if native.get('status') not in {'passed', 'core-passed-with-deferred'}:
         raise ValueError('VERDICT: native result missing/failed')
     if audit.get('status') not in {'passed', 'recorded-prefix', 'not-required', 'core-passed-with-deferred'}:
@@ -48,11 +99,18 @@ def markdown(data):
              'core-passed-with-deferred': '核心检查通过，但存在延期问题 / Core checks passed with deferred issues',
              'failed': 'Blocking verification failure'}[data['status']]
     lines = ['### ' + label, '', 'This is not a claim that all acceptance issues are closed.']
+    if data['status'] == 'failed' and data.get('deferred'):
+        lines += ['', '已识别的延期项（阻塞失败保持不变） / Reported deferred issues (failure unchanged):']
     for warning in data.get('deferred', []):
         lines.append('- ' + warning['id'] + ': ' + warning['reason'])
     if data.get('reason'): lines.append('- ' + data['reason'])
-    lines += ['', 'Original native/wrapper exits: ' + str(data.get('nativeExitCode', 'unavailable'))
-              + '/' + str(data.get('wrapperExitCode', 'unavailable'))]
+    for error in data.get('disclosureErrors', []):
+        lines.append('- Disclosure error: ' + error)
+    exits = [str(data[key]) if data.get(key) is not None else 'unavailable'
+             for key in ['nativeExitCode', 'wrapperExitCode']]
+    lines += ['', 'Original native/wrapper exits: ' + '/'.join(exits)]
+    if 'priorExitCode' in data:
+        lines.append('Prior gate/entry exit: ' + str(data['priorExitCode']))
     return '\n'.join(lines) + '\n'
 
 
@@ -62,12 +120,27 @@ def main():
     p.add_argument('--prior-exit', type=int, required=True)
     args = p.parse_args()
     code = args.prior_exit
+    reports, errors = {}, []
+    for name in ['native-results.json', 'banner-audit.json', 'banner-trace.status.log']:
+        path = args.directory/name
+        reports[name] = {}
+        if name == 'banner-trace.status.log' and not path.exists():
+            continue
+        try:
+            value = json.loads(path.read_text())
+            if not isinstance(value, dict):
+                raise ValueError('expected a JSON object')
+            reports[name] = value
+        except (ValueError, OSError) as error:
+            errors.append(name + ': ' + str(error))
+    native, audit, execution = (reports[name] for name in
+                               ['native-results.json', 'banner-audit.json', 'banner-trace.status.log'])
     try:
-        native = json.loads((args.directory/'native-results.json').read_text()) if code == 0 else {}
-        audit = json.loads((args.directory/'banner-audit.json').read_text()) if code == 0 else {}
-        data = verdict(native, audit, code)
+        if code == 0 and errors:
+            raise ValueError('; '.join(errors))
+        data = verdict(native, audit, code, execution, errors)
     except (ValueError, OSError, KeyError, TypeError) as error:
-        data = dict(status='failed', deferred=[], reason=str(error), priorExitCode=code)
+        data = failed_verdict(native, audit, code, execution, [*errors, str(error)])
         code = code or 65
     (args.directory/'verification-verdict.json').write_text(json.dumps(data, indent=2) + '\n')
     (args.directory/'verification-verdict.md').write_text(markdown(data))

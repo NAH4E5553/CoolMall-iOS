@@ -12,10 +12,12 @@ struct AppDependencies {
     let products = FixtureProductService()
     let cart = FakeCartStore(scope: CartScope(environment: "fixture", accountID: nil))
     let home: any HomeLoading
+    let category: any CategoryLoading
     let imagePipeline: MallImagePipeline?
 
     #if DEBUG
         let homeTesting = HomeUITestSupport()
+        let categoryTesting: CategoryUITestSupport
         private(set) var imageTesting: ImageUITestSupport?
     #endif
 
@@ -45,6 +47,25 @@ struct AppDependencies {
         #endif
     }
 
+    /// Category fixtures stay offline-deterministic: only an explicit home
+    /// image fixture supplies a controlled pipeline; a category fixture alone
+    /// therefore renders the documented image placeholders. Normal Debug and
+    /// Release use the same production image pipeline as home.
+    var categoryImagePipeline: MallImagePipeline? {
+        #if DEBUG
+            if categoryTesting.mode != nil { return imageTesting?.pipeline }
+        #endif
+        return imagePipeline
+    }
+
+    var showsCategoryReadVerification: Bool {
+        #if DEBUG
+            categoryTesting.mode != nil
+        #else
+            false
+        #endif
+    }
+
     private static let homeBaseURL: URL = {
         // Fixed production base (Android convention plugin, A-PAGE-01).
         guard let url = URL(string: "https://mall.dusksnow.top/app/") else {
@@ -69,6 +90,8 @@ struct AppDependencies {
 
     init() {
         #if DEBUG
+            let categorySupport = CategoryUITestSupport()
+            categoryTesting = categorySupport
             let controlled = ImageUITestSupport(mode: homeTesting.fixtureMode)
             imageTesting = controlled
             imagePipeline = controlled != nil ? controlled?.pipeline : Self.makeProductionImages()
@@ -82,8 +105,16 @@ struct AppDependencies {
             } else {
                 home = HTTPHomeService(environment: environment)
             }
+            if categorySupport.configError {
+                category = ConfigErrorCategoryService()
+            } else if let testService = categorySupport.service {
+                category = testService
+            } else {
+                category = HTTPCategoryService(environment: environment)
+            }
         #else
             home = HTTPHomeService(environment: environment)
+            category = HTTPCategoryService(environment: environment)
         #endif
     }
 }

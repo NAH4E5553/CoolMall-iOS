@@ -38,4 +38,10 @@ final class URLSessionTransport: HTTPTransport, Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         return try await session.data(for: request)
     }
+
+    /// Request-level entry for the category POST (CategoryHTTPTransport). Same
+    /// ephemeral session/configuration; the home GET method above is unchanged.
+    func send(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        try await session.data(for: request)
+    }
 }

@@ -1017,9 +1017,16 @@ UI观察预算保留原数值并统一绝对截止点：Tab点击/activate/短�
 正式入口在测试执行后（包括原测试失败）运行最小轮播生命周期离线审计；只审实际选中并执行的四方法，无该范围明确not-required，部分失败仅recorded-prefix/未到达。审计缺失/失败拒绝成功，保留先前非零测试退出码。共享TestPlan真实发现及exact-set核对、现有PR累计范围选测/完整回退与required-checks不变，不重构项目CI分层。性能/线程诊断单独记录，不以新合同通过倒推旧away或晚唤醒根因闭环。
 
 
-2026-10-21 approved cumulative CI selection (supersedes older no-selection/main-docskip wording): only PRs may select behavior tests, using the current target-base/PR-head merge-base → head cumulative diff and an exact-head clean checkout. `Scripts/select-test-scope.py` owns the explicit path → whole test class/target consumer map; HomeLoad/NavigationSmoke changes include their entire classes and private helpers; known home carousel/layout/VM wiring takes the union of CatalogFeatureTests and its HomeLoad/NavigationSmoke consumers. No method-level Swift parser is claimed. Declaration/API/test-discovery edits, new/deleted/renamed or unknown paths, resources with unknown consumers, shared Core/Data/App/configuration, unavailable history and unbounded cross-module effects use the full plan. A bounded branch-filtered Actions query requires the latest same-PR/workflow ancestor verification and required-checks to succeed before narrowing; newer failure/cancellation/in-progress, rerun attempts, missing/ambiguous or incomplete history use full. A latest valid success closes older failures; no manual failure-clear flag exists. PR docs/placeholders retain DEC-014 exclusions; main push, schedule and manual always run full even for docs. All policy/format/negative/Debug+Release gates, business assertions, 60/120-second allowances and 120-minute job limit remain.
+2026-10-23 DEC-017 / 用户本轮明确授权 CI 修正与分层，替换 DEC-015 的历史成功前提及本节旧“每个实现 PR 全套 UI”要求。范围由当前累计 diff 影响决定，历史失败、延期、取消、重跑次数和历史查询不可用本身不再触发全套，也不查询远端历史。未知路径、共享影响、声明/API/发现集合变化、无法界定的新删改和资源影响仍保守完整覆盖。纯文档/可确认占位沿 DEC-014 分类；当前失败不作为通用豁免。
 
-Every verification builds/enumerates the complete real TestPlan with Xcode `test -enumerate-tests` flat JSON, then executes the selected stable identifiers using the same DerivedData/Debug/TestPlan with `test-without-building`. Enumeration errors, disabled/zero/duplicate/unknown targets fail closed. Selection records source/tree/worktree identity, merge-base, mapping hash, selected/omitted reasons and exact inventory hashes; source identity is rechecked around execution. `check-test-results.py --scope` compares native xcresult Test Case nodeIdentifier methods to the exact expected set, rejecting missing/unexpected/duplicate/skipped/failed methods; parameterized Arguments are checked separately. Full execution has the same exact-set validation. Discovery compilation and execution/diagnostics have separate timing stages. This is local implementation pending independent review and remote operation; it is not a claim that CI or all App tests passed. Current PR13's cumulative production/configuration changes conservatively require full; local tooling validation remains direct governance/stub cases under 7.2.
+- `MALL_VERIFICATION_TIER=required`：PR 必需层。保留全部 policy/format/boundary/治理正负例、Debug 与 Release 构建、真实完整发现、全部 Package 单元/集成测试（含 HomeBannerProductionTimingTests 六条真实宿主计时路径）、关键 UI：四 Tab 冷启动、路由隐藏/返回、首页加载/错误重试、重按刷新、push 返回轮播恢复、三条绝对预算 helper 反例。有 CategoryLoadTests 时整类进入基线，分类源码和测试由 DeepSeek 维护。
+- 改动直接影响的 UI 追加到必需层：轮播内部计时/组件实现变化追加 cycle、away、offscreen、push、快速往返；HomeLoadTests 私有 helper/类体变化保守整类，NavigationSmoke 变化整类，CategoryLoadTests 既有测试体变化整类；既有首页 VM/布局/入口沿实际消费者整类 union。声明/新删改/未知/共享影响无法界定时完整执行。正式入口仍由实际编译枚举生成确切 stable method ID，使用相同 Debug/TestPlan/DerivedData 执行；缺失/零/重复/disabled/skip/崩溃/业务失败/参数子记录异常和源码漂移拒绝成功。
+- `MALL_VERIFICATION_TIER=full`：完整回归，执行全部实际发现方法，包含长轮播回环、Tab/后台、离屏、快速往返、完整生命周期、重展示/大字号/滚动/长 pending/busy 链。main 推送、定时、手动必为 full；阶段交付显式 full。本地默认 full，可对冻结的当前影响运行 required。不存在全局 continue-on-error 或自动重跑。
+- 取舍：未受当前改动影响的长 UI 检查延至完整回归，失去对同一 PR 的部分提前拦截。PR 关键业务检查仍阻塞；完整回归发现明确业务回归继续阻止发布并处理受影响改动。五个历史原生失败全部保留为阻塞失败，cycle 原生 60 秒超时不在证据延期范围；旧返回静止、晚唤醒及 cycle 证据风险均未闭环。新范围通过不能改写旧失败或声称根因解决。DEC-016 白名单、到期、9/14 和 60/120 秒及 job120 分钟均不变。
+
+原生方法最终结果必须在整体失败时仍导出到 native-results.json.methodResults；分类器失败不能清空这些结果。生命周期完整/前缀状态以原生逐方法结果为准，defer 中 outcome 仅诊断，不是成功证明。begin/end（同一 system uptime）限定审计窗口；end 是最终唯一操作 marker。窗口外源事件逐项保留为诊断，不因正常结束后自动推进报错，也不能补齐窗口内缺失的初始记录、代次/arm/推进或可见检查。无 end 的失败方法按全部可取得前缀审计，不伪造短窗口。窗口内隐藏推进、错误代次、缺必要记录和完整来源中的业务违规继续阻塞；只沿原 cycle 两项精确证据延期。不引入生产日志封存平台，不改首页生产逻辑。
+
+每次仍完整 build/enumerate TestPlan，之后仅执行本次 expected stable IDs。scope 记录 tier、source/tree/worktree、merge-base、mapping、选择/排除理由和 hashes；结果汇总显示实际层级、完整/selected 模式、expected/omitted 数。required-checks 作业名和分支保护不变；只读权限、不依赖历史 Actions token、不触发额外远端运行。真实枚举 → 本次精确 Runner 准备 → 正式执行顺序保持，不清理 App/data 或其他设备。
 
 2026-10-21 earlier approved CI diagnostics/timing policy (selection proposal status below is historical; the later approval above controls): `Scripts/verify-local.sh` defaults to `MALL_TEST_DIAGNOSTICS=never` both locally and in ordinary CI; only `never` and `on-failure` are accepted, before build/device commands. Manual `workflow_dispatch.collect_diagnostics=true` selects `on-failure`; no automatic rerun. Raw logs, xcresult/attachments, original failure codes, full TestPlan, 60/120-second test allowances and 120-minute CI limit remain. Stage durations use system-wide CLOCK_MONOTONIC; UTC timestamps are separate. Atomic per-stage records retain failed/cancelled/not-run states; an unfinished hard-killed stage is incomplete, never passed. The test stage includes build, execution and optional diagnostics. Recording failures preserve a prior gate failure; recording failure after successful gates makes the entry fail and reports gate/entry codes separately. The always summary and upload retain available records. This authorizes only diagnostics and timing; business-diff test selection is still a proposal, separate from existing DEC-014 classification. CI-DIAG-01 remains paused.
 
@@ -1090,7 +1097,7 @@ xcodebuild test \
   CODE_SIGNING_ALLOWED=NO
 ```
 
-完整本地与 CI 验收使用 `MALL_SIMULATOR_ID=<实际UDID> Scripts/verify-local.sh`。该入口在计时 UI 测试前启动选定模拟器、安装并预启动 Debug App，然后以 `-parallel-testing-enabled NO` 串行执行测试进程，避免冷启动和模拟器克隆竞争影响 UI 的原定时限。Swift Testing 用例内部的 Task 并发竞争仍照常验证；共享 Test Plan 的 60 秒默认/120 秒最大时限、全部 Target 和断言保持不变。上面的独立 xcodebuild 命令用于排查，不能替代完整入口的环境准备与结果计数检查。
+本地完整验收使用 `MALL_SIMULATOR_ID=<实际UDID> MALL_VERIFICATION_TIER=full Scripts/verify-local.sh`；当前必需层使用同入口 `MALL_VERIFICATION_TIER=required`（本地需记录 MALL_DIFF_BASE，默认 HEAD，包含未提交/未跟踪的实际源码影响）。PR 由工作流选择 required，main/定时/手动 full。该入口在计时 UI 测试前启动选定模拟器、安装并预启动 Debug App，然后以 `-parallel-testing-enabled NO` 串行执行测试进程，避免冷启动和模拟器克隆竞争影响 UI 的原定时限。Swift Testing 用例内部的 Task 并发竞争仍照常验证；共享 Test Plan 的 60 秒默认/120 秒最大时限、全部 Target 和断言保持不变。上面的独立 xcodebuild 命令用于排查，不能替代完整入口的环境准备与结果计数检查。
 
 2026-10-22 UI运行器准备：真实枚举和选测完成后，仅在选中`CoolMalliOSUITests`时，根据本次Debug产物校验精确运行器身份，卸载枚举留下的`com.coolmall.CoolMallIOSUITests.xctrunner`，再由原执行命令重新安装。正式App及其数据不清理；运行器缺失/身份不符/卸载失败仍阻塞，保留独立阶段与日志。无自动重试、固定等待、测试预算或延期范围变更；本地及远端验证状态单列，不能据此宣称历史Busy根因已确认。
 
@@ -1114,7 +1121,7 @@ Apple 的 Xcode 27 支持表列出 iOS 17 及以上模拟器；但 Xcode 27 发�
 
 远程为 GitHub 仓库 [NAH4E5553/CoolMall-iOS](https://github.com/NAH4E5553/CoolMall-iOS)，使用 GitHub Actions；已核实 Actions 启用及本机 Git 推送认证。工作流为 `.github/workflows/ios.yml`，执行器 `xcode-27`，通过 `DEVELOPER_DIR=/Applications/Xcode_27.0.app/Contents/Developer` 选择固定工具链；实际运行仍须通过原有完整版本校验，不用官方清单代替运行证据。主分支先初始化为空提交，工程经 Bootstrap PR #1 合并进入 main；实际远程运行和保护状态见 8.3。[官方执行器清单](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)
 
-F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 的同一完整验证，不裁剪纯文档路径，不缓存 DerivedData。远程明确选择已安装的 iOS 27.0 runtime；本地 iOS 26.2 证据另保留。`Scripts/select-simulator.py` 对准确 OS 和可用设备失败关闭；`Scripts/verify-local.sh` 执行 policy、format、boundaries、真实编译负向、Debug/Release 和包含 UI 的完整 Test Plan。只读工作流权限、不持有发布签名，checkout/upload-artifact 固定 commit SHA；成功或失败均上传日志和 xcresult（14 天），不上传 DerivedData。`required-checks` 使用 `always()` 汇总，只有所有登记上游成功才通过，缺失、失败、跳过、取消都拒绝。Bootstrap PR #1 合并后，工作流已位于默认 main 分支，main 推送已实际触发验证；手动及周期入口配置已进入默认分支，尚无已执行手动/周期验收记录，不能把配置存在写成已执行验收。
+F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 验证；当前按 DEC-014/017：PR 分类后 required，main/定时/手动 full，不缓存 DerivedData。远程明确选择已安装的 iOS 27.0 runtime；本地 iOS 26.2 证据另保留。`Scripts/select-simulator.py` 对准确 OS 和可用设备失败关闭；`Scripts/verify-local.sh` 执行 policy、format、boundaries、真实编译负向、Debug/Release 和包含 UI 的完整 Test Plan。只读工作流权限、不持有发布签名，checkout/upload-artifact 固定 commit SHA；成功或失败均上传日志和 xcresult（14 天），不上传 DerivedData。`required-checks` 使用 `always()` 汇总，只有所有登记上游成功才通过，缺失、失败、跳过、取消都拒绝。Bootstrap PR #1 合并后，工作流已位于默认 main 分支，main 推送已实际触发验证；手动及周期入口配置已进入默认分支，尚无已执行手动/周期验收记录，不能把配置存在写成已执行验收。
 
 每周入口目前覆盖当前系统的干净构建、全部测试及边界负向；iOS 17 按用户安排留待真机补验，因此 **7.2 的完整最低/当前系统 clean-compatibility 尚未完成**。Bootstrap 绿色仅说明现已执行的 F0 检查通过，不能据此宣称最低系统兼容、发布签名或 F0 整体验收完成。
 
@@ -1168,6 +1175,7 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 
 | 决策 | 日期 | 结论与理由 | 生效阶段 |
 | --- | --- | --- | --- |
+| DEC-017 | 2026-10-23 | 用户授权 required/full 两层；历史红灯/延期不扩大当前选测；保留关键 PR 行为、全部单测与生产计时路径、未知/共享保守覆盖；明确完整层延后风险。原生逐方法最终结果独立保存，生命周期审计限 begin/end，窗口外仅诊断；不改业务/预算/延期范围。 | 本地实施及必要验证；独立复核/集成状态见本轮 Evidence，未推送不称远端生效 |
 | DEC-016 | 2026-10-21 | 用户明确批准两项精确CI延期：指定整条60秒超时、cycle证据连续性与尾部未证明风险非阻塞；核心编译/单测/业务不等/崩溃及完整证据生命周期违规仍阻塞。保留执行/报告/工件/原预算与断言，无通用continue-on-error，汇总显式核心通过但存在延期，状态未闭环。 | 用户本次决定起适用；实现/验收进度单列，至2026-11-04或发布前更早复核；详见7.2/7.5，未推送不称远端配置生效 |
 | DEC-014 | 2026-10-19 | 用户明确未实现功能不纳入CI行为测试，并补充“同时让纯占位/文档改动跳过流水线”。按7.2移除占位操作/提示验收；纯文档/可确认占位diff经classify后跳过重验证，required-checks明确区分不需运行和实际成功，拒绝其他失败/取消/未知/缺失。部分功能中已有展示、图片、切换、导航与状态合同仍验证，真实实现随变更补测；旧失败保留。 | 用户本次指令起；本地配置与正反例已落地，尚未推送/远端运行验证 |
 | DEC-015 | 2026-10-21 | User approved cumulative PR scope selection with explicit consumer unions and actual compiled discovery/exact result validation; main/schedule/manual full, PR DEC-014 exclusions only. Unknown or unresolved failures fall back full; diagnostics/timing remain independent. | Local tooling implementation; independent and remote validation tracked separately, no App behavior or timeout change |
@@ -1193,6 +1201,8 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 每项基础能力的完成定义：有真实使用场景、最小清晰 API、正确归属、失败/取消合同、自动化验证和必要的设备验证；不存在第二套页面私有实现绕过它；文档状态更新为实际结果。
 
 ### 8.3 当前实施状态
+
+2026-10-23 CI-LAYERS-01：用户授权在 codex/ci-deferred-home-checks@9e47ba4 本地修正并分层；CI 工作树初始干净，分类由 DeepSeek 独立维护。实现/离线治理/保存工件、最小 Runner 链、最终 required 集成与独立复核的实际结果见 Evidence/iOS/2026-10-23-CI-LAYERS-01。实际通过/失败/未验证以本轮冻结身份和 Evidence 结果为准；无 push/远端运行/分支保护/合并，五条旧原生失败、cycle 风险及返回静止/晚唤醒不改写。
 
 | 阶段 | 交付结果 | 当前状态 |
 | --- | --- | --- |

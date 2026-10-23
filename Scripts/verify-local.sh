@@ -57,6 +57,17 @@ if [ -z "${MALL_SIMULATOR_ID-}" ]; then
     echo 'Set MALL_SIMULATOR_ID to an available iOS Simulator UDID'
     exit 1
 fi
+# PRs use the required baseline plus current impact. Local default and
+# main/scheduled/manual runs use the complete regression. No history red gate.
+if [ -z "${MALL_VERIFICATION_TIER-}" ]; then
+    if [ "${GITHUB_EVENT_NAME-local}" = pull_request ]; then
+        MALL_VERIFICATION_TIER=required
+    else
+        MALL_VERIFICATION_TIER=full
+    fi
+fi
+export MALL_VERIFICATION_TIER
+echo "Verification tier: $MALL_VERIFICATION_TIER"
 MALL_TEST_DIAGNOSTICS="${MALL_TEST_DIAGNOSTICS-never}"
 case "$MALL_TEST_DIAGNOSTICS" in
     never|on-failure) ;;

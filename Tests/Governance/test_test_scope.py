@@ -27,6 +27,7 @@ class InventoryTests(unittest.TestCase):
         self.assertTrue(any(x.startswith(S.CATALOG + '/') for x in selected['expected']))
         self.assertTrue(any(x.startswith(S.HOME + '/') for x in selected['expected']))
         self.assertFalse(any(x.startswith(S.NAVIGATION + '/') for x in selected['expected']))
+        self.assertTrue(all(m in selected['expected'] for m in methods if not m.startswith('CoolMalliOSUITests/')))
         self.assertEqual(len(selected['expected']) + len(selected['omitted']), len(methods))
 
     def test_invalid_enumeration_never_becomes_full_success(self):
@@ -87,14 +88,14 @@ class SelectionTests(unittest.TestCase):
         self.write('CoolMalliOSUITests/HomeLoadTests.swift','changedBody\n'); self.commit()
         self.write('CoolMalliOSUITests/NavigationSmokeTests.swift','changedBody\n'); self.commit()
         result = self.plan()
-        self.assertEqual(result['targets'], sorted([S.HOME,S.NAVIGATION]))
+        self.assertEqual(result['targets'], sorted([S.HOME,S.NAVIGATION,*S.PR_SMOKE]))
         self.assertEqual(len(result['paths']), 2)
         self.write('Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeBannerCarouselView.swift','changedBody\n'); self.commit()
-        self.assertEqual(self.plan()['targets'], sorted([S.CATALOG,S.HOME,S.NAVIGATION]))
+        self.assertEqual(self.plan()['targets'], sorted([S.CATALOG,S.HOME,S.NAVIGATION,*S.PR_SMOKE,*set(S.LIFECYCLE)-set(S.PR_SMOKE)]))
 
-    def test_unknown_api_structural_and_missing_history_full(self):
+    def test_unknown_api_structural_full_but_history_is_irrelevant(self):
         self.write('CoolMalliOSUITests/HomeLoadTests.swift','changedBody\n'); self.commit()
-        self.assertEqual(self.plan(good=False)['mode'], 'full')
+        self.assertEqual(self.plan(good=False)['mode'], 'selected')
         self.write('CoolMalliOSUITests/HomeLoadTests.swift','func renamed() {}\n'); self.commit()
         self.assertEqual(self.plan()['mode'], 'full')
         self.write('Unknown.swift','changedBody\n'); self.commit()
@@ -103,12 +104,12 @@ class SelectionTests(unittest.TestCase):
     def test_banner_timing_map_unions_real_consumers(self):
         timing = 'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeBannerTiming.swift'
         hosted = 'Packages/MallKit/Tests/CatalogFeatureTests/Home/HomeBannerProductionTimingTests.swift'
-        self.assertEqual(S.PATH_TARGETS[timing], [S.CATALOG, S.HOME])
+        self.assertEqual(S.PATH_TARGETS[timing], [S.CATALOG, *S.LIFECYCLE])
         self.assertEqual(S.PATH_TARGETS[hosted], [S.CATALOG])
         self.write(hosted, 'changedBody\n'); self.commit()
-        self.assertEqual(self.plan()['targets'], [S.CATALOG])
+        self.assertEqual(self.plan()['targets'], sorted([S.CATALOG,*S.PR_SMOKE]))
         self.write(timing, 'changedBody\n'); self.commit()
-        self.assertEqual(self.plan()['targets'], sorted([S.CATALOG, S.HOME]))
+        self.assertEqual(self.plan()['targets'], sorted(set([S.CATALOG,*S.PR_SMOKE,*S.LIFECYCLE])))
 
     def test_new_mapped_timing_files_and_declarations_still_require_full(self):
         paths = [
@@ -138,33 +139,60 @@ class SelectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'clean exact head'):
             S.plan(self.root, dict(GITHUB_EVENT_NAME='pull_request',MALL_DIFF_HEAD=self.base))
 
-    def test_history_latest_success_closes_older_failure(self):
-        run = dict(id=2, workflow_id=10, head_branch='feature')
-        prior = dict(id=1, created_at='2026-01-01', status='completed',conclusion='success',head_sha=self.base,
-                     head_branch='feature',pull_requests=[{'number':13}])
-        data = {'total_count':2,'workflow_runs':[dict(prior,id=0,created_at='2025-01-01',conclusion='failure'),prior]}
-        jobs = {'total_count':2,'jobs':[{'name':name,'status':'completed','conclusion':'success'} for name in ['F0 verification','required-checks']]}
-        env = dict(GITHUB_RUN_ID='2', MALL_PR_NUMBER='13', MALL_DIFF_HEAD=self.base)
-        def fetch(path, env):
-            if '/jobs?' in path: return jobs
-            if '/workflows/' in path: return data
-            return run
-        self.assertTrue(S.prior_verification(self.root,env,fetch)[0])
-        for status, allowed in [('core-passed',True),('core-passed-with-deferred',False),
-                                ('unknown',False),('',False)]:
-            jobs['jobs'][0]['steps']=[{'name':'Verification verdict: '+status,'conclusion':'success'}]
-            self.assertEqual(S.prior_verification(self.root,env,fetch)[0],allowed)
-        jobs['jobs'][0]['steps']=[]
-        for state in ['failure','cancelled',None]:
-            prior['conclusion']=state
-            self.assertFalse(S.prior_verification(self.root,env,fetch)[0])
-        prior['conclusion']='success'; jobs['jobs'][0]['conclusion']='skipped'
-        self.assertFalse(S.prior_verification(self.root,env,fetch)[0])
-        run['run_attempt']=2
-        self.assertFalse(S.prior_verification(self.root,env,fetch)[0])
-        run['run_attempt']=1
-        data['total_count']=999
-        self.assertFalse(S.prior_verification(self.root,env,fetch)[0])
+    def test_prior_failure_deferred_or_missing_history_never_expands_scope(self):
+        self.write('CoolMalliOSUITests/HomeLoadTests.swift','changedBody\n'); self.commit()
+        def forbidden(*args):
+            self.fail('history must not be queried')
+        for prior in ['failure', 'deferred', 'missing']:
+            env = dict(GITHUB_EVENT_NAME='pull_request', MALL_DIFF_BASE=self.base,
+                       MALL_DIFF_HEAD=self.git('rev-parse','HEAD'), PRIOR_RUN=prior)
+            result = S.plan(self.root, env, forbidden)
+            self.assertEqual(result['mode'], 'selected')
+            self.assertNotIn('history', result)
+
+    def test_required_baseline_and_full_only_chains(self):
+        self.write('Scripts/check-test-results.py', '# tooling change\n'); self.commit()
+        scope = self.plan()
+        self.assertEqual(scope['mode'], 'selected')
+        required = S.resolve(scope, RAW, TARGETS)
+        self.assertTrue(set(S.PR_SMOKE) <= set(required['expected']))
+        self.assertIn(S.HOME + '/testBannerAutoplayArmsAfterPushedRoutePopsBack()', required['expected'])
+        self.assertNotIn(S.HOME + '/testApprovedHomeDisplayAtAccessibilitySize()', required['expected'])
+        self.assertNotIn(S.HOME + '/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()', required['expected'])
+        self.assertGreater(sum('HomeBannerProductionTimingTests/' in x for x in required['expected']), 0)
+        S.validate_manifest(required)
+        for event in ['push', 'schedule', 'workflow_dispatch']:
+            full = S.resolve(self.plan(event), RAW, TARGETS)
+            self.assertEqual(full['expected'], full['discovered'])
+
+    def test_category_test_body_change_keeps_whole_category_without_unrelated_home_full(self):
+        self.write('CoolMalliOSUITests/CategoryLoadTests.swift', 'changedAssertionBody\n'); self.commit()
+        scope = self.plan()
+        self.assertEqual(scope['mode'], 'selected')
+        self.assertIn(S.CATEGORY, scope['targets'])
+        raw = copy.deepcopy(RAW)
+        method = S.CATEGORY + '/testTabReturnRetainsSelectionAndDoesNotReRead()'
+        raw['values'][0]['enabledTests'].append({'identifier': method})
+        resolved = S.resolve(scope, raw, TARGETS)
+        self.assertIn(method, resolved['expected'])
+        self.assertNotIn(S.HOME + '/testApprovedHomeDisplayAtAccessibilitySize()', resolved['expected'])
+
+    def test_required_methods_missing_from_enumeration_block(self):
+        scope = self.plan()
+        raw = copy.deepcopy(RAW)
+        raw['values'][0]['enabledTests'] = [x for x in raw['values'][0]['enabledTests'] if x['identifier'] != S.PR_SMOKE[0]]
+        with self.assertRaisesRegex(ValueError, 'missing'):
+            S.resolve(scope, raw, TARGETS)
+
+    def test_local_dirty_required_captures_actual_source_and_unknown_falls_back(self):
+        env = dict(MALL_VERIFICATION_TIER='required')
+        self.write('Scripts/check-test-results.py', '# untracked tooling\n')
+        required = S.plan(self.root, env)
+        self.assertEqual(required['mode'], 'selected')
+        self.assertTrue(required['source']['dirty'])
+        self.write('UnknownProduction.swift', 'new product\n')
+        self.assertEqual(S.plan(self.root, env)['mode'], 'full')
+
 
 
 if __name__ == '__main__': unittest.main()

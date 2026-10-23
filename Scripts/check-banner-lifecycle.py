@@ -67,17 +67,26 @@ def records(text, prefix):
     return result
 
 
+def validate_record(event):
+    require(event.get('schemaVersion') == 1, 'unsupported schema')
+    require(event.get('origin') in {'app', 'carousel'}, 'unknown origin')
+    require(isinstance(event.get('runID'), str) and event['runID'], 'missing runID')
+    require(type(event.get('processID')) is int and event['processID'] > 0, 'invalid processID')
+    require(isinstance(event.get('instanceID'), str) and event['instanceID'], 'invalid instanceID')
+    require(type(event.get('eventSequence')) is int, 'invalid eventSequence')
+    require(number(event.get('monotonicTime')), 'invalid monotonicTime')
+    if event['origin'] == 'carousel':
+        validate_event_shape(event)
+    else:
+        require(event.get('event') in {'initial', 'routeInput', 'sceneInput'}, 'unknown app event')
+        require(all(type(event.get(k)) is bool for k in ['homeActive', 'sceneActive']), 'app activity missing')
+
+
 def validate_stream(events):
     require(events, 'missing source events')
     groups = {}
     for event in events:
-        require(event.get('schemaVersion') == 1, 'unsupported schema')
-        require(event.get('origin') in {'app', 'carousel'}, 'unknown origin')
-        require(isinstance(event.get('runID'), str) and event['runID'], 'missing runID')
-        require(type(event.get('processID')) is int and event['processID'] > 0, 'invalid processID')
-        require(isinstance(event.get('instanceID'), str) and event['instanceID'], 'invalid instanceID')
-        require(type(event.get('eventSequence')) is int, 'invalid eventSequence')
-        require(number(event.get('monotonicTime')), 'invalid monotonicTime')
+        validate_record(event)
         key = (event['origin'], event['instanceID'])
         groups.setdefault(key, []).append(event)
     require(len({e['processID'] for e in events}) == 1, 'process replaced during method')
@@ -284,8 +293,17 @@ def audit_method(events, marks, kind, complete, collector=None):
         require(event not in index, 'duplicate operation marker: ' + event)
         index[event] = mark
     require(dragging is None or not complete, 'marked drag never released')
-    require(all(e['monotonicTime'] >= marks[0]['monotonicTime'] for e in events), 'source event before method begin')
-    events = validate_stream(events)
+    start = marks[0]['monotonicTime']
+    ends = [m for m in marks if m['event'] == 'end']
+    require(len(ends) <= 1 and (not ends or marks[-1] is ends[0]), 'end must be unique final marker')
+    end_time = ends[0]['monotonicTime'] if ends else marks[-1]['monotonicTime']
+    # Without an end, audit every recorded event as a failed prefix; do not
+    # invent a shorter window that could hide an in-flight violation.
+    if not ends:
+        end_time = max([end_time, *[e['monotonicTime'] for e in events]])
+    for event in events: validate_record(event)
+    outside = [e for e in events if not start <= e['monotonicTime'] <= end_time]
+    events = validate_stream([e for e in events if start <= e['monotonicTime'] <= end_time])
     car = [e for e in events if e['origin'] == 'carousel']
     app = [e for e in events if e['origin'] == 'app']
     checks, not_reached = [], []
@@ -490,7 +508,6 @@ def audit_method(events, marks, kind, complete, collector=None):
             checks.append({'operation': 'drag-release', 'status': 'passed', 'startedAt': drag_start, 'releasedAt': drag_end})
     if complete:
         require(marks[-1]['event'] == 'end', 'method end missing')
-        require(all(e['monotonicTime'] <= marks[-1]['monotonicTime'] for e in events), 'source event after method end')
         require(any(e['event'] == 'advanceCommit' for e in car), 'method has no actual autoplay commit')
         if kind == 'cycle':
             require(sum(e['event'] == 'advanceCommit' for e in car) >= 4, 'cycle missing genuine advances/full wrap')
@@ -526,7 +543,9 @@ def audit_method(events, marks, kind, complete, collector=None):
                 selected = commit['selectedID']
             require(selected == baseline['selectedID'] == wrapped['selectedID'], 'cycle did not wrap to AX baseline')
     return {'status': 'passed' if complete else 'recorded-prefix', 'checks': checks,
-            'notReached': not_reached, 'sourceEventCount': len(events)}
+            'notReached': not_reached, 'sourceEventCount': len(events),
+            'observationWindow': {'begin': start, 'end': end_time, 'boundedByEnd': bool(ends)},
+            'outsideWindowEventCount': len(outside), 'outsideWindowEvents': outside}
 
 
 def audit(expected, trace_text, tests_text, collector, test_exit=0, defer_cycle=False, native_passed=None):
@@ -570,9 +589,13 @@ def audit(expected, trace_text, tests_text, collector, test_exit=0, defer_cycle=
         end = next((m for m in marks if m['event'] == 'end'), None)
         if end:
             require(end.get('outcome') in {'passed', 'failed'}, 'end outcome missing')
-        complete = bool(end and end['outcome'] == 'passed')
-        if native_passed is not None and method in native_passed and not complete:
-            result[method] = {'status': 'failed', 'error': 'Native passing method lacks passing audit end'}
+        # Native final result is authoritative. defer markers can say passed
+        # before XCTest records a thrown error/timeout. Parser-only controls
+        # may omit native_passed; the formal CLI always supplies the inventory.
+        complete = (method in native_passed if native_passed is not None
+                    else bool(end and end['outcome'] == 'passed'))
+        if native_passed is not None and method in native_passed and not end:
+            result[method] = {'status': 'failed', 'error': 'Native passing method lacks audit end'}
             continue
         require(complete or test_exit != 0, 'successful UI run lacks passing end')
         events = [e for e in source if e.get('runID') in runs]
@@ -620,10 +643,10 @@ def main():
         native_passed = None
         if args.native_results and args.native_results.exists():
             native = json.loads(args.native_results.read_text())
-            if native.get('status') in {'passed', 'core-passed-with-deferred'}:
-                require(set(native['methodResults']) == set(expected), 'native method inventory mismatch')
-                native_passed = {method_name(m) for m,v in native['methodResults'].items()
-                                 if m.startswith(PREFIX) and v == 'Passed'}
+            require(set(native.get('methodResults', {})) == set(expected), 'native method inventory mismatch')
+            native_passed = {method_name(m) for m,v in native['methodResults'].items()
+                             if m.startswith(PREFIX) and v == 'Passed'}
+        require(not selected or native_passed is not None, 'final native method results unavailable')
         # None selected is a truthful exclusion and needs no collector files.
         if not ({method_name(m) for m in expected if m.startswith(PREFIX)} & METHODS.keys()):
             result = audit(expected, '', '', {}, args.test_exit)

@@ -56,8 +56,7 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
       MALL_TEST_DIAGNOSTICS: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_diagnostics && 'on-failure' || 'never' }}
-      GITHUB_TOKEN: ${{ github.token }}
-      MALL_PR_NUMBER: ${{ github.event.pull_request.number }}
+      MALL_VERIFICATION_TIER: ${{ github.event_name == 'pull_request' && 'required' || 'full' }}
       MALL_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
       MALL_DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
       MALL_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -84,7 +83,7 @@ jobs:
           } 2>&1 | tee .build/verification/environment.log
           MALL_SIMULATOR_ID=$(python3 Scripts/select-simulator.py --runtime-version 27.0)
           echo "MALL_SIMULATOR_ID=$MALL_SIMULATOR_ID" >> "$GITHUB_ENV"
-      - name: Policy, format, boundaries, negative controls, builds, discovered test scope and exact results
+      - name: Validate selected tier, builds, governance and exact native results
         id: gates
         shell: bash
         run: Scripts/verify-local.sh

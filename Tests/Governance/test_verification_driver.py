@@ -119,7 +119,7 @@ class VerificationDriverTests(unittest.TestCase):
                         MALL_SIMULATOR_ID='fixture-only-no-device',
                         STUB_EVENTS=str(self.root / 'events.jsonl'),
                         STUB_READY=str(self.root / 'ready'))
-        for key in ['MALL_TEST_DIAGNOSTICS', 'STUB_FAIL', 'STUB_RC', 'STUB_CORRUPT', 'STUB_BLOCK', 'STUB_BAD_DISCOVERY', 'STUB_CREATE_BYTECODE', 'STUB_MUTATE_SOURCE', 'GITHUB_EVENT_NAME']:
+        for key in ['MALL_VERIFICATION_TIER', 'MALL_DIFF_BASE', 'MALL_DIFF_HEAD', 'MALL_TEST_DIAGNOSTICS', 'STUB_FAIL', 'STUB_RC', 'STUB_CORRUPT', 'STUB_BLOCK', 'STUB_BAD_DISCOVERY', 'STUB_CREATE_BYTECODE', 'STUB_MUTATE_SOURCE', 'GITHUB_EVENT_NAME']:
             self.env.pop(key, None)
 
     def stub(self, path):
@@ -177,20 +177,8 @@ class VerificationDriverTests(unittest.TestCase):
         self.assertEqual(self.events()[-1]['event'], 'check-test-results.py')
 
     def test_pr_selected_entry_uses_discovered_class_and_exact_head(self):
-        # Replace only the remote transport in this isolated copy, retaining the
-        # actual history decision, Git diff, resolver and shell entry.
+        # Exact clean PR diff; no network history query participates.
         selector = self.root / 'Scripts/select-test-scope.py'
-        text = selector.read_text().replace('def api(path, env):', 'def live_api(path, env):')
-        fake = """def api(path, env):
-    if '/jobs?' in path:
-        return {'total_count':2, 'jobs':[{'name':name,'status':'completed','conclusion':'success'} for name in ['F0 verification','required-checks']]}
-    if '/workflows/' in path:
-        return {'total_count':1,'workflow_runs':[{'id':1,'created_at':'2026-01-01','status':'completed','conclusion':'success','head_sha':env['MALL_DIFF_BASE'],'head_branch':'fixture','pull_requests':[{'number':13}]}]}
-    return {'id':2,'workflow_id':10,'head_branch':'fixture'}
-
-
-"""
-        selector.write_text(text.replace('def prior_verification(', fake + 'def prior_verification('))
         test = self.root / 'CoolMalliOSUITests/HomeLoadTests.swift'
         test.parent.mkdir(); test.write_text('oldBody\n')
         def git(*args):
@@ -212,7 +200,8 @@ class VerificationDriverTests(unittest.TestCase):
         self.assertEqual(scope['mode'], 'selected')
         self.assertTrue(scope['expected'])
         self.assertTrue(scope['omitted'])
-        self.assertTrue(all(method.startswith('CoolMalliOSUITests/HomeLoadTests/') for method in scope['expected']))
+        self.assertTrue(any(method.startswith('CatalogFeatureTests/') for method in scope['expected']))
+        self.assertTrue(any(method.startswith('CoolMalliOSUITests/HomeLoadTests/') for method in scope['expected']))
         args = next(e['args'] for e in self.events() if e['event'] == 'xcodebuild:test-without-building')
         response = self.root / args[args.index('-only-testing') + 1][1:]
         self.assertEqual(response.read_text().splitlines(), scope['expected'])

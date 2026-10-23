@@ -99,6 +99,10 @@ def markdown(data):
              'core-passed-with-deferred': '核心检查通过，但存在延期问题 / Core checks passed with deferred issues',
              'failed': 'Blocking verification failure'}[data['status']]
     lines = ['### ' + label, '', 'This is not a claim that all acceptance issues are closed.']
+    if 'verificationTier' in data:
+        lines += ['', 'Tier: ' + data['verificationTier'] + '; execution: ' + data.get('executionMode', 'unavailable'),
+                  'Scope: ' + data.get('scopeReason', 'unavailable') + '; expected/omitted methods: '
+                  + str(data.get('expectedMethodCount', 0)) + '/' + str(data.get('omittedMethodCount', 0))]
     if data['status'] == 'failed' and data.get('deferred'):
         lines += ['', '已识别的延期项（阻塞失败保持不变） / Reported deferred issues (failure unchanged):']
     for warning in data.get('deferred', []):
@@ -142,6 +146,15 @@ def main():
     except (ValueError, OSError, KeyError, TypeError) as error:
         data = failed_verdict(native, audit, code, execution, [*errors, str(error)])
         code = code or 65
+    try:
+        scope = json.loads((args.directory/'test-scope.json').read_text())
+        data['verificationTier'] = scope['tier']
+        data['executionMode'] = scope['mode']
+        data['scopeReason'] = scope['reason']
+        data['expectedMethodCount'] = len(scope.get('expected', []))
+        data['omittedMethodCount'] = len(scope.get('omitted', []))
+    except (ValueError, OSError, KeyError, TypeError):
+        data['verificationTier'] = 'unavailable'
     (args.directory/'verification-verdict.json').write_text(json.dumps(data, indent=2) + '\n')
     (args.directory/'verification-verdict.md').write_text(markdown(data))
     if os.environ.get('GITHUB_OUTPUT'):

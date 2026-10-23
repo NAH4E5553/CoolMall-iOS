@@ -165,17 +165,30 @@ def _native_result(summary, tree, scope, execution, details=None, issues=None, l
                                         method=DEFER.TIMEOUT_METHOD)])
 
 
-def native_result(summary, tree, scope, execution, details=None, issues=None, log=''):
-    report = _native_result(summary, tree, scope, execution, details, issues, log)
+def method_inventory(tree):
     methods = {}
     def visit(node, bundle=None):
-        if node.get('nodeType') in ('Unit test bundle', 'UI test bundle'): bundle = node.get('name')
+        if node.get('nodeType') in ('Unit test bundle', 'UI test bundle'):
+            bundle = node.get('name')
         if node.get('nodeType') == 'Test Case':
-            methods[bundle + '/' + node['nodeIdentifier']] = node['result']
+            POLICY.require(isinstance(bundle, str) and isinstance(node.get('nodeIdentifier'), str),
+                           'TEST-RESULT: invalid native method identity')
+            method = bundle + '/' + node['nodeIdentifier']
+            POLICY.require(method not in methods, 'TEST-RESULT: duplicate native method')
+            POLICY.require(node.get('result') in {'Passed', 'Failed', 'Skipped', 'Expected Failure'},
+                           'TEST-RESULT: unknown native method result')
+            methods[method] = node['result']
         for child in node.get('children', []): visit(child, bundle)
     for node in tree['testNodes']: visit(node)
-    report['methodResults'] = methods
+    POLICY.require(methods, 'TEST-RESULT: empty native method inventory')
+    return methods
+
+
+def native_result(summary, tree, scope, execution, details=None, issues=None, log=''):
+    report = _native_result(summary, tree, scope, execution, details, issues, log)
+    report['methodResults'] = method_inventory(tree)
     return report
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -186,6 +199,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     expected = set(POLICY.read_policy(ROOT / 'ENGINEERING.md')['tests']) | {'CoolMalliOSUITests'}
+    retained = {}
     try:
         DEFER.load(active=False)
         values = []
@@ -194,9 +208,11 @@ def main():
                                      '--path', str(args.xcresult), *flags],
                                     capture_output=True, text=True, check=True)
             data = json.loads(result.stdout)
-            args.xcresult.with_suffix('.' + command + '.json').write_text(result.stdout)
+            (args.output.parent / args.xcresult.with_suffix('.' + command + '.json').name).write_text(result.stdout)
             return data
         for command in ['summary', 'tests']: values.append(native(command))
+        retained['methodResults'] = method_inventory(values[1])
+        retained['nativeCounts'] = {key: values[0].get(key) for key in ['totalTestCount', 'passedTests', 'failedTests', 'skippedTests']}
         scope = json.loads(args.scope.read_text())
         spec = importlib.util.spec_from_file_location('scope', ROOT / 'Scripts/select-test-scope.py')
         selector = importlib.util.module_from_spec(spec); spec.loader.exec_module(selector)
@@ -208,18 +224,18 @@ def main():
             # Fetch every failed method detail, not only the allowed method.
             details_all = [native('test-details', '--test-id', v['testIdentifierString'])
                            for v in values[0].get('testFailures', [])]
-            args.xcresult.with_suffix('.failure-details.json').write_text(json.dumps(details_all, indent=2) + '\n')
+            (args.output.parent / args.xcresult.with_suffix('.failure-details.json').name).write_text(json.dumps(details_all, indent=2) + '\n')
             details = details_all[0] if len(details_all) == 1 else None
             result = subprocess.run(['xcrun', 'xcresulttool', 'get', 'object', '--legacy',
                                      '--format', 'json', '--path', str(args.xcresult)],
                                     capture_output=True, text=True, check=True)
             issues = json.loads(result.stdout)
-            args.xcresult.with_suffix('.issues.json').write_text(result.stdout)
+            (args.output.parent / args.xcresult.with_suffix('.issues.json').name).write_text(result.stdout)
         report = native_result(*values, scope, json.loads(args.execution_status.read_text()),
                                details, issues, args.tests_log.read_text())
         code = 0
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as error:
-        report, code = {'status': 'failed', 'error': str(error), 'deferred': []}, 1
+        report, code = dict(retained, status='failed', error=str(error), deferred=[]), 1
     args.output.write_text(json.dumps(report, indent=2) + '\n')
     print('TEST-RESULT: ' + report['status'])
     return code

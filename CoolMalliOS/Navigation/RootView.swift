@@ -2,12 +2,14 @@ import CartFeature
 import CatalogFeature
 import Foundation
 import MallDesignSystem
+import MallCore
 import SwiftUI
 
 @MainActor
 struct RootView: View {
     let dependencies: AppDependencies
     @State private var router = SceneRouter()
+    @State private var cartBadge = CartBadgeViewModel()
     #if DEBUG
         @Environment(\.scenePhase) private var bannerAuditScenePhase
     #endif
@@ -30,7 +32,10 @@ struct RootView: View {
     }
 
     var body: some View {
-        tabs
+        rootContent
+            .task(id: dependencies.shoppingCart.scope) {
+                if !usesCartFixture { await cartBadge.observe(dependencies.shoppingCart) }
+            }
             #if DEBUG
                 .onChange(of: bannerAuditScenePhase, initial: true) { _, phase in
                     router.recordBannerSceneInput(isActive: phase == .active)
@@ -44,6 +49,27 @@ struct RootView: View {
                     }
                 }
             #endif
+    }
+
+    @ViewBuilder private var rootContent: some View {
+        #if DEBUG
+            if let fixture = dependencies.productDetailTesting, fixture.holdsCartIncrease {
+                // A sibling reserves actual space outside TabView; an inset on
+                // TabView can overlap its native tab bar at accessibility sizes.
+                VStack(spacing: 0) {
+                    Button("完成测试核验") {
+                        Task { await fixture.releaseCartIncrease() }
+                    }
+                    .font(.caption).frame(minHeight: 44)
+                    .accessibilityIdentifier("cart.fixture.releaseIncrease")
+                    tabs
+                }
+            } else {
+                tabs
+            }
+        #else
+            tabs
+        #endif
     }
 
     private var tabs: some View {
@@ -74,12 +100,13 @@ struct RootView: View {
             .tabItem { Label("分类", systemImage: "square.grid.2x2") }
             .tag(SceneRouter.Tab.category)
             NavigationStack(path: $router.cartPath) {
-                CartEntryView(cart: dependencies.cart)
+                cartEntry(on: .cart, root: true)
                     .navigationDestination(for: SceneRouter.Route.self) { route in
                         destination(for: route, on: .cart)
                     }
             }
             .tabItem { Label("购物车", systemImage: "cart") }
+            .badge(cartBadge.count.flatMap { $0 > 0 ? String($0) : nil })
             .tag(SceneRouter.Tab.cart)
             NavigationStack(path: $router.mePath) {
                 PendingTabView(
@@ -325,7 +352,45 @@ struct RootView: View {
             productID: goodsID, loader: dependencies.productDetails,
             imagePipeline: dependencies.detailImagePipeline,
             isActive: router.selectedTab == tab && path.last == .productDetail(goodsID: goodsID),
-            onShowAllReviews: { router.append(.productReviews(goodsID: $0), on: tab) })
+            onShowAllReviews: { router.append(.productReviews(goodsID: $0), on: tab) },
+            shoppingCart: dependencies.shoppingCart, cartVerifier: dependencies.cartVerifier,
+            onOpenCart: { router.append(.cart, on: tab) })
+    }
+
+    private var usesCartFixture: Bool {
+        #if DEBUG
+            navTestControl.isEnabled
+                || ProcessInfo.processInfo.arguments.contains("--uitest-nav-fixture")
+        #else
+            false
+        #endif
+    }
+
+    @ViewBuilder
+    private func cartEntry(on tab: SceneRouter.Tab, root: Bool) -> some View {
+        #if DEBUG
+            if usesCartFixture {
+                CartEntryView(cart: dependencies.cart)
+            } else {
+                productionCart(on: tab, root: root)
+            }
+        #else
+            productionCart(on: tab, root: root)
+        #endif
+    }
+    private func productionCart(on tab: SceneRouter.Tab, root: Bool) -> some View {
+        let path: [SceneRouter.Route]
+        switch tab {
+        case .home: path = router.homePath
+        case .category: path = router.categoryPath
+        case .cart: path = router.cartPath
+        case .me: path = router.mePath
+        }
+        return CartEntryView(
+            store: dependencies.shoppingCart, verifier: dependencies.cartVerifier,
+            imagePipeline: dependencies.detailImagePipeline,
+            isActive: router.selectedTab == tab && (root ? path.isEmpty : path.last == .cart),
+            onOpenProduct: { router.append(.productDetail(goodsID: $0), on: tab) })
     }
 
     /// Pushed routes cover the tab bar (the PRD-016 pattern from NAV-01), so
@@ -338,7 +403,7 @@ struct RootView: View {
     private func destination(for route: SceneRouter.Route, on tab: SceneRouter.Tab) -> some View {
         switch route {
         case .cart:
-            CartEntryView(cart: dependencies.cart)
+            cartEntry(on: tab, root: false)
                 .toolbar(.hidden, for: .tabBar)
                 .toolbar(.visible, for: .navigationBar)
         case .productDetail(let goodsID):

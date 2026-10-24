@@ -224,6 +224,8 @@
 				<string>7D43A4BC7DAB8C8D6CC1F4A0</string>
 				<string>3842E4AEBC602B9DEC660129</string>
 				<string>A10000000000000000000012</string>
+				<string>2FBAD855FBE637B793EEAE29</string>
+				<string>B35C02AA56414D9CC3D71312</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>
@@ -475,6 +477,7 @@
 				<string>811A41F60C14E499FE3A2EBA</string>
 				<string>A10000000000000000000014</string>
 				<string>2B85BBB9E22258A61CDE76A8</string>
+				<string>E0F5FAAA5B5EAB55F8C8EAC0</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>
@@ -675,6 +678,9 @@
 				<string>1CD9B7CD3D689C1323F141A1</string>
 				<string>FBDC4F23F93125BBEEAE800C</string>
 				<string>F00000000000000000000001</string>
+				<string>718E6CB0D6A057C5E8C06645</string>
+				<string>A6A5E2382585B6548BC8FB81</string>
+				<string>9C576416B5C5701A2C292081</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -948,6 +954,60 @@
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>653A738F306AADEBBCDA0EA4</string>
+		</dict>
+		<key>718E6CB0D6A057C5E8C06645</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOS/Projections/CartBadgeViewModel.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>2FBAD855FBE637B793EEAE29</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>718E6CB0D6A057C5E8C06645</string>
+		</dict>
+		<key>A6A5E2382585B6548BC8FB81</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOS/Testing/CartUITestSupport.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>B35C02AA56414D9CC3D71312</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>A6A5E2382585B6548BC8FB81</string>
+		</dict>
+		<key>9C576416B5C5701A2C292081</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOSUITests/ShoppingCartFlowTests.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>E0F5FAAA5B5EAB55F8C8EAC0</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>9C576416B5C5701A2C292081</string>
 		</dict>
 	</dict>
 	<key>rootObject</key>

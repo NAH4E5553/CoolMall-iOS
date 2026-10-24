@@ -103,6 +103,27 @@ class ProjectBoundariesTests(unittest.TestCase):
     def test_direct_api(self):
         self.append('import Foundation\nlet probe = Foundation.URLSession.shared'); self.reject('MOD-05.*direct API URLSession')
 
+    def test_cartfeature_can_import_registered_mallimages(self):
+        self.append('import MallImages', 'CartFeature')
+        GATE.check(self.root, BINARY)
+
+    def test_cartfeature_cannot_import_malldata(self):
+        self.append('import MallData', 'CartFeature'); self.reject('MOD-01.*forbidden import MallData')
+
+    def test_swiftdata_is_scoped_to_persistent_cart_store(self):
+        p = self.root / 'Packages/MallKit/Sources/MallData/Cart/PersistentCartStore.swift'
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text('import SwiftData\nlet context: ModelContext? = nil\n')
+        GATE.check(self.root, BINARY)
+
+    def test_swiftdata_import_outside_persistent_store_rejected(self):
+        self.append('import SwiftData', 'MallData')
+        self.reject('MOD-01.*SwiftData import is scoped')
+
+    def test_swiftdata_api_outside_persistent_store_rejected(self):
+        self.append('import Foundation\nlet context: ModelContext? = nil', 'MallData')
+        self.reject('MOD-05.*SwiftData API is scoped')
+
     def test_unknown_system_import(self):
         self.append('import Security'); self.reject('MOD-01.*forbidden import Security')
 

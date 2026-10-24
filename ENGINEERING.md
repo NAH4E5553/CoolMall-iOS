@@ -1171,6 +1171,8 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 
 ### 8.3 当前实施状态
 
+2026-10-24 CI runner-prep isolation (from PR15 5dc08cb): add Scripts/prepare-ui-test-runner.py and insert a test-runner-prepare stage in Scripts/verify-local.sh between test-build-discovery and test-execute-diagnostics, so only the enumerated UI runner is uninstalled before execution; register the phase in verification-timing.py and cover order/identity/missing-runner/no-UI in Tests/Governance. No App source, test assertion, 60/120s allowance or known-timing policy change; cart wiring untouched. Governance test plus a real runner uninstall check are the targeted validation; a main-based CI-only draft PR is the delivery vehicle.
+
 | 阶段 | 交付结果 | 当前状态 |
 | --- | --- | --- |
 | 工程手册/AI 入口 | 本文保留唯一规则正文；模块矩阵、系统 import 列表与真实状态同步 | 已实施，沿用 DEC-001—003，无新增规则例外 |

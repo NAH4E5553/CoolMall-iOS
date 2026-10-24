@@ -34,6 +34,95 @@ class NativeDeferralTests(unittest.TestCase):
         return NATIVE.native_result(**{key:self.data[key] for key in
                                      ['summary','tree','scope','execution','details','issues','log']})
 
+    def rewrite_single(self, method):
+        short = method.split('/', 1)[1]
+        component = short.split('/')[-1]
+        issue_name = short.replace('/', '.', 1)
+        self.data['summary']['testFailures'][0]['testIdentifierString'] = short
+        self.data['summary']['testFailures'][0]['testName'] = component
+        case = self.data['tree']['testNodes'][0]['children'][0]
+        case['nodeIdentifier'] = short
+        case['name'] = component
+        self.data['details']['testIdentifier'] = short
+        self.data['issues']['issues']['testFailureSummaries']['_values'][0]['testCaseName']['_value'] = issue_name
+        self.data['issues']['actions']['_values'][0]['actionResult']['issues']['testFailureSummaries']['_values'][0]['testCaseName']['_value'] = issue_name
+        self.data['scope']['expected'] = [method]
+        self.data['log'] = "Test Case '-[CoolMalliOSUITests." + short.replace('/', ' ', 1) + "]' exceeded execution time allowance of 1 minute."
+
+    def build_multi(self):
+        methods = list(POLICY.TIMEOUT_METHODS[1:])
+        self.data['summary'].update(result='Failed', failedTests=len(methods), passedTests=0,
+                                   skippedTests=0, expectedFailures=0, totalTestCount=len(methods),
+                                   runtimeWarnings=[], testFailures=[])
+        bundle = self.data['tree']['testNodes'][0]
+        bundle['children'] = []
+        self.data['scope']['expected'] = methods
+        self.data['details'] = []
+        self.data['issues']['issues']['testFailureSummaries']['_values'] = []
+        action = self.data['issues']['actions']['_values'][0]['actionResult']['issues']['testFailureSummaries']['_values']
+        action[:] = []
+        self.data['log'] = ''
+        for method in methods:
+            short = method.split('/', 1)[1]
+            component = short.split('/')[-1]
+            issue_name = short.replace('/', '.', 1)
+            self.data['summary']['testFailures'].append({'failureText': POLICY.TIMEOUT_TEXT,
+                'targetName': 'CoolMalliOSUITests', 'testIdentifierString': short})
+            bundle['children'].append({'name': component, 'nodeType': 'Test Case',
+                'nodeIdentifier': short, 'result': 'Failed', 'durationInSeconds': 60,
+                'children': [{'name': POLICY.TIMEOUT_TEXT, 'nodeType': 'Failure Message'}]})
+            self.data['details'].append({'testIdentifier': short, 'testResult': 'Failed',
+                'durationInSeconds': 60, 'testRuns': [{'nodeType': 'Test Case Run',
+                'name': POLICY.TIMEOUT_TEXT, 'result': 'Failed'}]})
+            issue = {'issueType': {'_value': 'Uncategorized'},
+                     'message': {'_value': POLICY.TIMEOUT_TEXT},
+                     'testCaseName': {'_value': issue_name}}
+            self.data['issues']['issues']['testFailureSummaries']['_values'].append(copy.deepcopy(issue))
+            action.append(copy.deepcopy(issue))
+            self.data['log'] += 'Test Case exceeded execution time allowance of 1 minute: ' + method + '\n'
+
+    def test_each_new_approved_timeout_is_deferred(self):
+        for method in POLICY.TIMEOUT_METHODS[1:]:
+            with self.subTest(method=method):
+                self.setUp()
+                self.rewrite_single(method)
+                result = self.check()
+                self.assertEqual(result['status'], 'core-passed-with-deferred')
+                self.assertEqual([w['id'] for w in result['deferred']], [POLICY.TIMEOUT_ID_BY_METHOD[method]])
+                self.assertEqual(result['nativeCounts']['failedTests'], 1)
+
+    def test_multiple_approved_timeouts_in_one_run_defer_all(self):
+        self.build_multi()
+        result = self.check()
+        self.assertEqual(result['status'], 'core-passed-with-deferred')
+        self.assertEqual([w['id'] for w in result['deferred']],
+                         [POLICY.TIMEOUT_ID_BY_METHOD[m] for m in POLICY.TIMEOUT_METHODS[1:]])
+        self.assertEqual([w['method'] for w in result['deferred']], list(POLICY.TIMEOUT_METHODS[1:]))
+        self.assertEqual(result['counts']['methodCounts'], {'CoolMalliOSUITests': 3})
+        self.assertEqual(result['nativeCounts']['failedTests'], 3)
+
+    def test_multiple_approved_timeouts_cannot_hide_other_failures(self):
+        for kind in ['unapproved', 'assertion', 'count', 'duplicate', 'details', 'issue']:
+            with self.subTest(kind=kind):
+                self.setUp(); self.build_multi()
+                case = self.data['tree']['testNodes'][0]['children'][0]
+                if kind == 'unapproved':
+                    self.data['summary']['testFailures'].append({'failureText': POLICY.TIMEOUT_TEXT,
+                        'targetName': 'CoolMalliOSUITests', 'testIdentifierString': 'HomeLoadTests/Other()'})
+                    self.data['summary']['failedTests'] += 1
+                if kind == 'assertion':
+                    case['children'].append({'name': 'XCTAssertEqual failed', 'nodeType': 'Failure Message'})
+                if kind == 'count':
+                    self.data['summary']['failedTests'] = 2
+                if kind == 'duplicate':
+                    self.data['summary']['testFailures'].append(copy.deepcopy(self.data['summary']['testFailures'][0]))
+                    self.data['summary']['failedTests'] += 1
+                if kind == 'details':
+                    self.data['details'].pop()
+                if kind == 'issue':
+                    self.data['issues']['issues']['testFailureSummaries']['_values'][0]['testCaseName']['_value'] = 'HomeLoadTests.Other()'
+                with self.assertRaises(ValueError): self.check()
+
     def test_native_exact_timeout_retained_without_mutating_failure(self):
         before = copy.deepcopy(self.data)
         result = self.check()
@@ -191,6 +280,12 @@ class LifecycleDeferralTests(unittest.TestCase):
 
 
 class VerdictPolicyTests(unittest.TestCase):
+    def test_policy_scope_has_four_timeouts_and_one_cycle(self):
+        data = POLICY.load(today=date(2026,10,21))
+        self.assertEqual(len(data['issues']), 5)
+        timeouts = {issue['method'] for issue in data['issues']
+                    if issue['kind'] == 'whole-method-execution-allowance-60s'}
+        self.assertEqual(timeouts, set(POLICY.TIMEOUT_METHODS))
     def test_dated_scope_exact_and_expiry_blocks(self):
         self.assertEqual(POLICY.load(today=date(2026,10,21))['decision'],'DEC-016')
         self.assertEqual(POLICY.load(today=date(2026,11,5),active=False)['decision'],'DEC-016')
@@ -218,6 +313,10 @@ class VerdictPolicyTests(unittest.TestCase):
         repeated={'status':'core-passed-with-deferred','deferred':[POLICY.warning(
             'CI-DEFER-CYCLE-EVIDENCE-01',reason,method=POLICY.CYCLE_METHOD) for reason in ['gap','tail unproven']]}
         self.assertEqual(FINAL.verdict(native,repeated,0)['deferredIssueCount'],2)
+        multi={'status':'core-passed-with-deferred','nativeExitCode':65,'wrapperExitCode':65,
+               'deferred':[POLICY.warning(POLICY.TIMEOUT_ID_BY_METHOD[m],'timeout',method=m)
+                           for m in POLICY.TIMEOUT_METHODS[1:]]}
+        self.assertEqual(FINAL.verdict(multi,{'status':'not-required'},0)['deferredIssueCount'],3)
         self.assertEqual(FINAL.verdict(native,{'status':'not-required'},23)['status'],'failed')
         for audit in [{'status':'failed'},{},{'status':'passed','methods':{'away':{'status':'failed'}}}]:
             with self.assertRaises(ValueError): FINAL.verdict(native,audit,0)

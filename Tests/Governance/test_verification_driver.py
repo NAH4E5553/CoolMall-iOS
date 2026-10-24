@@ -17,6 +17,8 @@ from pathlib import Path
 name = Path(sys.argv[0]).name
 args = sys.argv[1:]
 event = name
+if name == 'xcrun' and args[:2] == ['simctl', 'uninstall']:
+    event = 'xcrun:uninstall'
 if name == 'xcrun' and 'stream' in args:
     event = 'xcrun:trace'
 if name == 'xcodebuild':
@@ -32,6 +34,11 @@ if event == 'xcodebuild:build:Debug':
     app.mkdir(parents=True)
     (app / 'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier': 'fixture.verification'}))
 if event == 'xcodebuild:discovery':
+    runner = Path(args[args.index('-derivedDataPath') + 1]) / 'Build/Products/Debug-iphonesimulator/CoolMalliOSUITests-Runner.app'
+    runner.mkdir(parents=True)
+    metadata = {'CFBundleIdentifier': os.environ.get('STUB_RUNNER_ID', 'com.coolmall.CoolMallIOSUITests.xctrunner'), 'CFBundlePackageType': 'APPL'}
+    if not os.environ.get('STUB_MISSING_RUNNER'):
+        (runner / 'Info.plist').write_bytes(plistlib.dumps(metadata))
     raw = json.loads(Path('fixture-enumeration.json').read_text())
     if os.environ.get('STUB_BAD_DISCOVERY'):
         raw['values'][0]['enabledTests'] = []
@@ -81,7 +88,7 @@ class VerificationDriverTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         (self.root / 'Scripts').mkdir()
         (self.root / 'bin').mkdir()
-        for name in ['verify-local.sh', 'verification-timing.py', 'select-test-scope.py', 'classify-ci-changes.py', 'check-boundaries.py', 'with-banner-trace.py']:
+        for name in ['verify-local.sh', 'prepare-ui-test-runner.py', 'verification-timing.py', 'select-test-scope.py', 'classify-ci-changes.py', 'check-boundaries.py', 'with-banner-trace.py']:
             shutil.copy2(ROOT / 'Scripts' / name, self.root / 'Scripts' / name)
         for name in ['check-toolchain.sh', 'check-format.sh', 'check-boundary-negative.sh',
                      'check-test-results.py', 'check-banner-lifecycle.py']:
@@ -99,7 +106,7 @@ class VerificationDriverTests(unittest.TestCase):
                         MALL_SIMULATOR_ID='fixture-only-no-device',
                         STUB_EVENTS=str(self.root / 'events.jsonl'),
                         STUB_READY=str(self.root / 'ready'))
-        for key in ['MALL_TEST_DIAGNOSTICS', 'STUB_FAIL', 'STUB_RC', 'STUB_CORRUPT', 'STUB_BLOCK', 'STUB_BAD_DISCOVERY', 'STUB_CREATE_BYTECODE', 'STUB_MUTATE_SOURCE', 'GITHUB_EVENT_NAME']:
+        for key in ['MALL_TEST_DIAGNOSTICS', 'STUB_FAIL', 'STUB_RC', 'STUB_CORRUPT', 'STUB_BLOCK', 'STUB_BAD_DISCOVERY', 'STUB_CREATE_BYTECODE', 'STUB_MUTATE_SOURCE', 'GITHUB_EVENT_NAME', 'STUB_RUNNER_ID', 'STUB_MISSING_RUNNER']:
             self.env.pop(key, None)
 
     def stub(self, path):
@@ -126,7 +133,7 @@ class VerificationDriverTests(unittest.TestCase):
         self.assertEqual([e['event'] for e in events], [
             'check-toolchain.sh', 'xcrun', 'xcrun', 'check-format.sh',
             'check-boundary-negative.sh', 'xcodebuild:build:Debug', 'xcodebuild:build:Release',
-            'xcrun', 'xcrun', 'xcrun', 'xcrun', 'xcodebuild:discovery', 'xcodebuild:test-without-building', 'check-test-results.py'])
+            'xcrun', 'xcrun', 'xcrun', 'xcrun', 'xcodebuild:discovery', 'xcrun:uninstall', 'xcodebuild:test-without-building', 'check-test-results.py'])
         discovery = next(e['args'] for e in events if e['event'] == 'xcodebuild:discovery')
         self.assertEqual(discovery[discovery.index('-collect-test-diagnostics') + 1], 'never')
         args = next(e['args'] for e in events if e['event'] == 'xcodebuild:test-without-building')
@@ -142,6 +149,60 @@ class VerificationDriverTests(unittest.TestCase):
         self.assertEqual(data['verificationExitCode'], 0)
         self.assertTrue(all(p['status'] == 'passed' and p['durationSeconds'] >= 0 for p in data['phases']))
         self.assertTrue(path.with_suffix('.md').exists())
+
+
+    def test_runner_cleanup_is_exact_and_ordered_after_discovery(self):
+        result = self.run_entry()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        events = self.events()
+        cleanup = [e for e in events if e['event'] == 'xcrun:uninstall']
+        self.assertEqual(len(cleanup), 1)
+        self.assertEqual(cleanup[0]['args'], ['simctl', 'uninstall', 'fixture-only-no-device',
+                                            'com.coolmall.CoolMallIOSUITests.xctrunner'])
+        names = [e['event'] for e in events]
+        self.assertLess(names.index('xcodebuild:discovery'), names.index('xcrun:uninstall'))
+        self.assertLess(names.index('xcrun:uninstall'), names.index('xcodebuild:test-without-building'))
+        self.assertFalse(any(e['args'][:2] in (['simctl', 'erase'], ['simctl', 'shutdown']) for e in events))
+        _, ledger = self.ledger()
+        phase = next(p for p in ledger['phases'] if p['name'] == 'test-runner-prepare')
+        self.assertEqual((phase['status'], phase['exitCode']), ('passed', 0))
+        log = next((self.root / '.build/verification').glob('*/ui-test-runner-prepare.log')).read_text()
+        self.assertIn('infoSHA256', log)
+
+    def test_runner_cleanup_failure_stops_before_tests(self):
+        result = self.run_entry(STUB_FAIL='xcrun:uninstall', STUB_RC='73')
+        self.assertEqual(result.returncode, 73, result.stdout + result.stderr)
+        names = [e['event'] for e in self.events()]
+        self.assertEqual(names.count('xcrun:uninstall'), 1)
+        self.assertNotIn('xcodebuild:test-without-building', names)
+        _, ledger = self.ledger()
+        self.assertEqual(ledger['verificationExitCode'], 73)
+
+    def test_runner_identity_mismatch_blocks_without_device_cleanup(self):
+        result = self.run_entry(STUB_RUNNER_ID='com.coolmall.CoolMallIOS')
+        self.assertNotEqual(result.returncode, 0)
+        names = [e['event'] for e in self.events()]
+        self.assertNotIn('xcrun:uninstall', names)
+        self.assertNotIn('xcodebuild:test-without-building', names)
+        log = next((self.root / '.build/verification').glob('*/ui-test-runner-prepare.log')).read_text()
+        self.assertIn('identity mismatch', log)
+
+    def test_missing_runner_blocks_without_device_cleanup(self):
+        result = self.run_entry(STUB_MISSING_RUNNER='1')
+        self.assertNotEqual(result.returncode, 0)
+        names = [e['event'] for e in self.events()]
+        self.assertNotIn('xcrun:uninstall', names)
+        self.assertNotIn('xcodebuild:test-without-building', names)
+
+    def test_no_selected_ui_needs_no_product_or_device_cleanup(self):
+        expected = self.root / 'unit-only.txt'
+        expected.write_text('MallCoreTests/HomeContractTests/example()\n')
+        result = subprocess.run(['python3', 'Scripts/prepare-ui-test-runner.py', str(expected),
+                                 'missing-products', 'fixture-only-no-device'], cwd=self.root,
+                                env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)['status'], 'not-required')
+        self.assertEqual(self.events(), [])
 
     def test_live_trace_is_retained_without_changing_business_checks(self):
         result = self.run_entry()

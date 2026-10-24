@@ -723,12 +723,32 @@ extension HomeLoadTests {
 
     @MainActor private func currentBanner(_ app: XCUIApplication) -> XCUIElement {
         // The current leaf is the actionable banner Button (the selected image
-        // is a non-actionable Other). Scoping the prefix query to buttons keeps
-        // the same leaf semantics without walking the whole accessibility tree;
-        // the whole-tree variant stalled for seconds on slow CI hosts.
-        app.buttons.matching(
+        // is a non-actionable Other). The prefix predicate over all buttons is
+        // still a tree-wide AX query and took seconds on slow CI hosts; one
+        // snapshot locates the current exposed identifier, and the follow-up
+        // exact query resolves the same button. Fall back to the predicate only
+        // if the snapshot has no current banner (e.g. while it is being torn
+        // down).
+        if let identifier = currentBannerIdentifier(app) {
+            return app.buttons[identifier]
+        }
+        return app.buttons.matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "home.banner.current.")
         ).firstMatch
+    }
+
+    /// One AX snapshot is cheaper on slow hosts than a repeated prefix query.
+    /// The visible/current banner is the first exposed node with the prefix.
+    @MainActor private func currentBannerIdentifier(_ app: XCUIApplication) -> String? {
+        guard let snapshot = try? app.snapshot() else { return nil }
+        func find(_ node: any XCUIElementSnapshot) -> String? {
+            if node.identifier.hasPrefix("home.banner.current.") { return node.identifier }
+            for child in node.children {
+                if let identifier = find(child) { return identifier }
+            }
+            return nil
+        }
+        return find(snapshot)
     }
 
     @MainActor private func bannerIndicators(_ app: XCUIApplication) -> XCUIElement {
@@ -2123,7 +2143,7 @@ extension HomeLoadTests {
                 }) {
                     let frame = bannerNode.frame
                     if frame.minY >= scroll.minY, frame.maxY <= bottom {
-                        let banner = currentBanner(app)
+                        let banner = app.buttons[bannerNode.identifier]
                         let hittable = banner.isHittable
                         try budget.requireTime()
                         if hittable { return }

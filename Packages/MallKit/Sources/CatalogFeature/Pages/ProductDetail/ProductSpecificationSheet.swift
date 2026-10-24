@@ -9,6 +9,8 @@ struct ProductSpecificationSheet: View {
     let isActive: Bool
     let maxContentHeight: CGFloat
     let dismiss: () -> Void
+    var onAdd: () -> Void = {}
+    var isAdding = false
     @ScaledMetric private var titleSize = 16.0
     @ScaledMetric private var summarySize = 12.0
     @Environment(\.colorScheme) private var scheme
@@ -54,7 +56,7 @@ struct ProductSpecificationSheet: View {
                 topHeight = $0
             }
             ScrollView {
-                specificationContent
+                specificationContent.disabled(isAdding)
                     .onGeometryChange(for: CGFloat.self) {
                         $0.size.height
                     } action: {
@@ -68,8 +70,10 @@ struct ProductSpecificationSheet: View {
             )
             .accessibilityIdentifier("detail.spec.scroll")
             VStack(spacing: 12) {
-                quantity
-                ProductDetailPurchaseButtons()
+                quantity.disabled(isAdding)
+                ProductDetailPurchaseButtons(
+                    onAdd: onAdd, isAdding: isAdding,
+                    addIdentifier: "detail.spec.addCart", canAdd: model.canAddToCart)
             }
             .onGeometryChange(for: CGFloat.self) {
                 $0.size.height

@@ -8,7 +8,29 @@
         private let mode: String
         private var detailReads = 0
         private var specificationReads = 0
-        init(mode: String) { self.mode = mode }
+        nonisolated let holdsCartIncrease: Bool
+        private var cartIncreaseGate: CheckedContinuation<Void, Never>?
+        init(mode: String) {
+            self.mode = mode; holdsCartIncrease = mode == "cart-processing"
+        }
+        func releaseCartIncrease() {
+            cartIncreaseGate?.resume(); cartIncreaseGate = nil
+        }
+        private func waitForCartIncreaseRelease() async throws {
+            try Task.checkCancellation()
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    if Task.isCancelled {
+                        continuation.resume()
+                    } else {
+                        cartIncreaseGate = continuation
+                    }
+                }
+            } onCancel: {
+                Task { await self.releaseCartIncrease() }
+            }
+            try Task.checkCancellation()
+        }
 
         static func make(arguments: [String]) -> ProductDetailUITestService? {
             guard let index = arguments.firstIndex(of: "--ui-product-detail-fixture") else {
@@ -21,7 +43,10 @@
         func loadDetail(productID: Int64) async throws -> ProductDetailSnapshot {
             detailReads += 1
             guard
-                ["valid", "retry", "spec-retry", "empty-specs", "unavailable", "loading"].contains(
+                [
+                    "valid", "retry", "spec-retry", "empty-specs", "unavailable", "loading",
+                    "cart-price-return", "cart-processing",
+                ].contains(
                     mode)
             else { throw ProductDetailLoadFailure.invalidConfiguration }
             if mode == "loading" {
@@ -62,6 +87,11 @@
 
         func loadSpecifications(productID: Int64) async throws -> [ProductSpecification] {
             specificationReads += 1
+            // Only this opt-in UI fixture holds the first explicit increase:
+            // seed + entry verification have already completed (reads 1/2).
+            if holdsCartIncrease, specificationReads == 3 {
+                try await waitForCartIncreaseRelease()
+            }
             if mode == "spec-retry" && specificationReads == 1 {
                 throw ProductDetailLoadFailure.timeout
             }
@@ -69,13 +99,14 @@
             return [
                 ProductSpecification(
                     id: 1, productID: productID, name: "黑色 256GB",
-                    priceYuan: 3999, stock: 2, imageURLs: []),
+                    priceYuan: mode == "cart-price-return" && specificationReads == 2 ? 4099 : 3999,
+                    stock: mode == "cart-processing" ? 10 : 2, imageURLs: []),
                 ProductSpecification(
                     id: 2, productID: productID, name: "银色 512GB",
                     priceYuan: 4999, stock: 0, imageURLs: []),
                 ProductSpecification(
                     id: 3, productID: productID, name: "蓝色 256GB",
-                    priceYuan: 4099, stock: 1, imageURLs: []),
+                    priceYuan: 4099, stock: mode == "cart-processing" ? 10 : 1, imageURLs: []),
             ]
         }
     }

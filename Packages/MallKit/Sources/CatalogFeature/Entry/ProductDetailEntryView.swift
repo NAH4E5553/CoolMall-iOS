@@ -11,32 +11,46 @@ public struct ProductDetailEntryView: View {
     private let imagePipeline: MallImagePipeline?
     private let isActive: Bool
     private let onShowAllReviews: (Int64) -> Void
+    private let shoppingCart: (any ShoppingCart)?
+    private let cartVerifier: (any CartProductChecking)?
+    private let onOpenCart: () -> Void
 
     public init(
         productID: Int64, loader: any ProductDetailLoading,
         imagePipeline: MallImagePipeline? = nil, isActive: Bool,
-        onShowAllReviews: @escaping (Int64) -> Void = { _ in }
+        onShowAllReviews: @escaping (Int64) -> Void = { _ in },
+        shoppingCart: (any ShoppingCart)? = nil, cartVerifier: (any CartProductChecking)? = nil,
+        onOpenCart: @escaping () -> Void = {}
     ) {
         self.productID = productID
         self.loader = loader
         self.imagePipeline = imagePipeline
         self.isActive = isActive
         self.onShowAllReviews = onShowAllReviews
+        self.shoppingCart = shoppingCart; self.cartVerifier = cartVerifier;
+        self.onOpenCart = onOpenCart
     }
 
     public var body: some View {
         ProductDetailScreen(
             productID: productID, loader: loader,
-            pipeline: imagePipeline, isActive: isActive, onShowAllReviews: onShowAllReviews
+            pipeline: imagePipeline, isActive: isActive, onShowAllReviews: onShowAllReviews,
+            shoppingCart: shoppingCart, cartVerifier: cartVerifier, onOpenCart: onOpenCart
         )
         .tint(ProductDetailStyle.accent)
-        .id(productID)
+        .id(CartDetailIdentity(productID: productID, scope: shoppingCart?.scope))
     }
+}
+
+private struct CartDetailIdentity: Hashable {
+    let productID: Int64
+    let scope: CartScope?
 }
 
 @MainActor
 private struct ProductDetailScreen: View {
     @State private var model: ProductDetailViewModel
+    @State private var cartModel: ProductCartViewModel?
     @State private var showsSpecifications = false
     @State private var showsCoupons = false
     @State private var requestedBack = false
@@ -49,13 +63,21 @@ private struct ProductDetailScreen: View {
     let pipeline: MallImagePipeline?
     let isActive: Bool
     let onShowAllReviews: (Int64) -> Void
+    let onOpenCart: () -> Void
 
     init(
         productID: Int64, loader: any ProductDetailLoading,
-        pipeline: MallImagePipeline?, isActive: Bool, onShowAllReviews: @escaping (Int64) -> Void
+        pipeline: MallImagePipeline?, isActive: Bool, onShowAllReviews: @escaping (Int64) -> Void,
+        shoppingCart: (any ShoppingCart)?, cartVerifier: (any CartProductChecking)?,
+        onOpenCart: @escaping () -> Void
     ) {
         _model = State(initialValue: ProductDetailViewModel(productID: productID, loader: loader))
         self.pipeline = pipeline; self.isActive = isActive; self.onShowAllReviews = onShowAllReviews
+        self.onOpenCart = onOpenCart
+        _cartModel = State(
+            initialValue: shoppingCart.flatMap { store in
+                cartVerifier.map { ProductCartViewModel(store: store, verifier: $0) }
+            })
     }
 
     private var active: Bool { isActive && scenePhase == .active }
@@ -91,7 +113,18 @@ private struct ProductDetailScreen: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if model.detail != nil {
-                ProductDetailBottomBar().accessibilityHidden(showsCoupons || showsSpecifications)
+                ProductDetailBottomBar(
+                    onAdd: {
+                        if let selected = model.selected {
+                            guard model.canAddToCart else { return }
+                            cartModel?.add(specification: selected, quantity: model.quantity)
+                        } else {
+                            showsSpecifications = true
+                        }
+                    }, onOpenCart: onOpenCart, isAdding: cartModel?.busy == true,
+                    canAdd: model.selected == nil || model.canAddToCart
+                )
+                .accessibilityHidden(showsCoupons || showsSpecifications)
             }
         }
         .overlay(alignment: .leading) {
@@ -120,15 +153,18 @@ private struct ProductDetailScreen: View {
         .task(id: ReadKey(active: active, attempt: model.detailAttempt)) {
             guard !Task.isCancelled else { return }
             model.setActive(active)
+            cartModel?.setActive(active)
             guard active else { return }
             await model.loadDetail()
         }
         .onChange(of: active) { _, value in
             model.setActive(value)
+            cartModel?.setActive(value)
             if !isActive { showsSpecifications = false; showsCoupons = false }
         }
         .onDisappear {
             model.setActive(false)
+            cartModel?.setActive(false)
             showsSpecifications = false; showsCoupons = false
         }
         .overlay {
@@ -136,14 +172,50 @@ private struct ProductDetailScreen: View {
                 ZStack(alignment: .bottom) {
                     Color.black.opacity(0.32).ignoresSafeArea()
                         .contentShape(Rectangle())
-                        .onTapGesture { showsSpecifications = false }
+                        .onTapGesture {
+                            showsSpecifications = false; cartModel?.cancel()
+                        }
                         .accessibilityLabel("关闭规格弹框").accessibilityAddTraits(.isButton)
                     ProductSpecificationSheet(
                         model: model, pipeline: pipeline, isActive: active,
                         maxContentHeight: windowHeight * 0.8,
-                        dismiss: { showsSpecifications = false })
+                        dismiss: {
+                            showsSpecifications = false; cartModel?.cancel()
+                        },
+                        onAdd: {
+                            if let selected = model.selected {
+                                cartModel?.add(specification: selected, quantity: model.quantity)
+                            }
+                        },
+                        isAdding: cartModel?.busy == true)
                 }
             }
+        }
+        .overlay(alignment: .bottom) {
+            if let message = cartModel?.message {
+                Text(message).font(.footnote).padding(12).background(
+                    .regularMaterial, in: Capsule()
+                )
+                .padding(.bottom, 76).accessibilityIdentifier("detail.cart.message")
+            }
+        }
+        .alert(
+            "商品价格变化",
+            isPresented: Binding(
+                get: { cartModel?.confirmation != nil },
+                set: { if !$0, cartModel?.confirmation != nil { cartModel?.cancel() } })
+        ) {
+            Button("取消", role: .cancel) { cartModel?.cancel() }
+            Button("确认新价格") { cartModel?.confirmPrice() }.accessibilityIdentifier(
+                "detail.cart.confirmPrice")
+        } message: {
+            Text(cartModel?.confirmation?.text ?? "")
+        }
+        .onChange(of: cartModel?.success) { _, value in
+            if let value, value > 0 { model.didAddToCart(); showsSpecifications = false }
+        }
+        .onChange(of: showsSpecifications) { old, value in
+            if old && !value { cartModel?.cancel() }
         }
         .foregroundStyle(ProductDetailStyle.onSurface(scheme))
     }

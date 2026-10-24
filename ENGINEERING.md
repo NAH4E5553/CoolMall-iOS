@@ -381,7 +381,8 @@ let package = Package(
     ],
     "CartFeature": [
       "MallCore",
-      "MallDesignSystem"
+      "MallDesignSystem",
+      "MallImages"
     ],
     "MallImages": [
       "Nuke",
@@ -450,7 +451,8 @@ F0 系统模块允许列表如下；项目模块依赖仍只读取上方精确�
     ],
     "MallData": [
       "Swift",
-      "Foundation"
+      "Foundation",
+      "SwiftData"
     ],
     "MallDesignSystem": [
       "Swift",
@@ -1174,6 +1176,8 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 ### 8.3 当前实施状态
 
 2026-10-24 R-REVIEWS-01 accepted local repair: the reviews refresh action concurrently waits for the read and a cancellable 300ms minimum hold, allowing the observed refresh-entry transition to reach its normal cleanup path. Only ProductReviewsEntryView changes; original gestures, assertions, idle waits and 60/120s limits remain. Independent clean Debug/Release builds succeeded; the original full chain passed five consecutive runs (29.813/44.484/28.391/27.331/27.068s), empty refresh20.235s and failed refresh24.765s, exact7/0/0. Preserve all original failures. This is bounded iPhone17/iOS27.0 simulator acceptance, not all-runtime proof: 300ms is empirical, private state4/5 thresholds are unconfirmed, probe notifier-pairing warnings limit causal claims, and iOS17/26/hardware remain unverified. Owner authorizes commit/push to PR17; remote CI and owner-deferred closure remain separate, with no CI exemption or merge authorization.
+
+2026-10-24 CART-V1 boundary registration (owner A/B/C/D approval): CartFeature gains the direct MallImages dependency; MallData source policy appends SwiftData, scoped by the source checker to Sources/MallData/Cart/PersistentCartStore.swift; MallCore/CartFeature/App and tests do not import SwiftData. CartEntryView remains the only public CartFeature entry; existing test targets, TestPlan and timeouts are unchanged. The Package.swift CartFeature dependency hunk is Codex-owned at cart handoff; ENGINEERING/Scripts/tests are DeepSeek-owned. Positive/negative boundary evidence is recorded in CI-TO-CART.
 
 2026-10-24 local catalog delivery: category, product detail and paged reviews are integrated. Category/detail and bounded composition/navigation have independent acceptance evidence; overall reviews acceptance remains incomplete. The owner explicitly defers R-REVIEWS-01 investigation and authorizes a local source commit. Original refresh-quiescence failures and unverified areas remain tracked locally; this is not a passing acceptance or a CI exemption. Keep the original refresh implementation/assertions/allowances; the unaccepted 300ms refresh-action candidate is excluded from this commit. No push, merge or expanded CI exception is authorized by this decision.
 

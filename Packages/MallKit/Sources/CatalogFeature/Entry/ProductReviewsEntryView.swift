@@ -146,7 +146,16 @@ private struct ProductReviewsScreen: View {
         } action: {
             viewport = $0
         }
-        .refreshable { await model.refresh() }
+        .refreshable {
+            // endRefreshing can land while the refresh control is still
+            // completing its entry transition. In that window UIKit takes its
+            // cancel path, which hides the control but leaves the spinner's
+            // infinite animation on the hidden replicator. Hold the action
+            // briefly so the normal end path runs and removes the spinner.
+            async let minimum: Void = Task.sleep(for: .milliseconds(300))
+            await model.refresh()
+            try? await minimum
+        }
         .accessibilityIdentifier("reviews.list")
         .accessibilityValue(Text(verbatim: "商品ID：\(model.productID)"))
     }

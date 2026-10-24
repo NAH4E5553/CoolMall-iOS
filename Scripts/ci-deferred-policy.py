@@ -4,11 +4,25 @@ import json
 from datetime import date
 from pathlib import Path
 
-TIMEOUT_METHOD = 'CoolMalliOSUITests/HomeLoadTests/testSelectedBannerAndBottomPositionRetainedAcrossTabs()'
+TIMEOUT_METHODS = (
+    'CoolMalliOSUITests/HomeLoadTests/testSelectedBannerAndBottomPositionRetainedAcrossTabs()',
+    'CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayPausesWhileBannerIsOffscreen()',
+    'CoolMalliOSUITests/HomeLoadTests/testBannerPendingPageCancellationAndTabRetention()',
+    'CoolMalliOSUITests/HomeLoadTests/testBannerReconciliationInOneRefreshSequence()',
+)
+TIMEOUT_METHOD = TIMEOUT_METHODS[0]  # compatibility for existing single-method callers/tests
 CYCLE_METHOD = 'CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()'
 TIMEOUT_TEXT = 'Test exceeded execution time allowance of 1 minute'
-IDS = {'CI-DEFER-HOME-TIMEOUT-01': (TIMEOUT_METHOD, 'whole-method-execution-allowance-60s'),
-       'CI-DEFER-CYCLE-EVIDENCE-01': (CYCLE_METHOD, 'cycle-sequence-gap-and-unproven-tail')}
+TIMEOUT_IDS = {
+    'CI-DEFER-HOME-TIMEOUT-01': TIMEOUT_METHODS[0],
+    'CI-DEFER-HOME-OFFSCREEN-01': TIMEOUT_METHODS[1],
+    'CI-DEFER-HOME-PENDING-01': TIMEOUT_METHODS[2],
+    'CI-DEFER-HOME-RECONCILIATION-01': TIMEOUT_METHODS[3],
+}
+IDS = {identifier: (method, 'whole-method-execution-allowance-60s')
+       for identifier, method in TIMEOUT_IDS.items()}
+TIMEOUT_ID_BY_METHOD = {method: identifier for identifier, method in TIMEOUT_IDS.items()}
+IDS['CI-DEFER-CYCLE-EVIDENCE-01'] = (CYCLE_METHOD, 'cycle-sequence-gap-and-unproven-tail')
 
 
 def load(path=None, today=None, active=True):
@@ -25,7 +39,7 @@ def load(path=None, today=None, active=True):
                                     'on-reproducible-user-stall-state-loss-or-crash', 'by-expiry']:
         raise ValueError('CI-DEFER: missing review triggers')
     issues = data['issues']
-    if len(issues) != 2 or {v['id']: (v['method'], v['kind']) for v in issues} != IDS:
+    if len(issues) != len(IDS) or {v['id']: (v['method'], v['kind']) for v in issues} != IDS:
         raise ValueError('CI-DEFER: unsupported scope')
     if not data.get('evidence') or any(not v.get('impact') or not v.get('closeWhen') for v in issues):
         raise ValueError('CI-DEFER: missing tracking evidence/impact/closure')

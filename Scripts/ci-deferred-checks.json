@@ -25,6 +25,30 @@
       "kind": "cycle-sequence-gap-and-unproven-tail",
       "impact": "Missing observed sequence and unproven terminal completeness prevent complete lifecycle acceptance; passing native UI does not prove complete evidence.",
       "closeWhen": "Establish end-to-end and tail completeness checks with fault controls; retained complete lifecycle semantics pass."
+    },
+    {
+      "id": "CI-DEFER-HOME-OFFSCREEN-01",
+      "method": "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayPausesWhileBannerIsOffscreen()",
+      "kind": "whole-method-execution-allowance-60s",
+      "impact": "Whole-method 60-second timeout; the final assertions were not reached; actual App versus automation delay not yet distinguished.",
+      "closeWhen": "Diagnose App versus driver/query time; fix and pass the original complete chain, assertions and 60-second allowance.",
+      "evidence": "https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/40100669526"
+    },
+    {
+      "id": "CI-DEFER-HOME-PENDING-01",
+      "method": "CoolMalliOSUITests/HomeLoadTests/testBannerPendingPageCancellationAndTabRetention()",
+      "kind": "whole-method-execution-allowance-60s",
+      "impact": "Whole-method 60-second timeout; the final assertions were not reached; actual App versus automation delay not yet distinguished.",
+      "closeWhen": "Diagnose App versus driver/query time; fix and pass the original complete chain, assertions and 60-second allowance.",
+      "evidence": "https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/40100669526"
+    },
+    {
+      "id": "CI-DEFER-HOME-RECONCILIATION-01",
+      "method": "CoolMalliOSUITests/HomeLoadTests/testBannerReconciliationInOneRefreshSequence()",
+      "kind": "whole-method-execution-allowance-60s",
+      "impact": "Whole-method 60-second timeout; the final assertions were not reached; actual App versus automation delay not yet distinguished.",
+      "closeWhen": "Diagnose App versus driver/query time; fix and pass the original complete chain, assertions and 60-second allowance.",
+      "evidence": "https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/40100669526"
     }
   ]
 }

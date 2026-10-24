@@ -18,8 +18,8 @@ def failed_verdict(native, audit, prior_exit, execution=None, errors=()):
     warnings, problems = [], list(errors)
     try:
         POLICY.load(active=False)
-        for source, report, allowed in [('native', native, 'CI-DEFER-HOME-TIMEOUT-01'),
-                                         ('lifecycle', audit, 'CI-DEFER-CYCLE-EVIDENCE-01')]:
+        for source, report, allowed in [('native', native, POLICY.TIMEOUT_IDS),
+                                         ('lifecycle', audit, {'CI-DEFER-CYCLE-EVIDENCE-01'})]:
             if report.get('status') not in {'passed', 'core-passed-with-deferred', 'failed', 'recorded-prefix', 'not-required'}:
                 problems.append(source + ': unknown report status')
                 continue
@@ -28,9 +28,9 @@ def failed_verdict(native, audit, prior_exit, execution=None, errors=()):
                 problems.append(source + ': invalid deferred list')
                 continue
             for warning in items:
-                if (not isinstance(warning, dict) or warning.get('id') != allowed
+                if (not isinstance(warning, dict) or warning.get('id') not in allowed
                         or warning.get('state') != 'deferred-unresolved'
-                        or warning.get('method') != POLICY.IDS[allowed][0]
+                        or warning.get('method') != POLICY.IDS[warning['id']][0]
                         or not isinstance(warning.get('reason'), str) or not warning['reason'].strip()):
                     problems.append(source + ': unknown/invalid deferred result')
                     continue
@@ -78,7 +78,7 @@ def verdict(native, audit, prior_exit, execution=None, errors=()):
     warnings = native.get('deferred', []) + audit.get('deferred', [])
     if (command, wrapper) not in {(0, 0), (65, 65)}:
         raise ValueError('VERDICT: unknown original exit code')
-    if command == 65 and not any(v.get('id') == 'CI-DEFER-HOME-TIMEOUT-01' for v in native.get('deferred', [])):
+    if command == 65 and not any(v.get('id') in POLICY.TIMEOUT_IDS for v in native.get('deferred', [])):
         raise ValueError('VERDICT: native failure not classified')
     if warnings: POLICY.load()
     for warning in warnings:

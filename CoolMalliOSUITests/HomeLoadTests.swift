@@ -433,49 +433,135 @@ extension HomeLoadTests {
     /// assertion table in the HOME-02-R1 handoff): a real re-tap of the
     /// selected home tab now scrolls to the fixed top anchor AND refreshes
     /// once — retap-sequence serves A (goods 10), B (11), then C (12).
-    @MainActor func testReTapScrollsToTopAndRefreshesWithNewSnapshot() {
+    @MainActor func testReTapScrollsToTopAndRefreshesWithNewSnapshot() throws {
+        continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments += ["--ui-home-fixture", "retap-sequence"]
+        let began = ProcessInfo.processInfo.systemUptime
         app.launch()
-        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 15))
-        XCTAssertEqual(app.staticTexts["home.source"].label, "工程夹具（retap-sequence）")
-        XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
-        let bannerTitle = sectionContent(app, key: "banner")
-        let lastRow = app.staticTexts["home.count.categoryAll"]
-        // Reach the full page's auxiliary row, including at accessibility
-        // sizes, then prove the re-tap starts from a non-zero content position.
-        let atRestMinY = lastRow.frame.minY
-        reachAuxiliaryRow(app, row: lastRow, maximumDrags: 10)
-        XCTAssertTrue(lastRow.isHittable)
-        XCTAssertLessThan(
-            lastRow.frame.minY, atRestMinY - 20,
-            "precondition: actually scrolled to a non-zero position")
-        // Real re-tap #1: scrolls to the fixed top anchor (deterministic
-        // scrollTo alignment, recorded as the reference) + exactly one new
-        // read (B). The anchor is observable through the first section being
-        // back on screen at the recorded top position.
-        app.tabBars.buttons["首页"].tap()
-        let goods = app.staticTexts["home.count.goods"]
-        let bSeen = NSPredicate(format: "label CONTAINS %@", "全部商品：11")
-        expectation(for: bSeen, evaluatedWith: goods)
-        waitForExpectations(timeout: 10)
-        XCTAssertTrue(bannerTitle.isHittable, "the first section must be back on screen")
-        let scrollToTopMinY = bannerTitle.frame.minY
-        // Bound the anchor against the real scroll viewport. The precise
-        // assertions remain visibility and the second re-tap landing on the
-        // SAME position.
-        XCTAssertGreaterThan(
-            scrollToTopMinY, app.scrollViews["home.scroll"].frame.minY - 160,
-            "re-tap must land near the resting (top) position")
-        // Real re-tap #2 while ALREADY AT TOP (AT: 停在顶部再按→C): a re-tap
-        // at the top also refreshes, and the position stays put.
-        app.tabBars.buttons["首页"].tap()
-        let cSeen = NSPredicate(format: "label CONTAINS %@", "全部商品：12")
-        expectation(for: cSeen, evaluatedWith: goods)
-        waitForExpectations(timeout: 10)
-        XCTAssertTrue(bannerTitle.isHittable)
+        func descendants(_ node: any XCUIElementSnapshot) -> [any XCUIElementSnapshot] {
+            [node] + node.children.flatMap { descendants($0) }
+        }
+        func observe(_ phase: String) throws -> (
+            root: any XCUIElementSnapshot, nodes: [any XCUIElementSnapshot]
+        ) {
+            let started = ProcessInfo.processInfo.systemUptime
+            let root = try app.snapshot()
+            print(
+                "RETAPTEST \(phase) snapshot=\(ProcessInfo.processInfo.systemUptime - started)s elapsed=\(ProcessInfo.processInfo.systemUptime - began)s"
+            )
+            return (root, descendants(root))
+        }
+        var initial = try observe("initial")
+        if !initial.nodes.contains(where: { $0.identifier == "home.loaded" }) {
+            XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 15))
+            initial = try observe("loaded")
+        }
+        XCTAssertTrue(initial.nodes.contains { $0.identifier == "home.loaded" })
         XCTAssertEqual(
-            bannerTitle.frame.minY, scrollToTopMinY, accuracy: 6,
+            initial.nodes.first { $0.identifier == "home.source" }?.label,
+            "工程夹具（retap-sequence）")
+        XCTAssertEqual(
+            initial.nodes.first { $0.identifier == "home.count.goods" }?.label, "全部商品：10")
+        let appFrame = initial.root.frame
+        let scrollFrame = try XCTUnwrap(
+            initial.nodes.first {
+                $0.elementType == .scrollView && $0.identifier == "home.scroll"
+            }
+        ).frame.intersection(appFrame)
+        let tabFrame = try XCTUnwrap(
+            initial.nodes.first { $0.elementType == .tabBar }
+        ).frame
+        let bottom = min(scrollFrame.maxY, tabFrame.minY)
+        XCTAssertFalse(scrollFrame.isNull)
+        XCTAssertGreaterThan(scrollFrame.width, 0)
+        XCTAssertGreaterThan(bottom, scrollFrame.minY)
+        let viewport = CGRect(
+            x: scrollFrame.minX, y: scrollFrame.minY,
+            width: scrollFrame.width, height: bottom - scrollFrame.minY)
+        let atRestMinY = try XCTUnwrap(
+            initial.nodes.first { $0.identifier == "home.count.categoryAll" }
+        ).frame.minY
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let x = viewport.minX + viewport.width * 0.98 - appFrame.minX
+        let start = origin.withOffset(
+            CGVector(dx: x, dy: viewport.minY + viewport.height * 0.9 - appFrame.minY))
+        let end = origin.withOffset(
+            CGVector(dx: x, dy: viewport.minY + viewport.height * 0.1 - appFrame.minY))
+        // One fresh hierarchy per real drag; only a row intersecting the
+        // viewport needs the live hit test. Offscreen AX reads are not waits.
+        var position = initial
+        var previousY = atRestMinY
+        var stalledDrags = 0
+        var rowIsHittable = false
+        for index in 0...10 {
+            let row = try XCTUnwrap(
+                position.nodes.first { $0.identifier == "home.count.categoryAll" })
+            if row.frame.intersects(viewport) {
+                rowIsHittable = app.staticTexts["home.count.categoryAll"].isHittable
+                if rowIsHittable { break }
+            }
+            if index == 10 || stalledDrags == 2 { break }
+            start.press(
+                forDuration: 0.01, thenDragTo: end, withVelocity: 10_000,
+                thenHoldForDuration: 0)
+            position = try observe("drag-\(index + 1)")
+            let after = try XCTUnwrap(
+                position.nodes.first { $0.identifier == "home.count.categoryAll" }
+            ).frame.minY
+            stalledDrags = after < previousY - 1 ? 0 : stalledDrags + 1
+            previousY = after
+        }
+        XCTAssertTrue(rowIsHittable)
+        let lastY = try XCTUnwrap(
+            position.nodes.first { $0.identifier == "home.count.categoryAll" }
+        ).frame.minY
+        XCTAssertLessThan(
+            lastY, atRestMinY - 20,
+            "precondition: actually scrolled to a non-zero position")
+
+        func refreshed(_ count: Int) throws -> [any XCUIElementSnapshot] {
+            var observed = try observe("refresh-\(count)").nodes
+            let expected = "全部商品：\(count)"
+            if observed.first(where: { $0.identifier == "home.count.goods" })?.label != expected {
+                let seen = XCTNSPredicateExpectation(
+                    predicate: NSPredicate(format: "label CONTAINS %@", expected),
+                    object: app.staticTexts["home.count.goods"])
+                XCTAssertEqual(XCTWaiter.wait(for: [seen], timeout: 10), .completed)
+                observed = try observe("refresh-\(count)-settled").nodes
+            }
+            XCTAssertEqual(
+                observed.first { $0.identifier == "home.count.goods" }?.label, expected)
+            return observed
+        }
+        func currentFrame(_ nodes: [any XCUIElementSnapshot]) throws -> CGRect {
+            let banner = try XCTUnwrap(
+                nodes.first {
+                    $0.elementType == .button
+                        && $0.identifier.hasPrefix("home.banner.current.")
+                })
+            // A fresh typed query proves operability; geometry alone does not.
+            XCTAssertTrue(
+                app.buttons.matching(
+                    NSPredicate(format: "identifier BEGINSWITH %@", "home.banner.current.")
+                ).element(boundBy: 0).isHittable,
+                "the first section must be back on screen")
+            print("RETAPTEST current=\(banner.identifier) frame=\(banner.frame)")
+            return banner.frame
+        }
+        // Real re-tap #1: top anchor AND exactly one new read, A -> B.
+        app.tabBars.buttons["首页"].tap()
+        let first = try refreshed(11)
+        let scrollToTopMinY = try currentFrame(first).minY
+        XCTAssertGreaterThan(
+            scrollToTopMinY,
+            try XCTUnwrap(first.first { $0.identifier == "home.scroll" }).frame.minY - 160,
+            "re-tap must land near the resting (top) position")
+        // Real re-tap #2 while already at top: C, same fixed position.
+        app.tabBars.buttons["首页"].tap()
+        let second = try refreshed(12)
+        XCTAssertEqual(
+            try currentFrame(second).minY, scrollToTopMinY, accuracy: 6,
             "an at-top re-tap must keep the same fixed top-anchor position")
         keepFeedbackScreenshot(app, name: "PR13-repeat-top")
     }
@@ -2122,14 +2208,34 @@ extension HomeLoadTests {
                 }) {
                     let frame = bannerNode.frame
                     if frame.minY >= scroll.minY, frame.maxY <= bottom {
-                        let banner = currentBanner(app)
-                        let hittable = banner.isHittable
-                        try budget.requireTime()
-                        if hittable { return }
+                        // Do not retain a firstMatch leaf across autoplay.
+                        // Each live hit check resolves the current button anew;
+                        // an outgoing page must not consume the next page's wait.
+                        func currentIsHittable() throws -> Bool {
+                            try budget.requireTime()
+                            let started = ProcessInfo.processInfo.systemUptime
+                            let hit = app.buttons.matching(
+                                NSPredicate(
+                                    format: "identifier BEGINSWITH %@", "home.banner.current.")
+                            ).element(boundBy: 0).isHittable
+                            print(
+                                "PUSH-HIT current-query=\(ProcessInfo.processInfo.systemUptime - started)s hit=\(hit)"
+                            )
+                            try budget.requireTime()
+                            return hit
+                        }
+                        if try currentIsHittable() { return }
+                        var hitError: (any Error)?
                         let settled = XCTNSPredicateExpectation(
-                            predicate: NSPredicate { _, _ in banner.isHittable }, object: nil)
+                            predicate: NSPredicate { _, _ in
+                                do { return try currentIsHittable() } catch {
+                                    hitError = error
+                                    return true
+                                }
+                            }, object: nil)
                         let result = XCTWaiter.wait(
                             for: [settled], timeout: try observationTimeout(budget, cap: 3))
+                        if let hitError { throw hitError }
                         try budget.requireTime()
                         if result == .completed { return }
                         continue
@@ -2150,7 +2256,10 @@ extension HomeLoadTests {
                     thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.42)))
                 try budget.requireTime()
             }
-            XCTAssertTrue(currentBanner(app).isHittable)
+            XCTAssertTrue(
+                app.buttons.matching(
+                    NSPredicate(format: "identifier BEGINSWITH %@", "home.banner.current.")
+                ).element(boundBy: 0).isHittable)
             try budget.requireTime()
         }
         try revealPoppedBanner()

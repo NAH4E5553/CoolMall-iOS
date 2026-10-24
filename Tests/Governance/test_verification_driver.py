@@ -17,6 +17,8 @@ from pathlib import Path
 name = Path(sys.argv[0]).name
 args = sys.argv[1:]
 event = name
+if name == 'xcrun' and args[:2] == ['simctl', 'uninstall']:
+    event = 'xcrun:uninstall'
 if name == 'xcrun' and 'stream' in args:
     event = 'xcrun:trace'
 if name == 'xcodebuild':
@@ -32,6 +34,11 @@ if event == 'xcodebuild:build:Debug':
     app.mkdir(parents=True)
     (app / 'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier': 'fixture.verification'}))
 if event == 'xcodebuild:discovery':
+    runner = Path(args[args.index('-derivedDataPath') + 1]) / 'Build/Products/Debug-iphonesimulator/CoolMalliOSUITests-Runner.app'
+    runner.mkdir(parents=True)
+    metadata = {'CFBundleIdentifier': os.environ.get('STUB_RUNNER_ID', 'com.coolmall.CoolMallIOSUITests.xctrunner'), 'CFBundlePackageType': 'APPL'}
+    if not os.environ.get('STUB_MISSING_RUNNER'):
+        (runner / 'Info.plist').write_bytes(plistlib.dumps(metadata))
     raw = json.loads(Path('fixture-enumeration.json').read_text())
     if os.environ.get('STUB_BAD_DISCOVERY'):
         raw['values'][0]['enabledTests'] = []
@@ -67,6 +74,24 @@ if event == os.environ.get('STUB_FAIL'):
     sys.exit(int(os.environ.get('STUB_RC', '42')))
 if event == 'check-banner-lifecycle.py' and os.environ.get('STUB_AUDIT_RC'):
     sys.exit(int(os.environ['STUB_AUDIT_RC']))
+if event == 'check-test-results.py':
+    if os.environ.get('STUB_FAIL') == 'xcodebuild:test-without-building' and not os.environ.get('STUB_NATIVE_DEFER'):
+        sys.exit(1)
+    native = {'status':'passed', 'deferred':[], 'nativeExitCode':0, 'wrapperExitCode':0}
+    if os.environ.get('STUB_NATIVE_DEFER'):
+        native.update(status='core-passed-with-deferred', nativeExitCode=65, wrapperExitCode=65,
+                      deferred=[{'id':'CI-DEFER-HOME-TIMEOUT-01','state':'deferred-unresolved',
+                      'method':'CoolMalliOSUITests/HomeLoadTests/testSelectedBannerAndBottomPositionRetainedAcrossTabs()',
+                      'reason':'fixture original timeout retained'}])
+    Path(args[args.index('--output')+1]).write_text(json.dumps(native))
+if event == 'check-banner-lifecycle.py':
+    audit = {'status':'passed','methods':{},'deferred':[]}
+    if os.environ.get('STUB_AUDIT_DEFER'):
+        audit.update(status='core-passed-with-deferred', deferred=[{
+            'id':'CI-DEFER-CYCLE-EVIDENCE-01','state':'deferred-unresolved',
+            'method':'CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()',
+            'reason':'fixture unproven tail'}])
+    Path(args[args.index('--output')+1]).write_text(json.dumps(audit))
 if event == 'xcrun:trace':
     print('AUTOTRACE fixture stream', flush=True)
     Path('.build/trace-ready').write_text('ready')
@@ -81,7 +106,9 @@ class VerificationDriverTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         (self.root / 'Scripts').mkdir()
         (self.root / 'bin').mkdir()
-        for name in ['verify-local.sh', 'verification-timing.py', 'select-test-scope.py', 'classify-ci-changes.py', 'check-boundaries.py', 'with-banner-trace.py']:
+        (self.root / '.github/workflows').mkdir(parents=True)
+        (self.root / '.github/workflows/ios.yml').write_text('name: legacy fixture\\n')
+        for name in ['verify-local.sh', 'prepare-ui-test-runner.py', 'verification-timing.py', 'select-test-scope.py', 'classify-ci-changes.py', 'check-boundaries.py', 'with-banner-trace.py', 'finalize-verification.py', 'ci-deferred-policy.py', 'ci-deferred-checks.json']:
             shutil.copy2(ROOT / 'Scripts' / name, self.root / 'Scripts' / name)
         for name in ['check-toolchain.sh', 'check-format.sh', 'check-boundary-negative.sh',
                      'check-test-results.py', 'check-banner-lifecycle.py']:
@@ -99,7 +126,7 @@ class VerificationDriverTests(unittest.TestCase):
                         MALL_SIMULATOR_ID='fixture-only-no-device',
                         STUB_EVENTS=str(self.root / 'events.jsonl'),
                         STUB_READY=str(self.root / 'ready'))
-        for key in ['MALL_TEST_DIAGNOSTICS', 'STUB_FAIL', 'STUB_RC', 'STUB_CORRUPT', 'STUB_BLOCK', 'STUB_BAD_DISCOVERY', 'STUB_CREATE_BYTECODE', 'STUB_MUTATE_SOURCE', 'GITHUB_EVENT_NAME']:
+        for key in ['MALL_VERIFICATION_TIER', 'MALL_DIFF_BASE', 'MALL_DIFF_HEAD', 'MALL_TEST_DIAGNOSTICS', 'STUB_FAIL', 'STUB_RC', 'STUB_CORRUPT', 'STUB_BLOCK', 'STUB_BAD_DISCOVERY', 'STUB_CREATE_BYTECODE', 'STUB_MUTATE_SOURCE', 'GITHUB_EVENT_NAME']:
             self.env.pop(key, None)
 
     def stub(self, path):
@@ -126,7 +153,7 @@ class VerificationDriverTests(unittest.TestCase):
         self.assertEqual([e['event'] for e in events], [
             'check-toolchain.sh', 'xcrun', 'xcrun', 'check-format.sh',
             'check-boundary-negative.sh', 'xcodebuild:build:Debug', 'xcodebuild:build:Release',
-            'xcrun', 'xcrun', 'xcrun', 'xcrun', 'xcodebuild:discovery', 'xcodebuild:test-without-building', 'check-test-results.py'])
+            'xcrun', 'xcrun', 'xcrun', 'xcrun', 'xcodebuild:discovery', 'xcrun:uninstall', 'xcodebuild:test-without-building', 'check-test-results.py'])
         discovery = next(e['args'] for e in events if e['event'] == 'xcodebuild:discovery')
         self.assertEqual(discovery[discovery.index('-collect-test-diagnostics') + 1], 'never')
         args = next(e['args'] for e in events if e['event'] == 'xcodebuild:test-without-building')
@@ -143,6 +170,64 @@ class VerificationDriverTests(unittest.TestCase):
         self.assertTrue(all(p['status'] == 'passed' and p['durationSeconds'] >= 0 for p in data['phases']))
         self.assertTrue(path.with_suffix('.md').exists())
 
+    def test_runner_cleanup_is_exact_and_ordered_after_discovery(self):
+        result = self.run_entry()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        events = self.events()
+        cleanup = [e for e in events if e['event'] == 'xcrun:uninstall']
+        self.assertEqual(len(cleanup), 1)
+        self.assertEqual(cleanup[0]['args'], ['simctl', 'uninstall', 'fixture-only-no-device',
+                                            'com.coolmall.CoolMallIOSUITests.xctrunner'])
+        names = [e['event'] for e in events]
+        self.assertLess(names.index('xcodebuild:discovery'), names.index('xcrun:uninstall'))
+        self.assertLess(names.index('xcrun:uninstall'), names.index('xcodebuild:test-without-building'))
+        self.assertFalse(any(e['args'][:2] in (['simctl', 'erase'], ['simctl', 'shutdown']) for e in events))
+        _, ledger = self.ledger()
+        phase = next(p for p in ledger['phases'] if p['name'] == 'test-runner-prepare')
+        self.assertEqual((phase['status'], phase['exitCode']), ('passed', 0))
+        log = next((self.root / '.build/verification').glob('*/ui-test-runner-prepare.log')).read_text()
+        self.assertIn('infoSHA256', log)
+
+    def test_runner_cleanup_failure_stops_before_tests_and_preserves_code(self):
+        result = self.run_entry(STUB_FAIL='xcrun:uninstall', STUB_RC='73')
+        self.assertEqual(result.returncode, 73, result.stdout + result.stderr)
+        names = [e['event'] for e in self.events()]
+        self.assertEqual(names.count('xcrun:uninstall'), 1)
+        self.assertNotIn('xcodebuild:test-without-building', names)
+        _, ledger = self.ledger()
+        phase = next(p for p in ledger['phases'] if p['name'] == 'test-runner-prepare')
+        self.assertEqual((phase['status'], phase['exitCode']), ('failed', 73))
+        self.assertEqual(ledger['entryExitCode'], 73)
+        verdict = json.loads(next((self.root / '.build/verification').glob('*/verification-verdict.json')).read_text())
+        self.assertEqual(verdict['status'], 'failed')
+        self.assertEqual(verdict['deferred'], [])
+
+    def test_runner_identity_mismatch_blocks_without_device_cleanup(self):
+        result = self.run_entry(STUB_RUNNER_ID='com.coolmall.CoolMallIOS')
+        self.assertNotEqual(result.returncode, 0)
+        names = [e['event'] for e in self.events()]
+        self.assertNotIn('xcrun:uninstall', names)
+        self.assertNotIn('xcodebuild:test-without-building', names)
+        log = next((self.root / '.build/verification').glob('*/ui-test-runner-prepare.log')).read_text()
+        self.assertIn('identity mismatch', log)
+
+    def test_missing_runner_blocks_without_device_cleanup(self):
+        result = self.run_entry(STUB_MISSING_RUNNER='1')
+        self.assertNotEqual(result.returncode, 0)
+        names = [e['event'] for e in self.events()]
+        self.assertNotIn('xcrun:uninstall', names)
+        self.assertNotIn('xcodebuild:test-without-building', names)
+
+    def test_no_selected_ui_needs_no_product_or_device_cleanup(self):
+        expected = self.root / 'unit-only.txt'
+        expected.write_text('MallCoreTests/HomeContractTests/example()\n')
+        result = subprocess.run(['python3', 'Scripts/prepare-ui-test-runner.py', str(expected),
+                                 'missing-products', 'fixture-only-no-device'], cwd=self.root,
+                                env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)['status'], 'not-required')
+        self.assertEqual(self.events(), [])
+
     def test_live_trace_is_retained_without_changing_business_checks(self):
         result = self.run_entry()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -157,20 +242,8 @@ class VerificationDriverTests(unittest.TestCase):
         self.assertEqual(self.events()[-1]['event'], 'check-test-results.py')
 
     def test_pr_selected_entry_uses_discovered_class_and_exact_head(self):
-        # Replace only the remote transport in this isolated copy, retaining the
-        # actual history decision, Git diff, resolver and shell entry.
+        # Exact clean PR diff; no network history query participates.
         selector = self.root / 'Scripts/select-test-scope.py'
-        text = selector.read_text().replace('def api(path, env):', 'def live_api(path, env):')
-        fake = """def api(path, env):
-    if '/jobs?' in path:
-        return {'total_count':2, 'jobs':[{'name':name,'status':'completed','conclusion':'success'} for name in ['F0 verification','required-checks']]}
-    if '/workflows/' in path:
-        return {'total_count':1,'workflow_runs':[{'id':1,'created_at':'2026-01-01','status':'completed','conclusion':'success','head_sha':env['MALL_DIFF_BASE'],'head_branch':'fixture','pull_requests':[{'number':13}]}]}
-    return {'id':2,'workflow_id':10,'head_branch':'fixture'}
-
-
-"""
-        selector.write_text(text.replace('def prior_verification(', fake + 'def prior_verification('))
         test = self.root / 'CoolMalliOSUITests/HomeLoadTests.swift'
         test.parent.mkdir(); test.write_text('oldBody\n')
         def git(*args):
@@ -192,7 +265,8 @@ class VerificationDriverTests(unittest.TestCase):
         self.assertEqual(scope['mode'], 'selected')
         self.assertTrue(scope['expected'])
         self.assertTrue(scope['omitted'])
-        self.assertTrue(all(method.startswith('CoolMalliOSUITests/HomeLoadTests/') for method in scope['expected']))
+        self.assertTrue(any(method.startswith('CatalogFeatureTests/') for method in scope['expected']))
+        self.assertTrue(any(method.startswith('CoolMalliOSUITests/HomeLoadTests/') for method in scope['expected']))
         args = next(e['args'] for e in self.events() if e['event'] == 'xcodebuild:test-without-building')
         response = self.root / args[args.index('-only-testing') + 1][1:]
         self.assertEqual(response.read_text().splitlines(), scope['expected'])
@@ -268,15 +342,40 @@ class VerificationDriverTests(unittest.TestCase):
         self.assertEqual(result.returncode, 66)
         self.assertEqual(self.events()[-1]['event'], 'xcodebuild:build:Debug')
 
-    def test_test_failure_preserves_65_and_skips_result_validator(self):
-        result = self.run_entry(STUB_FAIL='xcodebuild:test-without-building', STUB_RC='65')
+    def test_test_failure_preserves_65_and_still_runs_result_validator(self):
+        result = self.run_entry(STUB_FAIL='xcodebuild:test-without-building', STUB_RC='65', STUB_NATIVE_DEFER='')
         self.assertEqual(result.returncode, 65)
         path, data = self.ledger()
         self.assertEqual(data['verificationExitCode'], 65)
         self.assertEqual(data['phases'][-2]['status'], 'failed')
-        self.assertEqual(data['phases'][-1]['status'], 'not-run')
+        self.assertEqual(data['phases'][-1]['status'], 'failed')
         self.assertTrue((path.parent / 'tests.log').exists())
-        self.assertEqual(self.events()[-1]['event'], 'xcodebuild:test-without-building')
+        self.assertEqual(self.events()[-1]['event'], 'check-test-results.py')
+
+
+    def test_exact_deferred_native_failure_continues_and_keeps_raw_code(self):
+        result = self.run_entry(STUB_FAIL='xcodebuild:test-without-building', STUB_RC='65', STUB_NATIVE_DEFER='1', STUB_AUDIT_DEFER='1')
+        self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+        path, ledger = self.ledger()
+        phase = next(p for p in ledger['phases'] if p['name']=='test-execute-diagnostics')
+        self.assertEqual((phase['status'],phase['exitCode']), ('deferred-unresolved',65))
+        verdict = json.loads((path.parent/'verification-verdict.json').read_text())
+        self.assertEqual(verdict['status'], 'core-passed-with-deferred')
+        self.assertEqual(verdict['nativeExitCode'], 65)
+        self.assertIn('核心检查通过，但存在延期问题', result.stdout)
+        self.assertNotIn('PASS: local F0 gates', result.stdout)
+
+    def test_deferred_native_cannot_hide_source_identity_failure(self):
+        result = self.run_entry(STUB_FAIL='xcodebuild:test-without-building', STUB_RC='65', STUB_NATIVE_DEFER='1', STUB_TAMPER='response')
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('TEST-SCOPE:',result.stdout)
+        verdict = json.loads((self.ledger()[0].parent/'verification-verdict.json').read_text())
+        self.assertEqual(verdict['status'],'failed')
+
+    def test_deferred_native_cannot_hide_other_gate_failure(self):
+        result = self.run_entry(STUB_FAIL='check-format.sh', STUB_RC='23', STUB_NATIVE_DEFER='1')
+        self.assertEqual(result.returncode,23)
+        self.assertNotIn('Core checks passed with deferred issues',result.stdout)
 
     def test_lifecycle_audit_runs_on_success_and_failed_prefix(self):
         for failure in ['', 'xcodebuild:test-without-building']:

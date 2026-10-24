@@ -14,13 +14,21 @@ finish_run() {
     local code=$? recording=0
     trap - EXIT INT TERM
     set +e
+    # A timing/report failure immediately after execution must not replace an
+    # original, not-yet-classified native failure.
+    if [ "$code" -ne 0 ] && [ "${MALL_TEST_EXIT-0}" -ne 0 ] && [ "${MALL_NATIVE_ACCEPTED-0}" -ne 1 ]; then
+        code="$MALL_TEST_EXIT"
+    fi
     # Audit also runs after a failed UI command. The raw results and first
     # failure remain authoritative; a later audit cannot replace their code.
     if [ "${MALL_TEST_STARTED-0}" -eq 1 ]; then
-        python3 Scripts/check-banner-lifecycle.py --scope "$MALL_RUN/test-scope.json" --trace "$MALL_RUN/banner-trace.log" --tests-log "$MALL_RUN/tests.log" --collector-status "$MALL_RUN/banner-trace.status.log" --output "$MALL_RUN/banner-audit.json" --test-exit "${MALL_TEST_EXIT-$code}"
+        python3 Scripts/check-banner-lifecycle.py --scope "$MALL_RUN/test-scope.json" --trace "$MALL_RUN/banner-trace.log" --tests-log "$MALL_RUN/tests.log" --collector-status "$MALL_RUN/banner-trace.status.log" --output "$MALL_RUN/banner-audit.json" --native-results "$MALL_RUN/native-results.json" --test-exit "${MALL_TEST_EXIT-$code}"
         local audit_code=$?
         if [ "$code" -eq 0 ] && [ "$audit_code" -ne 0 ]; then code="$audit_code"; fi
     fi
+    python3 Scripts/finalize-verification.py "$MALL_RUN" --prior-exit "$code"
+    local verdict_code=$?
+    if [ "$code" -eq 0 ] && [ "$verdict_code" -ne 0 ]; then code="$verdict_code"; fi
     python3 Scripts/verification-timing.py finalize "$MALL_TIMINGS" "$code" "$MALL_OUTCOME" || recording=$?
     python3 Scripts/verification-timing.py report "$MALL_TIMINGS" > "$MALL_RUN/stage-timings.md" || recording=$?
     if [ "$recording" -ne 0 ]; then
@@ -31,7 +39,7 @@ finish_run() {
         python3 Scripts/verification-timing.py recording-failed "$MALL_TIMINGS" "$code" || :
     fi
     if [ "$code" -eq 0 ]; then
-        echo "PASS: local F0 gates; artifacts=$MALL_RUN; remote CI and minimum-runtime coverage are separate."
+        echo "Core verdict recorded in $MALL_RUN/verification-verdict.json; remote CI and minimum-runtime coverage are separate."
     else
         echo "FAIL: exit=$code; artifacts=$MALL_RUN"
     fi
@@ -41,7 +49,7 @@ trap finish_run EXIT
 trap 'MALL_OUTCOME=cancelled; exit 130' INT
 trap 'MALL_OUTCOME=cancelled; exit 143' TERM
 stage_start() { python3 Scripts/verification-timing.py start "$MALL_TIMINGS" "$1"; }
-stage_end() { python3 Scripts/verification-timing.py end "$MALL_TIMINGS"; }
+stage_end() { python3 Scripts/verification-timing.py end "$MALL_TIMINGS" "${1-0}"; }
 python3 Scripts/verification-timing.py init "$MALL_TIMINGS"
 set -x
 stage_start configuration
@@ -49,6 +57,17 @@ if [ -z "${MALL_SIMULATOR_ID-}" ]; then
     echo 'Set MALL_SIMULATOR_ID to an available iOS Simulator UDID'
     exit 1
 fi
+# PRs use the required baseline plus current impact. Local default and
+# main/scheduled/manual runs use the complete regression. No history red gate.
+if [ -z "${MALL_VERIFICATION_TIER-}" ]; then
+    if [ "${GITHUB_EVENT_NAME-local}" = pull_request ]; then
+        MALL_VERIFICATION_TIER=required
+    else
+        MALL_VERIFICATION_TIER=full
+    fi
+fi
+export MALL_VERIFICATION_TIER
+echo "Verification tier: $MALL_VERIFICATION_TIER"
 MALL_TEST_DIAGNOSTICS="${MALL_TEST_DIAGNOSTICS-never}"
 case "$MALL_TEST_DIAGNOSTICS" in
     never|on-failure) ;;
@@ -90,10 +109,21 @@ stage_end
 # Full inventories also use explicit methods, so execution cannot silently drift.
 stage_start test-execute-diagnostics
 MALL_TEST_STARTED=1
-python3 Scripts/with-banner-trace.py "$MALL_SIMULATOR_ID" "$MALL_RUN/banner-trace.log" -- xcodebuild test-without-building -only-testing "@$MALL_RUN/expected-tests.txt" -collect-test-diagnostics "$MALL_TEST_DIAGNOSTICS" -project CoolMalliOS.xcodeproj -scheme CoolMalliOS -testPlan CoolMalliOS -configuration Debug -parallel-testing-enabled NO -destination "platform=iOS Simulator,id=$MALL_SIMULATOR_ID" -derivedDataPath "$MALL_RUN/DerivedData" -resultBundlePath "$MALL_RUN/Tests.xcresult" CODE_SIGNING_ALLOWED=NO > "$MALL_RUN/tests.log" 2>&1
-MALL_TEST_EXIT=0
-stage_end
+if python3 Scripts/with-banner-trace.py "$MALL_SIMULATOR_ID" "$MALL_RUN/banner-trace.log" -- xcodebuild test-without-building -only-testing "@$MALL_RUN/expected-tests.txt" -collect-test-diagnostics "$MALL_TEST_DIAGNOSTICS" -project CoolMalliOS.xcodeproj -scheme CoolMalliOS -testPlan CoolMalliOS -configuration Debug -parallel-testing-enabled NO -destination "platform=iOS Simulator,id=$MALL_SIMULATOR_ID" -derivedDataPath "$MALL_RUN/DerivedData" -resultBundlePath "$MALL_RUN/Tests.xcresult" CODE_SIGNING_ALLOWED=NO > "$MALL_RUN/tests.log" 2>&1; then MALL_TEST_EXIT=0; else MALL_TEST_EXIT=$?; fi
+stage_end "$MALL_TEST_EXIT"
 stage_start test-result-validation
-python3 Scripts/check-test-results.py "$MALL_RUN/Tests.xcresult" --scope "$MALL_RUN/test-scope.json"
+if python3 Scripts/check-test-results.py "$MALL_RUN/Tests.xcresult" --scope "$MALL_RUN/test-scope.json" --execution-status "$MALL_RUN/banner-trace.status.log" --tests-log "$MALL_RUN/tests.log" --output "$MALL_RUN/native-results.json"; then
+    MALL_RESULT_EXIT=0
+else
+    MALL_RESULT_EXIT=$?
+fi
 python3 Scripts/select-test-scope.py check-source "$MALL_RUN/test-scope.json" "$MALL_RUN/expected-tests.txt"
-stage_end
+stage_end "$MALL_RESULT_EXIT"
+if [ "$MALL_RESULT_EXIT" -ne 0 ]; then
+    if [ "$MALL_TEST_EXIT" -ne 0 ]; then exit "$MALL_TEST_EXIT"; fi
+    exit "$MALL_RESULT_EXIT"
+fi
+MALL_NATIVE_ACCEPTED=1
+if [ "$MALL_TEST_EXIT" -ne 0 ]; then
+    python3 Scripts/verification-timing.py defer "$MALL_TIMINGS" test-execute-diagnostics "$MALL_TEST_EXIT"
+fi

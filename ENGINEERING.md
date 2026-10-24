@@ -1130,6 +1130,8 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 
 ### 7.5 例外与规则变更
 
+2026-10-24 approved read-only catalog contracts: APPROVAL-CATEGORY-01-PUBLIC-20261021 authorizes CategoryNode/CategoryLoading/CategoryLoadFailure, HTTPCategoryService and CategoryEntryView. APPROVAL-GOODS-DETAIL-READ-SPEC-20261023 authorizes ProductDetailSnapshot/ProductSpecification/ProductDetailLoading/ProductDetailLoadFailure, HTTPProductDetailService, ProductDetailEntryView, HomeEntryView product-ID intents and RemoteImage.preservesIntrinsicAspectRatio default false. APPROVAL-GOODS-DETAIL-ANDROID-PARITY-20261023 adds read-only coupon/review mapping and detail overlays; deferred share/claim/cart/purchase actions remain entries only. APPROVAL-GOODS-REVIEWS-READ-20261023 authorizes ProductReviewPage/ProductReviewsLoading, HTTPProductReviewsService, ProductReviewsEntryView, optional createdAt and detail view-all product-ID callback. Only exact approved Feature entries are registered; no new Target/SDK/system import exception.
+
 规则有三个等级：MOD/STATE/VM/CHANGE 与“必须”条款是阻断规则；REVIEW 是必须给出结论的评审触发器；标为建议/候选的选型可在约定内决定。检查脚本暂未实现的阻断规则仍需人工核对，不能因没报错而视为允许；F0 未完成不能开始 F1 扩展。
 
 普通功能改动由开发者按既定规则推进；改变规则或申请临时例外由**项目维护者**批准。AI 不得自行批准自己的规则豁免。此次手册细化是用户授权的规则制定，不为日常动作新增重复确认。
@@ -1170,6 +1172,10 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 每项基础能力的完成定义：有真实使用场景、最小清晰 API、正确归属、失败/取消合同、自动化验证和必要的设备验证；不存在第二套页面私有实现绕过它；文档状态更新为实际结果。
 
 ### 8.3 当前实施状态
+
+2026-10-24 R-REVIEWS-01 accepted local repair: the reviews refresh action concurrently waits for the read and a cancellable 300ms minimum hold, allowing the observed refresh-entry transition to reach its normal cleanup path. Only ProductReviewsEntryView changes; original gestures, assertions, idle waits and 60/120s limits remain. Independent clean Debug/Release builds succeeded; the original full chain passed five consecutive runs (29.813/44.484/28.391/27.331/27.068s), empty refresh20.235s and failed refresh24.765s, exact7/0/0. Preserve all original failures. This is bounded iPhone17/iOS27.0 simulator acceptance, not all-runtime proof: 300ms is empirical, private state4/5 thresholds are unconfirmed, probe notifier-pairing warnings limit causal claims, and iOS17/26/hardware remain unverified. Owner authorizes commit/push to PR17; remote CI and owner-deferred closure remain separate, with no CI exemption or merge authorization.
+
+2026-10-24 local catalog delivery: category, product detail and paged reviews are integrated. Category/detail and bounded composition/navigation have independent acceptance evidence; overall reviews acceptance remains incomplete. The owner explicitly defers R-REVIEWS-01 investigation and authorizes a local source commit. Original refresh-quiescence failures and unverified areas remain tracked locally; this is not a passing acceptance or a CI exemption. Keep the original refresh implementation/assertions/allowances; the unaccepted 300ms refresh-action candidate is excluded from this commit. No push, merge or expanded CI exception is authorized by this decision.
 
 | 阶段 | 交付结果 | 当前状态 |
 | --- | --- | --- |

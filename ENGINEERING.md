@@ -1001,6 +1001,7 @@ Keychain 适配的真实读写另用独立测试 service/account 标识验证，
 
 2026-10-24 用户明确批准 DEC-016 精确扩展：在上述两项之外，新增 `CI-DEFER-HOME-OFFSCREEN-01`、`CI-DEFER-HOME-PENDING-01`、`CI-DEFER-HOME-RECONCILIATION-01` 三个整条60秒超时方法；到期仍为2026-11-04，证据为CI 40100669526。扩展只覆盖这三个精确方法、整条执行预算超时且无额外断言/崩溃/业务失败的情况；其他未登记方法超时、同方法混合失败、未知失败仍阻塞，断言/时限/测试选择不变，修复后撤销对应项。
 
+2026-10-25 用户批准再增加 `CI-DEFER-HOME-A11Y-SIZE-01`：`CoolMalliOSUITests/HomeLoadTests/testApprovedHomeDisplayAtAccessibilitySize()` 的整条60秒执行预算超时；到期仍为2026-11-04，证据为CI 40115432871。仅覆盖该精确方法的整条超时且无额外断言/崩溃/业务失败；其他未登记失败继续阻塞，断言/时限/测试选择不变，修复后撤销。
 - 仅 `CoolMalliOSUITests/HomeLoadTests/testSelectedBannerAndBottomPositionRetainedAcrossTabs()` 的整条60秒执行预算超时可非阻塞。方法仍被真实发现、完整选中和执行；原断言/时限不变，原生失败及原命令退出码必须保存。必须核对完整原生清单、唯一明确超时issue及无额外崩溃/业务失败；同方法混合assert/crash、其他未登记方法超时、未知失败、结果/清单缺失、跳过或重复仍阻塞。
 - 仅 cycle `testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag` 已登记的生命周期证据连续性失败临时非阻塞；末尾日志缺失可能漏检尚未修复，cycle被执行时必须主动披露这项完整性风险，不能把内部序号连续冒称尾部已验证。按方法继续审计其他链，完整证据中发现的真实生命周期违规仍阻塞；未知/编码/格式错误不得以“已知问题”统统降级。
 - 编译、源码/模块边界、核心单测、业务断言不相等、App崩溃、结果发现/exact-set/源码身份、后置报告写入失败及其他未登记失败继续阻塞。不得在UI任务使用 `continue-on-error`，不得把任意exit65当超时。执行失败后仍导出保存的xcresult、原始日志及逐项审计和延期报告；这是继续判定，不是把原生Failed改成Passed。
@@ -1150,7 +1151,7 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 
 #### CI专用延期登记（DEC-016，2026-10-21）
 
-此表登记CI结果判定的五项临时范围（2026-10-21原始两项 + 2026-10-24批准扩展三项）；上方由MOD-06检查的模块/权限例外表仍为“无”，不因此开放任何import、public API、依赖或架构豁免。精确机器策略为 `Scripts/ci-deferred-checks.json`，未知策略/范围或到期不得默认放行。默认14自然日，2026-11-04到期；如下一次对外发布更早，以发布前复核为准。未复核不得将这些已知失败继续自动非阻塞；修复后从机器策略撤销对应项并保留历史记录。
+此表登记CI结果判定的六项临时范围（2026-10-21原始两项 + 2026-10-24批准扩展三项 + 2026-10-25批准扩展一项）；上方由MOD-06检查的模块/权限例外表仍为“无”，不因此开放任何import、public API、依赖或架构豁免。精确机器策略为 `Scripts/ci-deferred-checks.json`，未知策略/范围或到期不得默认放行。默认14自然日，2026-11-04到期；如下一次对外发布更早，以发布前复核为准。未复核不得将这些已知失败继续自动非阻塞；修复后从机器策略撤销对应项并保留历史记录。
 
 | 延期ID / 原规则 | 精确范围 / 状态 | 证据、影响与关闭条件 | 负责人 / 批准 | 复核、到期与撤销 |
 | --- | --- | --- | --- | --- |
@@ -1159,6 +1160,7 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 | CI-DEFER-HOME-OFFSCREEN-01 / 7.2测试执行预算 | CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayPausesWhileBannerIsOffscreen()；仅整条60秒执行超时；延期修复、未闭环 | [CI 40100669526](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/40100669526) 该run未完成最终断言；实际App/自动化延迟未区分。关闭：定位、最小修正、保留完整链/全部断言/60秒并定向验证；发现真实卡顿/状态丢失/崩溃立即提级 | 项目维护者（Codex落实、Astra复核）/ 用户2026-10-24明确批准 | 2026-11-04或发布前，以更早者；修复后删精确延期项并复核分类 |
 | CI-DEFER-HOME-PENDING-01 / 7.2测试执行预算 | CoolMalliOSUITests/HomeLoadTests/testBannerPendingPageCancellationAndTabRetention()；仅整条60秒执行超时；延期修复、未闭环 | [CI 40100669526](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/40100669526) 该run未完成最终断言；实际App/自动化延迟未区分。关闭：定位、最小修正、保留完整链/全部断言/60秒并定向验证；发现真实卡顿/状态丢失/崩溃立即提级 | 项目维护者（Codex落实、Astra复核）/ 用户2026-10-24明确批准 | 2026-11-04或发布前，以更早者；修复后删精确延期项并复核分类 |
 | CI-DEFER-HOME-RECONCILIATION-01 / 7.2测试执行预算 | CoolMalliOSUITests/HomeLoadTests/testBannerReconciliationInOneRefreshSequence()；仅整条60秒执行超时；延期修复、未闭环 | [CI 40100669526](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/40100669526) 该run未完成最终断言；实际App/自动化延迟未区分。关闭：定位、最小修正、保留完整链/全部断言/60秒并定向验证；发现真实卡顿/状态丢失/崩溃立即提级 | 项目维护者（Codex落实、Astra复核）/ 用户2026-10-24明确批准 | 2026-11-04或发布前，以更早者；修复后删精确延期项并复核分类 |
+| CI-DEFER-HOME-A11Y-SIZE-01 / 7.2测试执行预算 | CoolMalliOSUITests/HomeLoadTests/testApprovedHomeDisplayAtAccessibilitySize()；仅整条60秒执行超时；延期修复、未闭环 | [CI 40115432871](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/40115432871) 该run未完成最终断言；实际App/自动化延迟未区分。关闭：定位、最小修正、保留完整链/全部断言/60秒并定向验证；发现真实卡顿/状态丢失/崩溃立即提级 | 项目维护者（Codex落实、Astra复核）/ 用户2026-10-25明确批准 | 2026-11-04或发布前，以更早者；修复后删精确延期项并复核分类 |
 
 历史H2返回第2页静止、H3晚唤醒继续沿原跟踪及复发条件，不纳入“已解决”或扩充本表范围；历史H1测量缺陷的关闭结论不改。项目待办/原始证据链接维护于IMPLEMENTATION_PLAN9.12.9与Evidence/iOS/2026-10-21-CI-DEFERRED-01；本地实现未推送前不宣称远端配置已生效。
 

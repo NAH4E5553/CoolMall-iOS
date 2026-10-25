@@ -744,6 +744,15 @@ extension HomeLoadTests {
         ).firstMatch
     }
 
+    /// Live geometry query: re-resolves the exposed current banner at each
+    /// query. Unlike currentBanner, it never holds a snapshot identifier
+    /// across an autoplay transition.
+    @MainActor private func liveCurrentBanner(_ app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "home.banner.current.")
+        ).firstMatch
+    }
+
     /// One AX snapshot is cheaper on slow hosts than a repeated prefix query.
     /// The visible/current banner is the first exposed node with the prefix.
     @MainActor private func currentBannerIdentifier(_ app: XCUIApplication) -> String? {
@@ -795,7 +804,7 @@ extension HomeLoadTests {
     @MainActor @discardableResult
     private func revealBanner(_ app: XCUIApplication) -> Bool {
         for _ in 0..<4 {
-            let banner = currentBanner(app)
+            let banner = liveCurrentBanner(app)
             let scroll = app.scrollViews["home.scroll"].frame.intersection(app.frame)
             let bottom = min(scroll.maxY, app.tabBars.firstMatch.frame.minY)
             if banner.exists {
@@ -819,7 +828,7 @@ extension HomeLoadTests {
             let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.42))
             start.press(forDuration: 0.01, thenDragTo: end)
         }
-        let hittable = currentBanner(app).isHittable
+        let hittable = liveCurrentBanner(app).isHittable
         XCTAssertTrue(hittable)
         return hittable
     }
@@ -2051,7 +2060,7 @@ extension HomeLoadTests {
         defer { bannerAuditEnd(app) }
         XCTAssertTrue(revealBanner(app))
         let scroll = app.scrollViews["home.scroll"].frame.intersection(app.frame)
-        func bannerAboveViewport() -> Bool { currentBanner(app).frame.maxY < scroll.minY }
+        func bannerAboveViewport() -> Bool { liveCurrentBanner(app).frame.maxY < scroll.minY }
         bannerAuditMarker(app, event: "offscreen-begin")
         for _ in 0..<4 where !bannerAboveViewport() {
             let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.75))

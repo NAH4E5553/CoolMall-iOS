@@ -58,7 +58,7 @@ for path in list(PATH_TARGETS):
         PATH_TARGETS[path] = [CATALOG, *LIFECYCLE]
 # CI-only changes are verified by the complete governance suite and PR baseline;
 # changing product/test discovery/shared code still triggers conservative coverage.
-VERIFICATION_PATHS = {'.github/workflows/ios.yml', 'ENGINEERING.md', 'AGENTS.md'} | {
+VERIFICATION_PATHS = {'.github/workflows/ios.yml', '.github/workflows/ios-full-advisory.yml', 'ENGINEERING.md', 'AGENTS.md'} | {
     'Scripts/' + name for name in [
         'SourceBoundaries.swift', 'check-boundaries.py', 'check-boundary-negative.sh',
         'check-source-boundaries.sh', 'check-compiler-boundary.py', 'check-project-boundaries.py',
@@ -67,6 +67,7 @@ VERIFICATION_PATHS = {'.github/workflows/ios.yml', 'ENGINEERING.md', 'AGENTS.md'
         'ci-deferred-policy.py', 'finalize-verification.py', 'prepare-ui-test-runner.py',
         'select-test-scope.py', 'select-simulator.py', 'verification-timing.py',
         'verify-local.sh', 'with-banner-trace.py', 'classify-ci-changes.py',
+        'test-duration-summary.py',
     ]}
 PRODUCTION_TIMING = [CATALOG + '/HomeBannerProductionTimingTests/' + name + '()' for name in [
     'P01DeadlineBeforeAndAtAdvanceActualSelection', 'P02PauseCancelsProductionWaitAndRejectsLateWake',
@@ -105,6 +106,39 @@ def source(root):
             'dirty': bool(dirty), 'worktreeSHA256': digest.hexdigest()}
 
 
+def _ui_test_methods(root, path, patch):
+    """Return the exact changed UI test methods, or None for shared/helper edits."""
+    if not (path.startswith('CoolMalliOSUITests/') and path.endswith('.swift')):
+        return None
+    source = (Path(root) / path).read_text(encoding='utf-8').splitlines()
+    changed = []
+    for match in re.finditer(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@', patch, re.M):
+        start = int(match.group(1))
+        count = int(match.group(2) or '1')
+        if count == 0:
+            changed.append(start)
+        else:
+            changed.extend(range(start, start + count))
+    if not changed:
+        return None
+    methods = set()
+    for line in changed:
+        method = None
+        for index in range(min(line, len(source)) - 1, -1, -1):
+            text = source[index]
+            test = re.match(r'^\s*(?:@MainActor\s+)?func\s+(test[A-Za-z0-9_]+)\s*\(\s*\)', text)
+            if test:
+                method = test.group(1)
+                break
+            if re.match(r'^\s*(?:@MainActor\s+)?func\s+', text):
+                return None
+        if method is None:
+            return None
+        methods.add(method)
+    stem = Path(path).stem
+    return {f'CoolMalliOSUITests/{stem}/{method}()' for method in sorted(methods)}
+
+
 def plan(root, env, history=None):
     """Current cumulative impact owns scope; prior red/deferred runs never do."""
     identity = source(root)
@@ -139,6 +173,7 @@ def plan(root, env, history=None):
                         CLASSIFY.git(root, 'ls-files', '--others', '--exclude-standard', '-z').split(b'\0') if path]
         result['paths'] = [dict(status=status, path=path) for status, path in changes]
         selected = set(PR_SMOKE)
+        method_only = False
         for status, path in changes:
             if CLASSIFY.is_document(path) or path in VERIFICATION_PATHS or path.startswith('Tests/Governance/'):
                 continue
@@ -152,11 +187,22 @@ def plan(root, env, history=None):
                 return result
             patch = git(root, 'diff', '--unified=0', *refs, '--', path)
             changed = '\n'.join(line[1:] for line in patch.splitlines() if line[:1] in ('+', '-') and not line.startswith(('+++', '---')))
+            method_scope = _ui_test_methods(root, path, patch)
+            if method_scope and not re.search(
+                r'\b(public|open|func|struct|class|extension|typealias|import)\b|@(?:Test|Suite)\b', changed
+            ):
+                selected.update(method_scope)
+                result.setdefault('testMethods', []).extend(sorted(method_scope))
+                method_only = True
+                continue
             if re.search(r'\b(public|open|func|struct|class|extension|typealias|import)\b|@(?:Test|Suite)\b', changed):
                 result['reason'] = 'declaration-api-or-test-discovery-change'
                 return result
             selected.update(PATH_TARGETS[path])
-        result.update(mode='selected', reason='required-baseline-plus-current-impact', targets=sorted(selected))
+            method_only = False
+        result.update(mode='selected', targets=sorted(selected))
+        result['reason'] = ('test-method-impact' if method_only and result.get('testMethods')
+                            else 'required-baseline-plus-current-impact')
     except (ValueError, OSError, UnicodeError, subprocess.SubprocessError):
         result['reason'] = 'diff-unavailable-full'
     return result

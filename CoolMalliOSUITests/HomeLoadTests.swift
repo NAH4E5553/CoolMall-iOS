@@ -440,8 +440,22 @@ extension HomeLoadTests {
         XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 15))
         XCTAssertEqual(app.staticTexts["home.source"].label, "工程夹具（retap-sequence）")
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
-        let bannerTitle = sectionContent(app, key: "banner")
         let lastRow = app.staticTexts["home.count.categoryAll"]
+        let offset = app.staticTexts["home.scroll.offset"]
+        XCTAssertTrue(offset.waitForExistence(timeout: 5))
+        func offsetValue() -> Double? { Double(offset.value as? String ?? "") }
+        let initialOffset = offsetValue()
+        XCTAssertNotNil(initialOffset, "observable scroll offset missing")
+        func waitForScrollOffset(_ target: Double) {
+            let atTop = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in
+                    guard let value = offsetValue() else { return false }
+                    return abs(value - target) <= 1
+                }, object: nil)
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [atTop], timeout: 10), .completed,
+                "re-tap must scroll the page back to the observed top")
+        }
         // Reach the full page's auxiliary row, including at accessibility
         // sizes, then prove the re-tap starts from a non-zero content position.
         let atRestMinY = lastRow.frame.minY
@@ -450,6 +464,9 @@ extension HomeLoadTests {
         XCTAssertLessThan(
             lastRow.frame.minY, atRestMinY - 20,
             "precondition: actually scrolled to a non-zero position")
+        XCTAssertLessThan(
+            offsetValue() ?? 0, (initialOffset ?? 0) - 20,
+            "precondition: observable scroll offset moved")
         // Real re-tap #1: scrolls to the fixed top anchor (deterministic
         // scrollTo alignment, recorded as the reference) + exactly one new
         // read (B). The anchor is observable through the first section being
@@ -459,36 +476,20 @@ extension HomeLoadTests {
         let bSeen = NSPredicate(format: "label CONTAINS %@", "全部商品：11")
         expectation(for: bSeen, evaluatedWith: goods)
         waitForExpectations(timeout: 10)
-        // Data refresh and scroll-to-top are separate effects. Wait for the
-        // actual hittable anchor within a bounded window; do not weaken the
-        // assertion, only remove the host-dependent race.
-        let firstOnScreen = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in bannerTitle.isHittable }, object: nil)
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [firstOnScreen], timeout: 5), .completed,
-            "the first section must be back on screen")
-        XCTAssertTrue(bannerTitle.isHittable, "the first section must be back on screen")
-        let scrollToTopMinY = bannerTitle.frame.minY
-        // Bound the anchor against the real scroll viewport. The precise
-        // assertions remain visibility and the second re-tap landing on the
-        // SAME position.
-        XCTAssertGreaterThan(
-            scrollToTopMinY, app.scrollViews["home.scroll"].frame.minY - 160,
-            "re-tap must land near the resting (top) position")
+        // Data refresh and scroll-to-top are separate effects. Read the
+        // DEBUG-only observable offset rather than holding an unstable banner
+        // element across autoplay/refresh.
+        waitForScrollOffset(initialOffset ?? .nan)
+        let scrollToTopOffset = offsetValue()
         // Real re-tap #2 while ALREADY AT TOP (AT: 停在顶部再按→C): a re-tap
         // at the top also refreshes, and the position stays put.
         app.tabBars.buttons["首页"].tap()
         let cSeen = NSPredicate(format: "label CONTAINS %@", "全部商品：12")
         expectation(for: cSeen, evaluatedWith: goods)
         waitForExpectations(timeout: 10)
-        let secondOnScreen = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in bannerTitle.isHittable }, object: nil)
+        waitForScrollOffset(initialOffset ?? .nan)
         XCTAssertEqual(
-            XCTWaiter.wait(for: [secondOnScreen], timeout: 5), .completed,
-            "the first section must be back on screen")
-        XCTAssertTrue(bannerTitle.isHittable)
-        XCTAssertEqual(
-            bannerTitle.frame.minY, scrollToTopMinY, accuracy: 6,
+            offsetValue() ?? .nan, scrollToTopOffset ?? .nan, accuracy: 1,
             "an at-top re-tap must keep the same fixed top-anchor position")
         keepFeedbackScreenshot(app, name: "PR13-repeat-top")
     }

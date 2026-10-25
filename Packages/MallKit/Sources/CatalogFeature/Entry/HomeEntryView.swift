@@ -15,7 +15,6 @@ public struct HomeEntryView: View {
     @GestureState private var isPullDragging = false
     @State private var pullInteraction: UInt64 = 0
     @State private var bannerViewport = CGRect.zero
-    @State private var scrollOffset: CGFloat = 0
     private let home: any HomeLoading
     private let isActive: Bool
     private let allowsBannerAutoplay: Bool
@@ -47,11 +46,6 @@ public struct HomeEntryView: View {
                     // content container below, so manual and native re-taps
                     // use the same outer content edge.
                     Color.clear.frame(height: 1)
-                        .onGeometryChange(for: CGFloat.self) { geometry in
-                            geometry.frame(in: .global).minY
-                        } action: { offset in
-                            scrollOffset = offset
-                        }
                         .accessibilityIdentifier("home.contentTop")
                     if let viewModel {
                         switch viewModel.state {
@@ -171,16 +165,6 @@ public struct HomeEntryView: View {
             .onDisappear {
                 viewModel?.pageTeardown()
             }
-            #if DEBUG
-                .overlay(alignment: .topLeading) {
-                    Text("scroll offset")
-                    .accessibilityIdentifier("home.scroll.offset")
-                    .accessibilityValue(String(format: "%.1f", scrollOffset))
-                    .frame(width: 1, height: 1)
-                    .opacity(0.01)
-                    .allowsHitTesting(false)
-                }
-            #endif
         }
     }
 

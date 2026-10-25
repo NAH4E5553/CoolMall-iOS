@@ -98,8 +98,8 @@ class NativeDeferralTests(unittest.TestCase):
         self.assertEqual([w['id'] for w in result['deferred']],
                          [POLICY.TIMEOUT_ID_BY_METHOD[m] for m in POLICY.TIMEOUT_METHODS[1:]])
         self.assertEqual([w['method'] for w in result['deferred']], list(POLICY.TIMEOUT_METHODS[1:]))
-        self.assertEqual(result['counts']['methodCounts'], {'CoolMalliOSUITests': 3})
-        self.assertEqual(result['nativeCounts']['failedTests'], 3)
+        self.assertEqual(result['counts']['methodCounts'], {'CoolMalliOSUITests': len(POLICY.TIMEOUT_METHODS)-1})
+        self.assertEqual(result['nativeCounts']['failedTests'], len(POLICY.TIMEOUT_METHODS)-1)
 
     def test_multiple_approved_timeouts_cannot_hide_other_failures(self):
         for kind in ['unapproved', 'assertion', 'count', 'duplicate', 'details', 'issue']:
@@ -280,9 +280,9 @@ class LifecycleDeferralTests(unittest.TestCase):
 
 
 class VerdictPolicyTests(unittest.TestCase):
-    def test_policy_scope_has_four_timeouts_and_one_cycle(self):
+    def test_policy_scope_has_five_timeouts_and_one_cycle(self):
         data = POLICY.load(today=date(2026,10,21))
-        self.assertEqual(len(data['issues']), 5)
+        self.assertEqual(len(data['issues']), 6)
         timeouts = {issue['method'] for issue in data['issues']
                     if issue['kind'] == 'whole-method-execution-allowance-60s'}
         self.assertEqual(timeouts, set(POLICY.TIMEOUT_METHODS))
@@ -316,7 +316,8 @@ class VerdictPolicyTests(unittest.TestCase):
         multi={'status':'core-passed-with-deferred','nativeExitCode':65,'wrapperExitCode':65,
                'deferred':[POLICY.warning(POLICY.TIMEOUT_ID_BY_METHOD[m],'timeout',method=m)
                            for m in POLICY.TIMEOUT_METHODS[1:]]}
-        self.assertEqual(FINAL.verdict(multi,{'status':'not-required'},0)['deferredIssueCount'],3)
+        self.assertEqual(FINAL.verdict(multi,{'status':'not-required'},0)['deferredIssueCount'],
+                         len(POLICY.TIMEOUT_METHODS)-1)
         self.assertEqual(FINAL.verdict(native,{'status':'not-required'},23)['status'],'failed')
         for audit in [{'status':'failed'},{},{'status':'passed','methods':{'away':{'status':'failed'}}}]:
             with self.assertRaises(ValueError): FINAL.verdict(native,audit,0)

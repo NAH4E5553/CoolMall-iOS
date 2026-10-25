@@ -49,6 +49,14 @@
       "impact": "Whole-method 60-second timeout; the final assertions were not reached; actual App versus automation delay not yet distinguished.",
       "closeWhen": "Diagnose App versus driver/query time; fix and pass the original complete chain, assertions and 60-second allowance.",
       "evidence": "https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/40100669526"
+    },
+    {
+      "id": "CI-DEFER-HOME-A11Y-SIZE-01",
+      "method": "CoolMalliOSUITests/HomeLoadTests/testApprovedHomeDisplayAtAccessibilitySize()",
+      "kind": "whole-method-execution-allowance-60s",
+      "impact": "Whole-method 60-second timeout in the post-merge full regression; final assertions were not reached; actual App versus automation delay not yet distinguished.",
+      "closeWhen": "Diagnose App versus driver/query time; fix and pass the original complete chain, assertions and 60-second allowance.",
+      "evidence": "https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/40115432871"
     }
   ]
 }

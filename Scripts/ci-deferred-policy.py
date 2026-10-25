@@ -9,6 +9,7 @@ TIMEOUT_METHODS = (
     'CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayPausesWhileBannerIsOffscreen()',
     'CoolMalliOSUITests/HomeLoadTests/testBannerPendingPageCancellationAndTabRetention()',
     'CoolMalliOSUITests/HomeLoadTests/testBannerReconciliationInOneRefreshSequence()',
+    'CoolMalliOSUITests/HomeLoadTests/testApprovedHomeDisplayAtAccessibilitySize()',
 )
 TIMEOUT_METHOD = TIMEOUT_METHODS[0]  # compatibility for existing single-method callers/tests
 CYCLE_METHOD = 'CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()'
@@ -18,6 +19,7 @@ TIMEOUT_IDS = {
     'CI-DEFER-HOME-OFFSCREEN-01': TIMEOUT_METHODS[1],
     'CI-DEFER-HOME-PENDING-01': TIMEOUT_METHODS[2],
     'CI-DEFER-HOME-RECONCILIATION-01': TIMEOUT_METHODS[3],
+    'CI-DEFER-HOME-A11Y-SIZE-01': TIMEOUT_METHODS[4],
 }
 IDS = {identifier: (method, 'whole-method-execution-allowance-60s')
        for identifier, method in TIMEOUT_IDS.items()}

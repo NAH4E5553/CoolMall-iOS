@@ -9,7 +9,7 @@ from pathlib import Path
 PHASES = [
     'configuration', 'environment', 'format', 'policy-negative',
     'build-Debug', 'build-Release', 'simulator-prepare',
-    'test-build-discovery', 'test-execute-diagnostics', 'test-result-validation',
+    'test-build-discovery', 'test-runner-prepare', 'test-execute-diagnostics', 'test-result-validation',
 ]
 
 

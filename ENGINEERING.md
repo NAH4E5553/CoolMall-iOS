@@ -1209,6 +1209,8 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 
 2026-10-23 CI-LAYERS-01：用户授权在 codex/ci-deferred-home-checks@9e47ba4 本地修正并分层；CI 工作树初始干净，分类由 DeepSeek 独立维护。实现/离线治理/保存工件、最小 Runner 链、最终 required 集成与独立复核的实际结果见 Evidence/iOS/2026-10-23-CI-LAYERS-01。实际通过/失败/未验证以本轮冻结身份和 Evidence 结果为准；无 push/远端运行/分支保护/合并，五条旧原生失败、cycle 风险及返回静止/晚唤醒不改写。
 
+2026-10-24 CI runner-prep isolation (from PR15 5dc08cb): add Scripts/prepare-ui-test-runner.py and insert a test-runner-prepare stage in Scripts/verify-local.sh between test-build-discovery and test-execute-diagnostics, so only the enumerated UI runner is uninstalled before execution; register the phase in verification-timing.py and cover order/identity/missing-runner/no-UI in Tests/Governance. No App source, test assertion, 60/120s allowance or known-timing policy change; cart wiring untouched. Governance test plus a real runner uninstall check were the targeted validation; the main-based PR is the delivery vehicle.
+
 | 阶段 | 交付结果 | 当前状态 |
 | --- | --- | --- |
 | 工程手册/AI 入口 | 本文保留唯一规则正文；模块矩阵、系统 import 列表与真实状态同步 | 已实施，沿用 DEC-001—003，无新增规则例外 |

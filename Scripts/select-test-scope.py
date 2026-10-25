@@ -106,6 +106,12 @@ def source(root):
             'dirty': bool(dirty), 'worktreeSHA256': digest.hexdigest()}
 
 
+FUNC_ATTRIBUTES = r'(?:@\w+(?:\([^)]*\))?\s+)*'
+FUNC_MODIFIERS = r'(?:(?:public|private|fileprivate|internal|open|static|class|final|override|mutating|nonisolated|convenience|required)\s+)*'
+FUNC_DECL = re.compile(r'^\s*' + FUNC_ATTRIBUTES + FUNC_MODIFIERS + r'func\s+')
+TEST_FUNC = re.compile(r'^\s*' + FUNC_ATTRIBUTES + FUNC_MODIFIERS + r'func\s+(test[A-Za-z0-9_]+)\s*\(\s*\)')
+
+
 def _ui_test_methods(root, path, patch):
     """Return the exact changed UI test methods, or None for shared/helper edits."""
     if not (path.startswith('CoolMalliOSUITests/') and path.endswith('.swift')):
@@ -126,11 +132,11 @@ def _ui_test_methods(root, path, patch):
         method = None
         for index in range(min(line, len(source)) - 1, -1, -1):
             text = source[index]
-            test = re.match(r'^\s*(?:@MainActor\s+)?func\s+(test[A-Za-z0-9_]+)\s*\(\s*\)', text)
+            test = TEST_FUNC.match(text)
             if test:
                 method = test.group(1)
                 break
-            if re.match(r'^\s*(?:@MainActor\s+)?func\s+', text):
+            if FUNC_DECL.match(text):
                 return None
         if method is None:
             return None
@@ -141,7 +147,7 @@ def _ui_test_methods(root, path, patch):
             text = source[index].strip()
             if not text or text.startswith(('//', '/*', '*')):
                 continue
-            if re.match(r'^(?:@MainActor\s+)?func\s+', text):
+            if FUNC_DECL.match(text):
                 return None
             break
         methods.add(method)

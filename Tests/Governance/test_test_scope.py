@@ -230,7 +230,7 @@ class SelectionTests(unittest.TestCase):
         source = (
             'import XCTest\n'
             'final class HomeLoadTests: XCTestCase {\n'
-            '    func helper() -> Int {\n'
+            '    @MainActor private func helper() -> Int {\n'
             '        return 1\n'
             '    }\n'
             '    func testA() {\n'
@@ -258,7 +258,7 @@ class SelectionTests(unittest.TestCase):
             '    func testA() {\n'
             '    }\n'
             '    // helper documentation\n'
-            '    func helper() {\n'
+            '    @MainActor private func helper() {\n'
             '    }\n'
             '}\n'
         )

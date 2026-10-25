@@ -1207,6 +1207,8 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 
 ### 8.3 当前实施状态
 
+2026-10-25 CI main gate bootstrap record: PR #23 switched iOS F0 main pushes to the blocking required tier and added a separate advisory full-regression workflow. Because the gate change itself was a structural change, its own CI could not pass the old full gate; owner approved a one-time bootstrap merge (temporary enforce_admins disabled, immediately restored) after recording the red full CI. This is a CI-only exception, not a product/test assertion waiver or DEC-016 change. The follow-up docs-only main push runs the required tier; full regression remains a separate advisory workflow.
+
 2026-10-23 CI-LAYERS-01：用户授权在 codex/ci-deferred-home-checks@9e47ba4 本地修正并分层；CI 工作树初始干净，分类由 DeepSeek 独立维护。实现/离线治理/保存工件、最小 Runner 链、最终 required 集成与独立复核的实际结果见 Evidence/iOS/2026-10-23-CI-LAYERS-01。实际通过/失败/未验证以本轮冻结身份和 Evidence 结果为准；无 push/远端运行/分支保护/合并，五条旧原生失败、cycle 风险及返回静止/晚唤醒不改写。
 
 | 阶段 | 交付结果 | 当前状态 |

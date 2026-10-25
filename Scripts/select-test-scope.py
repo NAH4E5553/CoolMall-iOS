@@ -111,8 +111,10 @@ def plan(root, env, history=None):
     event = env.get('GITHUB_EVENT_NAME', 'local')
     tier = env.get('MALL_VERIFICATION_TIER', 'required' if event == 'pull_request' else 'full')
     require(tier in {'required', 'full'}, 'unknown verification tier')
-    if event in {'push', 'schedule', 'workflow_dispatch'}:
-        require(tier == 'full', 'main/scheduled/manual verification must be full')
+    if event in {'schedule', 'workflow_dispatch'}:
+        require(tier == 'full', 'scheduled/manual verification must be full')
+    if event == 'push':
+        require(tier in {'required', 'full'}, 'unknown push verification tier')
     result = dict(source=identity, mode='full', tier=tier, reason='complete-regression', targets=[],
                   mappingSHA256=MAPPING_HASH, paths=[], testPlan='CoolMalliOS', configuration='Debug')
     head = env.get('MALL_DIFF_HEAD', identity['head'])

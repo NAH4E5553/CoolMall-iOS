@@ -56,7 +56,8 @@ jobs:
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
       MALL_TEST_DIAGNOSTICS: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_diagnostics && 'on-failure' || 'never' }}
-      MALL_VERIFICATION_TIER: ${{ github.event_name == 'pull_request' && 'required' || 'full' }}
+      # PR and main push use the blocking required tier. Scheduled/manual runs keep the full tier.
+      MALL_VERIFICATION_TIER: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && 'required' || 'full' }}
       MALL_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
       MALL_DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
       MALL_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}

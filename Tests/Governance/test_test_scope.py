@@ -184,6 +184,20 @@ class SelectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'missing'):
             S.resolve(scope, raw, TARGETS)
 
+    def test_push_required_tier_is_allowed_while_schedule_remains_full(self):
+        self.write('CoolMalliOSUITests/HomeLoadTests.swift', 'changedBody\n')
+        head = self.commit()
+        push = S.plan(
+            self.root,
+            dict(GITHUB_EVENT_NAME='push', MALL_VERIFICATION_TIER='required',
+                 MALL_DIFF_BASE=self.base, MALL_DIFF_HEAD=head))
+        self.assertEqual((push['tier'], push['mode']), ('required', 'selected'))
+        with self.assertRaisesRegex(ValueError, 'scheduled/manual'):
+            S.plan(
+                self.root,
+                dict(GITHUB_EVENT_NAME='schedule', MALL_VERIFICATION_TIER='required',
+                     MALL_DIFF_HEAD=head))
+
     def test_local_dirty_required_captures_actual_source_and_unknown_falls_back(self):
         env = dict(MALL_VERIFICATION_TIER='required')
         self.write('Scripts/check-test-results.py', '# untracked tooling\n')

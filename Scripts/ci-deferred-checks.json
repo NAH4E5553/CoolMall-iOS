@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "decision": "DEC-016",
+  "created": "2026-10-21",
+  "expires": "2026-11-04",
+  "state": "deferred-unresolved",
+  "evidence": "https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/39605435062",
+  "reviewRequired": [
+    "before-home-logic-change",
+    "before-external-release",
+    "on-reproducible-user-stall-state-loss-or-crash",
+    "by-expiry"
+  ],
+  "issues": [
+    {
+      "id": "CI-DEFER-HOME-TIMEOUT-01",
+      "method": "CoolMalliOSUITests/HomeLoadTests/testSelectedBannerAndBottomPositionRetainedAcrossTabs()",
+      "kind": "whole-method-execution-allowance-60s",
+      "impact": "Full round-trip did not reach all final assertions; actual App versus automation delay not yet distinguished.",
+      "closeWhen": "Diagnose real App versus driver/query time; fix and pass original complete chain, assertions and 60-second allowance."
+    },
+    {
+      "id": "CI-DEFER-CYCLE-EVIDENCE-01",
+      "method": "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()",
+      "kind": "cycle-sequence-gap-and-unproven-tail",
+      "impact": "Missing observed sequence and unproven terminal completeness prevent complete lifecycle acceptance; passing native UI does not prove complete evidence.",
+      "closeWhen": "Establish end-to-end and tail completeness checks with fault controls; retained complete lifecycle semantics pass."
+    },
+    {
+      "id": "CI-DEFER-HOME-OFFSCREEN-01",
+      "method": "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayPausesWhileBannerIsOffscreen()",
+      "kind": "whole-method-execution-allowance-60s",
+      "impact": "Whole-method 60-second timeout; the final assertions were not reached; actual App versus automation delay not yet distinguished.",
+      "closeWhen": "Diagnose App versus driver/query time; fix and pass the original complete chain, assertions and 60-second allowance.",
+      "evidence": "https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/40100669526"
+    },
+    {
+      "id": "CI-DEFER-HOME-PENDING-01",
+      "method": "CoolMalliOSUITests/HomeLoadTests/testBannerPendingPageCancellationAndTabRetention()",
+      "kind": "whole-method-execution-allowance-60s",
+      "impact": "Whole-method 60-second timeout; the final assertions were not reached; actual App versus automation delay not yet distinguished.",
+      "closeWhen": "Diagnose App versus driver/query time; fix and pass the original complete chain, assertions and 60-second allowance.",
+      "evidence": "https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/40100669526"
+    },
+    {
+      "id": "CI-DEFER-HOME-RECONCILIATION-01",
+      "method": "CoolMalliOSUITests/HomeLoadTests/testBannerReconciliationInOneRefreshSequence()",
+      "kind": "whole-method-execution-allowance-60s",
+      "impact": "Whole-method 60-second timeout; the final assertions were not reached; actual App versus automation delay not yet distinguished.",
+      "closeWhen": "Diagnose App versus driver/query time; fix and pass the original complete chain, assertions and 60-second allowance.",
+      "evidence": "https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/40100669526"
+    },
+    {
+      "id": "CI-DEFER-HOME-A11Y-SIZE-01",
+      "method": "CoolMalliOSUITests/HomeLoadTests/testApprovedHomeDisplayAtAccessibilitySize()",
+      "kind": "whole-method-execution-allowance-60s",
+      "impact": "Whole-method 60-second timeout in the post-merge full regression; final assertions were not reached; actual App versus automation delay not yet distinguished.",
+      "closeWhen": "Diagnose App versus driver/query time; fix and pass the original complete chain, assertions and 60-second allowance.",
+      "evidence": "https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/40115432871"
+    }
+  ]
+}

@@ -52,10 +52,26 @@ class CIRuntimeTests(unittest.TestCase):
 class CIResultTests(unittest.TestCase):
     def needs(self, required='true', result='success', reason='implementation-rules-or-unknown'):
         return {'classify': {'result': 'success', 'outputs': {'run_verification': required, 'reason': reason}},
-                'verify': {'result': result}}
+                'verify': {'result': result, 'outputs': {'verification_status': 'core-passed', 'deferred_count': '0'}}}
 
     def test_success(self):
         self.assertIn('verification succeeded', RESULTS.validate(self.needs()))
+
+
+    def test_deferred_core_success_is_explicit_warning(self):
+        data = self.needs()
+        data['verify']['outputs'] = {'verification_status':'core-passed-with-deferred', 'deferred_count':'2'}
+        self.assertIn('核心检查通过，但存在延期问题', RESULTS.validate(data))
+
+    def test_success_without_valid_structured_result_blocks(self):
+        for outputs in [{}, {'verification_status':'all-passed','deferred_count':'0'},
+                        {'verification_status':'core-passed','deferred_count':'1'},
+                        {'verification_status':'core-passed-with-deferred','deferred_count':'0'},
+                        {'verification_status':'core-passed-with-deferred','deferred_count':'3'},
+                        {'verification_status':'core-passed-with-deferred','deferred_count':'01'}]:
+            with self.subTest(outputs=outputs), self.assertRaises(ValueError):
+                data = self.needs(); data['verify']['outputs'] = outputs
+                RESULTS.validate(data)
 
     def test_explicit_scope_exclusion(self):
         self.assertIn('not run', RESULTS.validate(self.needs('false', 'skipped', 'docs-or-placeholder-only')))

@@ -8,8 +8,6 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-import urllib.request
-import urllib.parse
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('classification', ROOT / 'Scripts/classify-ci-changes.py')
@@ -38,7 +36,44 @@ PATH_TARGETS = {
     'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeCategorySectionView.swift': [CATALOG, HOME],
     'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeCouponSectionView.swift': [CATALOG, HOME],
 }
-MAPPING_HASH = hashlib.sha256(json.dumps(PATH_TARGETS, sort_keys=True).encode()).hexdigest()
+CATEGORY = 'CoolMalliOSUITests/CategoryLoadTests'
+PATH_TARGETS['CoolMalliOSUITests/CategoryLoadTests.swift'] = [CATEGORY]
+PR_SMOKE = [NAVIGATION + '/' + name + '()' for name in [
+    'testColdStartDefaultsToHomeWithFourTabs', 'testCartRouteHidesTabBarAndBackRestoresIt',
+]] + [HOME + '/' + name + '()' for name in [
+    'testValidFixtureShowsLoadedStateAndSectionCounts', 'testRetryFixtureFailsFirstReadThenSucceedsOnUserRetry',
+    'testReTapScrollsToTopAndRefreshesWithNewSnapshot', 'testBannerAutoplayArmsAfterPushedRoutePopsBack',
+    'testBannerObservationBudgetRetriesConsumeTheOriginalDeadline',
+    'testBannerObservationBudgetLocalCapCannotEnlargeOrResetTheBudget',
+    'testBannerObservationBudgetCorrectValueReturnedLateStillFails',
+]]
+LIFECYCLE = [HOME + '/' + name + '()' for name in [
+    'testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag',
+    'testBannerAutoplayPausesWhileAwayAndResumesFullInterval',
+    'testBannerAutoplayPausesWhileBannerIsOffscreen',
+    'testBannerAutoplayArmsAfterPushedRoutePopsBack', 'testBannerFastPageRoundTripsAreBounded',
+]]
+for path in list(PATH_TARGETS):
+    if path.endswith(('HomeBannerCarouselView.swift', 'HomeBannerTiming.swift')):
+        PATH_TARGETS[path] = [CATALOG, *LIFECYCLE]
+# CI-only changes are verified by the complete governance suite and PR baseline;
+# changing product/test discovery/shared code still triggers conservative coverage.
+VERIFICATION_PATHS = {'.github/workflows/ios.yml', 'ENGINEERING.md', 'AGENTS.md'} | {
+    'Scripts/' + name for name in [
+        'SourceBoundaries.swift', 'check-boundaries.py', 'check-boundary-negative.sh',
+        'check-source-boundaries.sh', 'check-compiler-boundary.py', 'check-project-boundaries.py',
+        'check-format.sh', 'check-toolchain.sh', 'format.sh', 'check-ci-results.py',
+        'check-test-results.py', 'check-banner-lifecycle.py', 'ci-deferred-checks.json',
+        'ci-deferred-policy.py', 'finalize-verification.py', 'prepare-ui-test-runner.py',
+        'select-test-scope.py', 'select-simulator.py', 'verification-timing.py',
+        'verify-local.sh', 'with-banner-trace.py', 'classify-ci-changes.py',
+    ]}
+PRODUCTION_TIMING = [CATALOG + '/HomeBannerProductionTimingTests/' + name + '()' for name in [
+    'P01DeadlineBeforeAndAtAdvanceActualSelection', 'P02PauseCancelsProductionWaitAndRejectsLateWake',
+    'P03ReturnArmsNewFullPeriodWithoutCatchup', 'P04RapidPauseReturnHasOneCurrentTaskAndNoDuplicateCommit',
+    'P05RealHostRemovalCancelsAutoplayWait', 'P06HiddenFullCycleStillFailsAudit',
+]]
+MAPPING_HASH = hashlib.sha256(json.dumps([PATH_TARGETS, PR_SMOKE, sorted(VERIFICATION_PATHS), CATEGORY, PRODUCTION_TIMING], sort_keys=True).encode()).hexdigest()
 
 ID = re.compile(r'[A-Za-z_][A-Za-z_0-9]*(?:/[A-Za-z_][A-Za-z_0-9]*)+/[A-Za-z_][A-Za-z_0-9]*\([A-Za-z_0-9:]*\)|[A-Za-z_][A-Za-z_0-9]*/[A-Za-z_][A-Za-z_0-9]*\([A-Za-z_0-9:]*\)')
 
@@ -70,101 +105,72 @@ def source(root):
             'dirty': bool(dirty), 'worktreeSHA256': digest.hexdigest()}
 
 
-def api(path, env):
-    require(re.fullmatch(r'[A-Za-z_0-9.-]+/[A-Za-z_0-9.-]+', env['GITHUB_REPOSITORY']), 'invalid repository')
-    request = urllib.request.Request('https://api.github.com/repos/' + env['GITHUB_REPOSITORY'] + path,
-                                    headers={'Authorization': 'Bearer ' + env['GITHUB_TOKEN'],
-                                             'Accept': 'application/vnd.github+json'})
-    with urllib.request.urlopen(request, timeout=20) as response:
-        return json.load(response)
-
-
-def prior_verification(root, env, fetch=api):
-    """Only the latest related run may close earlier failures; uncertainty is full."""
-    try:
-        current = fetch('/actions/runs/' + str(int(env['GITHUB_RUN_ID'])), env)
-        number = int(env['MALL_PR_NUMBER'])
-        if current.get('run_attempt', 1) != 1:
-            return False, 'rerun-requires-full'
-        query = '/actions/workflows/' + str(int(current['workflow_id'])) + '/runs?event=pull_request&per_page=100&branch=' + urllib.parse.quote(current['head_branch'], safe='')
-        runs = []
-        for page in range(1, 4):
-            data = fetch(query + '&page=' + str(page), env)
-            runs.extend(data['workflow_runs'])
-            if len(runs) >= data['total_count']:
-                break
-        else:
-            return False, 'history-pagination-incomplete'
-        related = []
-        for run in runs:
-            if run['id'] == current['id']:
-                continue
-            # A run on this branch with missing PR association is ambiguous.
-            if not run['pull_requests'] and run['head_branch'] == current['head_branch']:
-                return False, 'history-pr-unknown'
-            if any(pr['number'] == number for pr in run['pull_requests']):
-                related.append(run)
-        if not related:
-            return False, 'history-no-success-evidence'
-        latest = max(related, key=lambda run: (run['created_at'], run['id']))
-        if latest['status'] != 'completed' or latest['conclusion'] != 'success':
-            return False, 'latest-verification-not-success'
-        subprocess.run(['git', '-C', str(root), 'merge-base', '--is-ancestor', latest['head_sha'], env['MALL_DIFF_HEAD']], check=True, capture_output=True)
-        jobs = fetch('/actions/runs/' + str(latest['id']) + '/jobs?per_page=100', env)
-        require(jobs['total_count'] == len(jobs['jobs']), 'history jobs incomplete')
-        named = {job['name']: job for job in jobs['jobs']}
-        require(all(named[name]['conclusion'] == 'success' and named[name]['status'] == 'completed'
-                    for name in ['F0 verification', 'required-checks']), 'previous full verification missing')
-        return True, 'previous-verification-success:' + str(latest['id'])
-    except (KeyError, TypeError, ValueError, OSError, subprocess.SubprocessError):
-        return False, 'history-unavailable-or-untrusted'
-
-
-def plan(root, env, history=prior_verification):
+def plan(root, env, history=None):
+    """Current cumulative impact owns scope; prior red/deferred runs never do."""
     identity = source(root)
-    result = {'source': identity, 'mode': 'full', 'reason': 'non-pr', 'targets': [],
-              'mappingSHA256': MAPPING_HASH, 'paths': [], 'testPlan': 'CoolMalliOS', 'configuration': 'Debug'}
-    if env.get('GITHUB_EVENT_NAME') != 'pull_request':
+    event = env.get('GITHUB_EVENT_NAME', 'local')
+    tier = env.get('MALL_VERIFICATION_TIER', 'required' if event == 'pull_request' else 'full')
+    require(tier in {'required', 'full'}, 'unknown verification tier')
+    if event in {'schedule', 'workflow_dispatch'}:
+        require(tier == 'full', 'scheduled/manual verification must be full')
+    if event == 'push':
+        require(tier in {'required', 'full'}, 'unknown push verification tier')
+    result = dict(source=identity, mode='full', tier=tier, reason='complete-regression', targets=[],
+                  mappingSHA256=MAPPING_HASH, paths=[], testPlan='CoolMalliOS', configuration='Debug')
+    head = env.get('MALL_DIFF_HEAD', identity['head'])
+    if event == 'pull_request':
+        require(re.fullmatch(r'[0-9a-f]{40}', head or '') and identity['head'] == head
+                and not identity['dirty'], 'PR checkout must be clean exact head')
+    if tier == 'full':
         return result
-    head, base = env.get('MALL_DIFF_HEAD', ''), env.get('MALL_DIFF_BASE', '')
-    require(re.fullmatch(r'[0-9a-f]{40}', head or '') and identity['head'] == head and not identity['dirty'], 'PR checkout must be clean exact head')
     try:
+        base = env.get('MALL_DIFF_BASE', identity['head'] if event == 'local' else '')
         require(re.fullmatch(r'[0-9a-f]{40}', base or ''), 'missing base')
         base = git(root, 'merge-base', base, head)
         result.update(mergeBase=base, head=head)
-        tokens = CLASSIFY.git(root, 'diff', '--no-renames', '--name-status', '-z', base, head).decode().rstrip('\0').split('\0')
-        require(len(tokens) % 2 == 0, 'invalid diff')
-        changes = list(zip(tokens[::2], tokens[1::2]))
-        result['paths'] = [{'status': status, 'path': path} for status, path in changes]
-        selected = set()
+        # Local validation includes tracked disk changes and new source files;
+        # PR runs require the exact clean head above.
+        refs = [base, head] if event == 'pull_request' else [base]
+        tokens = CLASSIFY.git(root, 'diff', '--no-renames', '--name-status', '-z', *refs).decode().rstrip('\0').split('\0')
+        changes = [] if tokens == [''] else list(zip(tokens[::2], tokens[1::2]))
+        require(tokens == [''] or len(tokens) % 2 == 0, 'invalid diff')
+        if event != 'pull_request':
+            changes += [('A', os.fsdecode(path)) for path in
+                        CLASSIFY.git(root, 'ls-files', '--others', '--exclude-standard', '-z').split(b'\0') if path]
+        result['paths'] = [dict(status=status, path=path) for status, path in changes]
+        selected = set(PR_SMOKE)
         for status, path in changes:
-            if CLASSIFY.is_document(path):
+            if CLASSIFY.is_document(path) or path in VERIFICATION_PATHS or path.startswith('Tests/Governance/'):
                 continue
-            before_mode, _ = CLASSIFY.snapshot(root, base, path)
-            after_mode, _ = CLASSIFY.snapshot(root, head, path)
-            if status != 'M' or before_mode != '100644' or after_mode != '100644' or path not in PATH_TARGETS:
-                result['reason'] = 'unknown-production-configuration-or-structural-change'
+            if path not in PATH_TARGETS or status != 'M':
+                result['reason'] = 'unknown-shared-or-structural-impact'
                 return result
-            # A conservative risk gate, NOT test discovery or a Swift parser:
-            # declarations/API edits may add consumers outside this graph.
-            patch = git(root, 'diff', '--unified=0', base, head, '--', path)
+            before_mode, _ = CLASSIFY.snapshot(root, base, path)
+            after_mode = CLASSIFY.snapshot(root, head, path)[0] if event == 'pull_request' else ('100755' if (root/path).stat().st_mode & 0o111 else '100644')
+            if before_mode != '100644' or after_mode != '100644':
+                result['reason'] = 'file-type-or-mode-impact'
+                return result
+            patch = git(root, 'diff', '--unified=0', *refs, '--', path)
             changed = '\n'.join(line[1:] for line in patch.splitlines() if line[:1] in ('+', '-') and not line.startswith(('+++', '---')))
             if re.search(r'\b(public|open|func|struct|class|extension|typealias|import)\b|@(?:Test|Suite)\b', changed):
                 result['reason'] = 'declaration-api-or-test-discovery-change'
                 return result
             selected.update(PATH_TARGETS[path])
-        if not selected:
-            result['reason'] = 'empty-mapped-diff'
-            return result
-        good, reason = history(root, env)
-        result['history'] = reason
-        if good:
-            result.update(mode='selected', reason='explicit-consumer-union', targets=sorted(selected))
-        else:
-            result['reason'] = reason
+        result.update(mode='selected', reason='required-baseline-plus-current-impact', targets=sorted(selected))
     except (ValueError, OSError, UnicodeError, subprocess.SubprocessError):
         result['reason'] = 'diff-unavailable-full'
     return result
+
+
+def selected_methods(scope, methods):
+    if scope['mode'] == 'full':
+        return list(methods)
+    selected = [m for m in methods if m.split('/')[0] != 'CoolMalliOSUITests'
+                or m.startswith(CATEGORY + '/')
+                or any(m == prefix or m.startswith(prefix + '/') for prefix in scope['targets'])]
+    require(all(any(m == prefix or m.startswith(prefix + '/') for m in selected)
+                for prefix in scope['targets']), 'expected target/method missing')
+    return selected
 
 
 def inventory(data, targets):
@@ -179,24 +185,29 @@ def inventory(data, targets):
 
 def resolve(scope, raw, targets):
     methods = inventory(raw, targets)
-    selected = [method for method in methods if scope['mode'] == 'full' or any(method.startswith(prefix + '/') for prefix in scope['targets'])]
-    require(selected and (scope['mode'] == 'full' or all(any(m.startswith(prefix + '/') for m in selected) for prefix in scope['targets'])), 'expected target missing')
-    return dict(scope, discovered=methods, expected=selected,
-                omitted=[{'identifier': method, 'reason': 'outside explicit target consumers'} for method in methods if method not in selected],
+    require(set(PRODUCTION_TIMING) <= set(methods), 'required production timing method missing')
+    selected = selected_methods(scope, methods)
+    require(selected, 'empty selected inventory')
+    return dict(scope, tier=scope.get('tier', 'full' if scope['mode'] == 'full' else 'required'), discovered=methods, expected=selected,
+                omitted=[{'identifier': method, 'reason': 'complete regression; outside current required impact'} for method in methods if method not in selected],
                 expectedSHA256=hashlib.sha256(('\n'.join(selected) + '\n').encode()).hexdigest(),
                 inventorySHA256=hashlib.sha256(('\n'.join(methods) + '\n').encode()).hexdigest())
 
 
 def validate_manifest(data):
+    require(data.get('tier') in {'required', 'full'}, 'missing/unknown verification tier')
     require(data['mappingSHA256'] == MAPPING_HASH and data['mode'] in ('full', 'selected'), 'scope mapping/mode changed')
     require(data['testPlan'] == 'CoolMalliOS' and data['configuration'] == 'Debug', 'manifest configuration mismatch')
     methods = data['discovered']
+    require(set(PRODUCTION_TIMING) <= set(methods), 'required production timing method missing')
+    if data['mode'] == 'selected':
+        require(set(PR_SMOKE) <= set(data['targets']), 'required UI baseline removed')
     require(methods and methods == sorted(set(methods)), 'invalid discovery manifest')
     for method in methods:
         identifier(method)
     for key, values in [('inventorySHA256', methods), ('expectedSHA256', data['expected'])]:
         require(data[key] == hashlib.sha256(('\n'.join(values) + '\n').encode()).hexdigest(), 'inventory hash mismatch')
-    expected = [m for m in methods if data['mode'] == 'full' or any(m.startswith(p + '/') for p in data['targets'])]
+    expected = selected_methods(data, methods)
     require(expected and data['expected'] == expected, 'selected manifest differs from consumer union')
 
 
@@ -220,7 +231,7 @@ def main(argv):
     else:
         raise ValueError('unknown command')
     path.write_text(json.dumps(data, indent=2) + '\n')
-    print('Test scope: ' + data['mode'] + ' (' + data['reason'] + ')')
+    print('Test scope: ' + data.get('tier', 'legacy') + '/' + data['mode'] + ' (' + data['reason'] + ')')
 
 
 if __name__ == '__main__':

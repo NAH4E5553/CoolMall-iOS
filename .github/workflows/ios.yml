@@ -96,6 +96,9 @@ jobs:
           for report in .build/verification/*/verification-verdict.md; do
             if [ -f "$report" ]; then cat "$report" >> "$GITHUB_STEP_SUMMARY"; fi
           done
+          for log in .build/verification/*/tests.log; do
+            if [ -f "$log" ]; then python3 Scripts/test-duration-summary.py "$log" >> "$GITHUB_STEP_SUMMARY"; fi
+          done
       - name: "Verification verdict: ${{ steps.gates.outputs.verification_status }}"
         if: ${{ always() }}
         shell: bash

@@ -440,15 +440,15 @@ extension HomeLoadTests {
         XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 15))
         XCTAssertEqual(app.staticTexts["home.source"].label, "工程夹具（retap-sequence）")
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
-        let bannerTitle = sectionContent(app, key: "banner")
+        let topAnchor = app.staticTexts["home.loaded"]
+        let initialTopY = topAnchor.frame.minY
         let lastRow = app.staticTexts["home.count.categoryAll"]
         // Reach the full page's auxiliary row, including at accessibility
         // sizes, then prove the re-tap starts from a non-zero content position.
-        let atRestMinY = lastRow.frame.minY
         reachAuxiliaryRow(app, row: lastRow, maximumDrags: 10)
         XCTAssertTrue(lastRow.isHittable)
         XCTAssertLessThan(
-            lastRow.frame.minY, atRestMinY - 20,
+            topAnchor.frame.minY, initialTopY - 20,
             "precondition: actually scrolled to a non-zero position")
         // Real re-tap #1: scrolls to the fixed top anchor (deterministic
         // scrollTo alignment, recorded as the reference) + exactly one new
@@ -459,23 +459,30 @@ extension HomeLoadTests {
         let bSeen = NSPredicate(format: "label CONTAINS %@", "全部商品：11")
         expectation(for: bSeen, evaluatedWith: goods)
         waitForExpectations(timeout: 10)
-        XCTAssertTrue(bannerTitle.isHittable, "the first section must be back on screen")
-        let scrollToTopMinY = bannerTitle.frame.minY
-        // Bound the anchor against the real scroll viewport. The precise
-        // assertions remain visibility and the second re-tap landing on the
-        // SAME position.
-        XCTAssertGreaterThan(
-            scrollToTopMinY, app.scrollViews["home.scroll"].frame.minY - 160,
-            "re-tap must land near the resting (top) position")
+        // topAnchor is the fixed top marker above the variable-height
+        // content; its frame is a stable scroll offset. A banner/current
+        // element changes during autoplay, and a lower row moves when the
+        // refreshed content grows.
+        let waitForTop: () -> Void = {
+            let atTop = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in
+                    abs(topAnchor.frame.minY - initialTopY) <= 2
+                }, object: nil)
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [atTop], timeout: 5), .completed,
+                "re-tap must scroll the page back to the top")
+        }
+        waitForTop()
+        XCTAssertEqual(topAnchor.frame.minY, initialTopY, accuracy: 2)
         // Real re-tap #2 while ALREADY AT TOP (AT: 停在顶部再按→C): a re-tap
         // at the top also refreshes, and the position stays put.
         app.tabBars.buttons["首页"].tap()
         let cSeen = NSPredicate(format: "label CONTAINS %@", "全部商品：12")
         expectation(for: cSeen, evaluatedWith: goods)
         waitForExpectations(timeout: 10)
-        XCTAssertTrue(bannerTitle.isHittable)
+        waitForTop()
         XCTAssertEqual(
-            bannerTitle.frame.minY, scrollToTopMinY, accuracy: 6,
+            topAnchor.frame.minY, initialTopY, accuracy: 2,
             "an at-top re-tap must keep the same fixed top-anchor position")
         keepFeedbackScreenshot(app, name: "PR13-repeat-top")
     }

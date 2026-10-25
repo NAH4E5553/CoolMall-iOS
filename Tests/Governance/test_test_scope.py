@@ -198,6 +198,58 @@ class SelectionTests(unittest.TestCase):
                 dict(GITHUB_EVENT_NAME='schedule', MALL_VERIFICATION_TIER='required',
                      MALL_DIFF_HEAD=head))
 
+    def test_changed_ui_test_method_selects_only_that_method(self):
+        path = 'CoolMalliOSUITests/HomeLoadTests.swift'
+        source = (
+            'import XCTest\n'
+            'final class HomeLoadTests: XCTestCase {\n'
+            '    func testA() {\n'
+            '        let value = 1\n'
+            '    }\n'
+            '    func testB() {\n'
+            '        let value = 2\n'
+            '    }\n'
+            '}\n'
+        )
+        self.write(path, source)
+        base = self.commit()
+        self.write(path, source.replace('let value = 1', 'let value = 3'))
+        head = self.commit()
+        result = S.plan(
+            self.root,
+            dict(GITHUB_EVENT_NAME='pull_request', MALL_VERIFICATION_TIER='required',
+                 MALL_DIFF_BASE=base, MALL_DIFF_HEAD=head))
+        self.assertEqual(result['reason'], 'test-method-impact')
+        self.assertEqual(result['testMethods'], ['CoolMalliOSUITests/HomeLoadTests/testA()'])
+        self.assertIn('CoolMalliOSUITests/HomeLoadTests/testA()', result['targets'])
+        self.assertIn(S.PR_SMOKE[0], result['targets'])
+        self.assertNotIn(S.HOME, result['targets'])
+
+    def test_changed_ui_test_helper_falls_back_to_whole_target(self):
+        path = 'CoolMalliOSUITests/HomeLoadTests.swift'
+        source = (
+            'import XCTest\n'
+            'final class HomeLoadTests: XCTestCase {\n'
+            '    func helper() -> Int {\n'
+            '        return 1\n'
+            '    }\n'
+            '    func testA() {\n'
+            '        _ = helper()\n'
+            '    }\n'
+            '}\n'
+        )
+        self.write(path, source)
+        base = self.commit()
+        self.write(path, source.replace('return 1', 'return 2'))
+        head = self.commit()
+        result = S.plan(
+            self.root,
+            dict(GITHUB_EVENT_NAME='pull_request', MALL_VERIFICATION_TIER='required',
+                 MALL_DIFF_BASE=base, MALL_DIFF_HEAD=head))
+        self.assertEqual(result['reason'], 'required-baseline-plus-current-impact')
+        self.assertIn(S.HOME, result['targets'])
+        self.assertNotIn('testMethods', result)
+
     def test_local_dirty_required_captures_actual_source_and_unknown_falls_back(self):
         env = dict(MALL_VERIFICATION_TIER='required')
         self.write('Scripts/check-test-results.py', '# untracked tooling\n')

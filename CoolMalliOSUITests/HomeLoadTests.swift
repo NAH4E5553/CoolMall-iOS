@@ -459,6 +459,14 @@ extension HomeLoadTests {
         let bSeen = NSPredicate(format: "label CONTAINS %@", "全部商品：11")
         expectation(for: bSeen, evaluatedWith: goods)
         waitForExpectations(timeout: 10)
+        // Data refresh and scroll-to-top are separate effects. Wait for the
+        // actual hittable anchor within a bounded window; do not weaken the
+        // assertion, only remove the host-dependent race.
+        let firstOnScreen = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in bannerTitle.isHittable }, object: nil)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [firstOnScreen], timeout: 5), .completed,
+            "the first section must be back on screen")
         XCTAssertTrue(bannerTitle.isHittable, "the first section must be back on screen")
         let scrollToTopMinY = bannerTitle.frame.minY
         // Bound the anchor against the real scroll viewport. The precise
@@ -473,6 +481,11 @@ extension HomeLoadTests {
         let cSeen = NSPredicate(format: "label CONTAINS %@", "全部商品：12")
         expectation(for: cSeen, evaluatedWith: goods)
         waitForExpectations(timeout: 10)
+        let secondOnScreen = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in bannerTitle.isHittable }, object: nil)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [secondOnScreen], timeout: 5), .completed,
+            "the first section must be back on screen")
         XCTAssertTrue(bannerTitle.isHittable)
         XCTAssertEqual(
             bannerTitle.frame.minY, scrollToTopMinY, accuracy: 6,

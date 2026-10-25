@@ -134,6 +134,16 @@ def _ui_test_methods(root, path, patch):
                 return None
         if method is None:
             return None
+        # A changed comment/blank immediately above a helper would otherwise
+        # be attributed to the previous test method. If the next code line is
+        # a func declaration, this is not a test-method body change.
+        for index in range(line, len(source)):
+            text = source[index].strip()
+            if not text or text.startswith(('//', '/*', '*')):
+                continue
+            if re.match(r'^(?:@MainActor\s+)?func\s+', text):
+                return None
+            break
         methods.add(method)
     stem = Path(path).stem
     return {f'CoolMalliOSUITests/{stem}/{method}()' for method in sorted(methods)}

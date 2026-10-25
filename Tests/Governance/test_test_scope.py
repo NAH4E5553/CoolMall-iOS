@@ -250,6 +250,30 @@ class SelectionTests(unittest.TestCase):
         self.assertIn(S.HOME, result['targets'])
         self.assertNotIn('testMethods', result)
 
+    def test_changed_comment_above_helper_falls_back_to_whole_target(self):
+        path = 'CoolMalliOSUITests/HomeLoadTests.swift'
+        source = (
+            'import XCTest\n'
+            'final class HomeLoadTests: XCTestCase {\n'
+            '    func testA() {\n'
+            '    }\n'
+            '    // helper documentation\n'
+            '    func helper() {\n'
+            '    }\n'
+            '}\n'
+        )
+        self.write(path, source)
+        base = self.commit()
+        self.write(path, source.replace('// helper documentation', '// helper documentation changed'))
+        head = self.commit()
+        result = S.plan(
+            self.root,
+            dict(GITHUB_EVENT_NAME='pull_request', MALL_VERIFICATION_TIER='required',
+                 MALL_DIFF_BASE=base, MALL_DIFF_HEAD=head))
+        self.assertEqual(result['reason'], 'required-baseline-plus-current-impact')
+        self.assertIn(S.HOME, result['targets'])
+        self.assertNotIn('testMethods', result)
+
     def test_local_dirty_required_captures_actual_source_and_unknown_falls_back(self):
         env = dict(MALL_VERIFICATION_TIER='required')
         self.write('Scripts/check-test-results.py', '# untracked tooling\n')

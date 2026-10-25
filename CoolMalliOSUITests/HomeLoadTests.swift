@@ -733,22 +733,16 @@ extension HomeLoadTests {
 
     @MainActor private func currentBanner(_ app: XCUIApplication) -> XCUIElement {
         // The current leaf is the actionable banner Button (the selected image
-        // is a non-actionable Other). A prefix predicate over the whole tree is
-        // expensive on slow CI hosts; one snapshot locates the exposed
-        // identifier, and the follow-up exact query resolves the same button.
-        if let identifier = currentBannerIdentifier(app) {
-            return app.buttons[identifier]
+        // is a non-actionable Other). Snapshot + exact query is much faster
+        // than a prefix query, but autoplay can advance between the two. Retry
+        // the snapshot/exact pair before falling back to the live prefix.
+        for _ in 0..<3 {
+            if let identifier = currentBannerIdentifier(app) {
+                let element = app.buttons[identifier]
+                if element.exists { return element }
+            }
         }
         return app.buttons.matching(
-            NSPredicate(format: "identifier BEGINSWITH %@", "home.banner.current.")
-        ).firstMatch
-    }
-
-    /// Live geometry query: re-resolves the exposed current banner at each
-    /// query. Unlike currentBanner, it never holds a snapshot identifier
-    /// across an autoplay transition.
-    @MainActor private func liveCurrentBanner(_ app: XCUIApplication) -> XCUIElement {
-        app.buttons.matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "home.banner.current.")
         ).firstMatch
     }
@@ -804,7 +798,7 @@ extension HomeLoadTests {
     @MainActor @discardableResult
     private func revealBanner(_ app: XCUIApplication) -> Bool {
         for _ in 0..<4 {
-            let banner = liveCurrentBanner(app)
+            let banner = currentBanner(app)
             let scroll = app.scrollViews["home.scroll"].frame.intersection(app.frame)
             let bottom = min(scroll.maxY, app.tabBars.firstMatch.frame.minY)
             if banner.exists {
@@ -828,7 +822,7 @@ extension HomeLoadTests {
             let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.42))
             start.press(forDuration: 0.01, thenDragTo: end)
         }
-        let hittable = liveCurrentBanner(app).isHittable
+        let hittable = currentBanner(app).isHittable
         XCTAssertTrue(hittable)
         return hittable
     }
@@ -2060,7 +2054,7 @@ extension HomeLoadTests {
         defer { bannerAuditEnd(app) }
         XCTAssertTrue(revealBanner(app))
         let scroll = app.scrollViews["home.scroll"].frame.intersection(app.frame)
-        func bannerAboveViewport() -> Bool { liveCurrentBanner(app).frame.maxY < scroll.minY }
+        func bannerAboveViewport() -> Bool { currentBanner(app).frame.maxY < scroll.minY }
         bannerAuditMarker(app, event: "offscreen-begin")
         for _ in 0..<4 where !bannerAboveViewport() {
             let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.75))

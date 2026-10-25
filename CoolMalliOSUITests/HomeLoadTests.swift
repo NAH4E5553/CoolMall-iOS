@@ -747,18 +747,30 @@ extension HomeLoadTests {
         ).firstMatch
     }
 
+    private struct BannerProbe {
+        let identifier: String
+        let frame: CGRect
+    }
+
     /// One AX snapshot is cheaper on slow hosts than a repeated prefix query.
-    /// The visible/current banner is the first exposed node with the prefix.
-    @MainActor private func currentBannerIdentifier(_ app: XCUIApplication) -> String? {
+    /// Geometry uses the snapshot frame directly; no exact element is held
+    /// across an autoplay transition.
+    @MainActor private func currentBannerProbe(_ app: XCUIApplication) -> BannerProbe? {
         guard let snapshot = try? app.snapshot() else { return nil }
-        func find(_ node: any XCUIElementSnapshot) -> String? {
-            if node.identifier.hasPrefix("home.banner.current.") { return node.identifier }
+        func find(_ node: any XCUIElementSnapshot) -> BannerProbe? {
+            if node.identifier.hasPrefix("home.banner.current.") {
+                return BannerProbe(identifier: node.identifier, frame: node.frame)
+            }
             for child in node.children {
-                if let identifier = find(child) { return identifier }
+                if let probe = find(child) { return probe }
             }
             return nil
         }
         return find(snapshot)
+    }
+
+    @MainActor private func currentBannerIdentifier(_ app: XCUIApplication) -> String? {
+        currentBannerProbe(app)?.identifier
     }
 
     @MainActor private func bannerIndicators(_ app: XCUIApplication) -> XCUIElement {
@@ -798,12 +810,12 @@ extension HomeLoadTests {
     @MainActor @discardableResult
     private func revealBanner(_ app: XCUIApplication) -> Bool {
         for _ in 0..<4 {
-            let banner = currentBanner(app)
             let scroll = app.scrollViews["home.scroll"].frame.intersection(app.frame)
             let bottom = min(scroll.maxY, app.tabBars.firstMatch.frame.minY)
-            if banner.exists {
-                let frame = banner.frame
+            if let probe = currentBannerProbe(app) {
+                let frame = probe.frame
                 if frame.minY >= scroll.minY, frame.maxY <= bottom {
+                    let banner = app.buttons[probe.identifier]
                     if banner.isHittable { return true }
                     let settled = XCTNSPredicateExpectation(
                         predicate: NSPredicate { _, _ in banner.isHittable }, object: nil)
@@ -1899,7 +1911,7 @@ extension HomeLoadTests {
         XCTAssertFalse(app.buttons["home.banner.next"].exists)
         XCTAssertTrue(bannerIndicators(app).exists, "multiple banners show in-image dots")
         let appFrame = app.frame
-        let bannerFrame = currentBanner(app).frame
+        let bannerFrame = try XCTUnwrap(currentBannerProbe(app), "current banner").frame
         let y = (bannerFrame.midY - appFrame.minY) / appFrame.height
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: y))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.52, dy: y))
@@ -1982,7 +1994,7 @@ extension HomeLoadTests {
         XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
         revealBanner(app)
         let appFrame = app.frame
-        let bannerFrame = currentBanner(app).frame
+        let bannerFrame = try XCTUnwrap(currentBannerProbe(app), "current banner").frame
         func point(_ location: CGPoint) -> XCUICoordinate {
             app.coordinate(
                 withNormalizedOffset: CGVector(
@@ -2054,7 +2066,10 @@ extension HomeLoadTests {
         defer { bannerAuditEnd(app) }
         XCTAssertTrue(revealBanner(app))
         let scroll = app.scrollViews["home.scroll"].frame.intersection(app.frame)
-        func bannerAboveViewport() -> Bool { currentBanner(app).frame.maxY < scroll.minY }
+        func bannerAboveViewport() -> Bool {
+            guard let frame = currentBannerProbe(app)?.frame else { return false }
+            return frame.maxY < scroll.minY
+        }
         bannerAuditMarker(app, event: "offscreen-begin")
         for _ in 0..<4 where !bannerAboveViewport() {
             let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.75))
@@ -2090,7 +2105,9 @@ extension HomeLoadTests {
         try assertConsistentBanner(restored)
         try waitAdvance(app, from: restored.page, budget: returnBudget)
         let appFrame = app.frame
-        let bannerY = (currentBanner(app).frame.midY - appFrame.minY) / appFrame.height
+        let bannerY =
+            (try XCTUnwrap(currentBannerProbe(app), "current banner").frame.midY
+                - appFrame.minY) / appFrame.height
         let dragStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: bannerY))
         let dragEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.52, dy: bannerY))
         bannerAuditMarker(app, event: "drag-begin")

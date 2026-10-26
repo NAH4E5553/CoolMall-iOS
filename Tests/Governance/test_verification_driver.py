@@ -101,7 +101,7 @@ class VerificationDriverTests(unittest.TestCase):
         (self.root / 'bin').mkdir()
         (self.root / '.github/workflows').mkdir(parents=True)
         (self.root / '.github/workflows/ios.yml').write_text('name: legacy fixture\\n')
-        for name in ['verify-local.sh', 'verification-timing.py', 'select-test-scope.py', 'classify-ci-changes.py', 'check-boundaries.py', 'with-banner-trace.py', 'finalize-verification.py', 'ci-deferred-policy.py', 'ci-deferred-checks.json']:
+        for name in ['verify-local.sh', 'verification-timing.py', 'select-test-scope.py', 'classify-ci-changes.py', 'check-boundaries.py', 'with-banner-trace.py', 'finalize-verification.py', 'ci-deferred-policy.py', 'ci-deferred-checks.json', 'check-test-support-scope.py', 'check-test-support-execution.py']:
             shutil.copy2(ROOT / 'Scripts' / name, self.root / 'Scripts' / name)
         for name in ['check-toolchain.sh', 'check-format.sh', 'check-boundary-negative.sh',
                      'check-test-results.py', 'check-banner-lifecycle.py']:

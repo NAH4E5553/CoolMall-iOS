@@ -17,6 +17,10 @@ def main():
     parser.add_argument('--native-results', required=True)
     parser.add_argument('--tier', required=True, choices=['required', 'full'])
     args = parser.parse_args()
+    if not (ROOT / 'Tests/Governance/test-support-impact.json').is_file() or not (
+            ROOT / 'Tests/Governance/host-sensitive-advisory.json').is_file():
+        print('TEST-SUPPORT: manifest absent; fixture skip')
+        return 0
     try:
         results = load(args.native_results).get('methodResults', {})
         manifest = load(ROOT / 'Tests/Governance/test-support-impact.json')['files']

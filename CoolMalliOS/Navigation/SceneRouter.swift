@@ -1,3 +1,4 @@
+import MallCore
 import Foundation
 import Observation
 
@@ -12,6 +13,9 @@ final class SceneRouter {
     enum Tab: Hashable { case home; case category; case cart; case me }
     enum Route: Hashable {
         case cart
+        case orders(filter: OrderFilter)
+        case orderDetail(id: Int64)
+        case checkout(intent: BuyNowIntent, accountID: Int64?)
         case login
         case profile
         case footprints
@@ -60,6 +64,51 @@ final class SceneRouter {
         }
     #endif
 
+    /// Account-bound routes cannot survive logout or an account replacement.
+    func updateOrderAccount(old: Int64?, new: Int64?) {
+        func reconcile(_ path: [Route]) -> [Route] {
+            if old == nil, let new {
+                return path.map { route in
+                    if case .checkout(let intent, nil) = route {
+                        return .checkout(intent: intent, accountID: new)
+                    }
+                    return route
+                }
+            }
+            guard old != new else { return path }
+            if let index = path.firstIndex(where: { route in
+                switch route {
+                case .orders, .orderDetail, .checkout: true;
+                default: false
+                }
+            }) {
+                return Array(path.prefix(index))
+            }
+            return path
+        }
+        homePath = reconcile(homePath); categoryPath = reconcile(categoryPath)
+        cartPath = reconcile(cartPath); mePath = reconcile(mePath)
+    }
+    var hasMeOrderIntent: Bool {
+        mePath.contains { route in
+            switch route {
+            case .orders, .orderDetail, .checkout: true;
+            default: false
+            }
+        }
+    }
+    func path(on tab: Tab) -> [Route] {
+        switch tab {
+        case .home: homePath;
+        case .category: categoryPath;
+        case .cart: cartPath;
+        case .me: mePath
+        }
+    }
+    func beginPurchase(_ intent: BuyNowIntent, accountID: Int64?, on tab: Tab) {
+        guard case .productDetail = path(on: tab).last else { return }
+        append(.checkout(intent: intent, accountID: accountID), on: tab)
+    }
     func openCart() { homePath.append(.cart) }
     /// Appends a route onto the owning tab's stack, so a destination pushed
     /// from that stack (e.g. the independent cart from a detail page) returns

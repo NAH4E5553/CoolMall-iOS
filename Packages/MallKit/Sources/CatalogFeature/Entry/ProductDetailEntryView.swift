@@ -16,6 +16,7 @@ public struct ProductDetailEntryView: View {
     private let cartVerifier: (any CartProductChecking)?
     private let onReceiveCoupon: (CouponClaimOffer) -> Void
     private let onOpenCart: () -> Void
+    private let onBuyNow: (BuyNowIntent) -> Void
 
     public init(
         productID: Int64, loader: any ProductDetailLoading,
@@ -24,7 +25,8 @@ public struct ProductDetailEntryView: View {
         footprintRecorder: (any FootprintRecording)? = nil,
         shoppingCart: (any ShoppingCart)? = nil, cartVerifier: (any CartProductChecking)? = nil,
         onOpenCart: @escaping () -> Void = {},
-        onReceiveCoupon: @escaping (CouponClaimOffer) -> Void = { _ in }
+        onReceiveCoupon: @escaping (CouponClaimOffer) -> Void = { _ in },
+        onBuyNow: @escaping (BuyNowIntent) -> Void = { _ in }
     ) {
         self.productID = productID
         self.loader = loader
@@ -34,7 +36,7 @@ public struct ProductDetailEntryView: View {
         self.footprintRecorder = footprintRecorder
         self.shoppingCart = shoppingCart; self.cartVerifier = cartVerifier;
         self.onOpenCart = onOpenCart
-        self.onReceiveCoupon = onReceiveCoupon
+        self.onReceiveCoupon = onReceiveCoupon; self.onBuyNow = onBuyNow
     }
 
     public var body: some View {
@@ -42,16 +44,12 @@ public struct ProductDetailEntryView: View {
             productID: productID, loader: loader,
             pipeline: imagePipeline, isActive: isActive, onShowAllReviews: onShowAllReviews,
             footprintRecorder: footprintRecorder, shoppingCart: shoppingCart,
-            cartVerifier: cartVerifier, onOpenCart: onOpenCart, onReceiveCoupon: onReceiveCoupon
+            cartVerifier: cartVerifier, onOpenCart: onOpenCart, onReceiveCoupon: onReceiveCoupon,
+            onBuyNow: onBuyNow
         )
         .tint(ProductDetailStyle.accent)
-        .id(CartDetailIdentity(productID: productID, scope: shoppingCart?.scope))
+        .id(productID)
     }
-}
-
-private struct CartDetailIdentity: Hashable {
-    let productID: Int64
-    let scope: CartScope?
 }
 
 @MainActor
@@ -72,18 +70,28 @@ private struct ProductDetailScreen: View {
     let onShowAllReviews: (Int64) -> Void
     let onOpenCart: () -> Void
     let onReceiveCoupon: (CouponClaimOffer) -> Void
+    let onBuyNow: (BuyNowIntent) -> Void
+    let shoppingCart: (any ShoppingCart)?
+    let cartVerifier: (any CartProductChecking)?
+    let footprintRecorder: (any FootprintRecording)?
+    @State private var boundCartScope: CartScope?
+    @State private var purchaseNotice: String?
 
     init(
         productID: Int64, loader: any ProductDetailLoading,
         pipeline: MallImagePipeline?, isActive: Bool, onShowAllReviews: @escaping (Int64) -> Void,
         footprintRecorder: (any FootprintRecording)?, shoppingCart: (any ShoppingCart)?,
         cartVerifier: (any CartProductChecking)?,
-        onOpenCart: @escaping () -> Void, onReceiveCoupon: @escaping (CouponClaimOffer) -> Void
+        onOpenCart: @escaping () -> Void, onReceiveCoupon: @escaping (CouponClaimOffer) -> Void,
+        onBuyNow: @escaping (BuyNowIntent) -> Void
     ) {
         _model = State(
             initialValue: ProductDetailViewModel(
                 productID: productID, loader: loader, footprintRecorder: footprintRecorder))
         self.pipeline = pipeline; self.isActive = isActive; self.onShowAllReviews = onShowAllReviews
+        self.onBuyNow = onBuyNow; self.shoppingCart = shoppingCart; self.cartVerifier = cartVerifier
+        self.footprintRecorder = footprintRecorder;
+        _boundCartScope = State(initialValue: shoppingCart?.scope)
         self.onOpenCart = onOpenCart; self.onReceiveCoupon = onReceiveCoupon
         _cartModel = State(
             initialValue: shoppingCart.flatMap { store in
@@ -92,7 +100,18 @@ private struct ProductDetailScreen: View {
     }
 
     private var active: Bool { isActive && scenePhase == .active }
-    private struct ReadKey: Equatable { let active: Bool; let attempt: Int }
+    private func buyNow() {
+        guard active, cartModel?.busy != true else { return }
+        guard let selected = model.selected, let product = model.detail else {
+            showsSpecifications = true; return
+        }
+        do {
+            let intent = try BuyNowIntent(
+                product: product, specification: selected, quantity: model.quantity)
+            purchaseNotice = nil; showsSpecifications = false; onBuyNow(intent)
+        } catch { purchaseNotice = "所选商品、规格或数量无效，请重新选择" }
+    }
+    private struct ReadKey: Equatable { let active: Bool; let attempt: Int; let scope: CartScope? }
 
     var body: some View {
         Group {
@@ -127,12 +146,14 @@ private struct ProductDetailScreen: View {
                 ProductDetailBottomBar(
                     onAdd: {
                         if let selected = model.selected {
-                            guard model.canAddToCart else { return }
+                            guard model.canAddToCart, boundCartScope == shoppingCart?.scope else {
+                                return
+                            }
                             cartModel?.add(specification: selected, quantity: model.quantity)
                         } else {
                             showsSpecifications = true
                         }
-                    }, onOpenCart: onOpenCart, isAdding: cartModel?.busy == true,
+                    }, onBuy: buyNow, onOpenCart: onOpenCart, isAdding: cartModel?.busy == true,
                     canAdd: model.selected == nil || model.canAddToCart
                 )
                 .accessibilityHidden(showsCoupons || showsSpecifications)
@@ -176,10 +197,19 @@ private struct ProductDetailScreen: View {
                     })
             }
         }
-        .task(id: ReadKey(active: active, attempt: model.detailAttempt)) {
+        .task(id: ReadKey(active: active, attempt: model.detailAttempt, scope: shoppingCart?.scope))
+        {
             guard !Task.isCancelled else { return }
-            model.setActive(active)
-            cartModel?.setActive(active)
+            // One task entry owns scope rebinding and read restart; no onChange/task ordering assumption.
+            if boundCartScope != shoppingCart?.scope {
+                cartModel?.setActive(false)
+                model.replaceFootprintRecorder(footprintRecorder)
+                cartModel = shoppingCart.flatMap { store in
+                    cartVerifier.map { ProductCartViewModel(store: store, verifier: $0) }
+                }
+                boundCartScope = shoppingCart?.scope
+            }
+            model.setActive(active); cartModel?.setActive(active)
             guard active else { return }
             await model.loadDetail()
         }
@@ -213,12 +243,12 @@ private struct ProductDetailScreen: View {
                                 cartModel?.add(specification: selected, quantity: model.quantity)
                             }
                         },
-                        isAdding: cartModel?.busy == true)
+                        onBuy: buyNow, isAdding: cartModel?.busy == true)
                 }
             }
         }
         .overlay(alignment: .bottom) {
-            if let message = cartModel?.message {
+            if let message = purchaseNotice ?? cartModel?.message {
                 Text(message).font(.footnote).padding(12).background(
                     .regularMaterial, in: Capsule()
                 )

@@ -10,6 +10,7 @@ struct ProductSpecificationSheet: View {
     let maxContentHeight: CGFloat
     let dismiss: () -> Void
     var onAdd: () -> Void = {}
+    var onBuy: () -> Void = {}
     var isAdding = false
     @ScaledMetric private var titleSize = 16.0
     @ScaledMetric private var summarySize = 12.0
@@ -72,7 +73,7 @@ struct ProductSpecificationSheet: View {
             VStack(spacing: 12) {
                 quantity.disabled(isAdding)
                 ProductDetailPurchaseButtons(
-                    onAdd: onAdd, isAdding: isAdding,
+                    onAdd: onAdd, onBuy: onBuy, isAdding: isAdding,
                     addIdentifier: "detail.spec.addCart", canAdd: model.canAddToCart)
             }
             .onGeometryChange(for: CGFloat.self) {

@@ -46,6 +46,23 @@ class ProjectBoundariesTests(unittest.TestCase):
 
     def test_normal_project(self): GATE.check(self.root, BINARY)
 
+    def test_checkout_cannot_import_orders_feature(self):
+        self.append('import OrdersFeature\n', target='CheckoutFeature')
+        self.reject('MOD-01:.*forbidden import OrdersFeature')
+
+    def test_orders_cannot_import_checkout_or_data(self):
+        self.append('import CheckoutFeature\nimport MallData\n', target='OrdersFeature')
+        self.reject('MOD-01:.*forbidden import CheckoutFeature')
+
+    def test_new_feature_viewmodel_cannot_be_public(self):
+        self.append('public struct LeakedViewModel {}\n', target='CheckoutFeature')
+        self.reject('MOD-02:.*implementation type must remain internal')
+
+    def test_new_feature_entry_requires_exact_registration(self):
+        self.append('public struct UnexpectedEntryView {}\n', target='OrdersFeature')
+        self.reject('MOD-02:.*unregistered Feature public type')
+
+
     def test_simulator_identity_missing_setting_rejected(self):
         def mutation(objects):
             config = next(o for o in objects.values() if o.get('isa') == 'XCBuildConfiguration' and 'MALL_SIMULATOR_ENTITLEMENTS_NO' in o['buildSettings'])

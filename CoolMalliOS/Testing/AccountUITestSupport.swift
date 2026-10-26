@@ -8,9 +8,14 @@
         private let scenario: String
         private var state: AccountState = .guest
         private var observers: [UUID: AsyncStream<AccountState>.Continuation] = [:]
-        init(scenario: String) {
+        init(scenario: String, signedIn: Bool = false) {
             self.scenario = scenario
-            initialState = .guest
+            initialState =
+                signedIn
+                ? .signedIn(
+                    AccountProfile(
+                        id: 920001, nickname: "测试用户", phone: "13800000000", avatarURL: nil))
+                : .guest
             state = initialState
         }
         nonisolated static func make(arguments: [String]) -> AccountUITestSupport? {
@@ -20,7 +25,10 @@
                     ? AccountUITestSupport(scenario: "guestOnly") : nil
             }
             let value = arguments.indices.contains(index + 1) ? arguments[index + 1] : "invalid"
-            return AccountUITestSupport(scenario: value)
+            return AccountUITestSupport(
+                scenario: value,
+                signedIn: arguments.contains("--ui-orders")
+                    && arguments.contains("--ui-orders-signed-in"))
         }
         func states() -> AsyncStream<AccountState> {
             let id = UUID()

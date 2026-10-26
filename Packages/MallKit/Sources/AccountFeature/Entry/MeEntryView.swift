@@ -11,6 +11,7 @@ import SwiftUI
     private let onOpenProduct: (Int64) -> Void
     private let onOpenAddresses: () -> Void
     private let onOpenCoupons: () -> Void
+    private let onOpenOrders: (OrderFilter) -> Void
     private let openAccount: () -> Void
     @State private var unavailable = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -20,8 +21,10 @@ import SwiftUI
         onOpenFootprints: @escaping () -> Void = {},
         onOpenCoupons: @escaping () -> Void = {},
         onOpenAddresses: @escaping () -> Void = {},
+        onOpenOrders: @escaping (OrderFilter) -> Void = { _ in },
         onOpenProduct: @escaping (Int64) -> Void = { _ in }, openAccount: @escaping () -> Void
     ) {
+        self.onOpenOrders = onOpenOrders
         self.onOpenAddresses = onOpenAddresses
         self.onOpenCoupons = onOpenCoupons
         self.footprints = footprints; self.isActive = isActive;
@@ -68,7 +71,12 @@ import SwiftUI
                 .padding(16).foregroundStyle(Color(red: 0.87, green: 0.65, blue: 0.43))
                 .background(Color(white: 0.14), in: RoundedRectangle(cornerRadius: 18))
                 VStack(spacing: 16) {
-                    sectionHeader("我的订单", icon: "list.bullet.rectangle.fill", tint: accountAccent)
+                    Button {
+                        onOpenOrders(.all)
+                    } label: {
+                        sectionHeader(
+                            "我的订单", icon: "list.bullet.rectangle.fill", tint: accountAccent)
+                    }.buttonStyle(.plain).accessibilityIdentifier("me.orders.all")
                     LazyVGrid(
                         columns: [
                             GridItem(
@@ -86,14 +94,18 @@ import SwiftUI
                                     ])), id: \.0
                         ) { label, icon in
                             Button {
-                                unavailable = true
+                                let filters: [String: OrderFilter] = [
+                                    "待付款": .unpaid, "待发货": .unshipped, "待收货": .unreceived,
+                                    "待评价": .unevaluated, "退款/售后": .afterSale,
+                                ]
+                                if let filter = filters[label] { onOpenOrders(filter) }
                             } label: {
                                 VStack(spacing: 10) {
                                     Image(systemName: icon).font(.title2);
                                     Text(label).font(.caption)
                                 }
                                 .frame(maxWidth: .infinity, minHeight: 62)
-                            }.buttonStyle(.plain)
+                            }.buttonStyle(.plain).accessibilityIdentifier("me.orders.\(label)")
                         }
                     }
                 }.padding(16).background(.background, in: RoundedRectangle(cornerRadius: 18))
@@ -141,14 +153,10 @@ import SwiftUI
             }
             .font(.headline)
             Spacer()
-            Button {
-                unavailable = true
-            } label: {
-                HStack(spacing: 4) {
-                    Text("查看全部"); Image(systemName: "chevron.right")
-                }.font(.subheadline)
-            }.foregroundStyle(.secondary)
-        }
+            HStack(spacing: 4) {
+                Text("查看全部"); Image(systemName: "chevron.right")
+            }.font(.subheadline).foregroundStyle(.secondary)
+        }.frame(minHeight: 44).contentShape(Rectangle())
     }
     private func menu(_ title: String, icon: String, tint: Color, action: (() -> Void)? = nil)
         -> some View

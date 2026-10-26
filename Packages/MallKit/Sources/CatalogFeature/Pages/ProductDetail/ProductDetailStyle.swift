@@ -86,6 +86,7 @@ struct ProductDetailSectionTitle: View {
 struct ProductDetailPurchaseButtons: View {
     var roundedCapsule = true
     var onAdd: () -> Void = {}
+    var onBuy: () -> Void = {}
     var isAdding = false
     var addIdentifier = "detail.addCart"
     var canAdd = true
@@ -105,13 +106,15 @@ struct ProductDetailPurchaseButtons: View {
             .background(
                 RoundedRectangle(cornerRadius: roundedCapsule ? 100 : 8).stroke(
                     ProductDetailStyle.accent, lineWidth: 1))
-            Button {
-            } label: {
+            Button(action: onBuy) {
                 Text("立即购买").bold().lineLimit(2).fixedSize(horizontal: false, vertical: true).frame(
                     maxWidth: .infinity
                 ).padding(.vertical, roundedCapsule ? 12 : 8).frame(
                     minHeight: roundedCapsule ? 48 : 34)
             }
+            .disabled(isAdding || !canAdd).accessibilityIdentifier(
+                addIdentifier == "detail.spec.addCart" ? "detail.spec.buyNow" : "detail.buyNow"
+            )
             .foregroundStyle(.white)
             .background(
                 LinearGradient(
@@ -126,6 +129,7 @@ struct ProductDetailPurchaseButtons: View {
 
 struct ProductDetailBottomBar: View {
     var onAdd: () -> Void = {}
+    var onBuy: () -> Void = {}
     var onOpenCart: () -> Void = {}
     var isAdding = false
     var canAdd = true
@@ -141,14 +145,16 @@ struct ProductDetailBottomBar: View {
                         Spacer(minLength: 0)
                     }
                     ProductDetailPurchaseButtons(
-                        roundedCapsule: false, onAdd: onAdd, isAdding: isAdding, canAdd: canAdd)
+                        roundedCapsule: false, onAdd: onAdd, onBuy: onBuy, isAdding: isAdding,
+                        canAdd: canAdd)
                 }
             } else {
                 HStack(spacing: 16) {
                     entrance("客服", icon: "detail-service")
                     entrance("购物车", icon: "detail-cart", action: onOpenCart)
                     ProductDetailPurchaseButtons(
-                        roundedCapsule: false, onAdd: onAdd, isAdding: isAdding, canAdd: canAdd)
+                        roundedCapsule: false, onAdd: onAdd, onBuy: onBuy, isAdding: isAdding,
+                        canAdd: canAdd)
                 }
             }
         }

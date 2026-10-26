@@ -8,16 +8,18 @@ import SwiftUI
     private let writer: any AddressWriting
     private let isActive: Bool
     private let onEdit: (Int64?) -> Void
+    private let onSelect: ((ShippingAddress) -> Void)?
     public init(
         accountID: Int64, loader: any AddressLoading, writer: any AddressWriting, isActive: Bool,
-        onEdit: @escaping (Int64?) -> Void
+        onEdit: @escaping (Int64?) -> Void, onSelect: ((ShippingAddress) -> Void)? = nil
     ) {
         self.accountID = accountID; self.loader = loader; self.writer = writer
-        self.isActive = isActive; self.onEdit = onEdit
+        self.isActive = isActive; self.onEdit = onEdit; self.onSelect = onSelect
     }
     public var body: some View {
         AddressListScreen(
-            accountID: accountID, loader: loader, writer: writer, isActive: isActive, onEdit: onEdit
+            accountID: accountID, loader: loader, writer: writer, isActive: isActive,
+            onEdit: onEdit, onSelect: onSelect
         ).id(accountID)
     }
 }
@@ -26,14 +28,15 @@ import SwiftUI
     @Environment(\.scenePhase) private var scenePhase
     let isActive: Bool
     let onEdit: (Int64?) -> Void
+    let onSelect: ((ShippingAddress) -> Void)?
     init(
         accountID: Int64, loader: any AddressLoading, writer: any AddressWriting, isActive: Bool,
-        onEdit: @escaping (Int64?) -> Void
+        onEdit: @escaping (Int64?) -> Void, onSelect: ((ShippingAddress) -> Void)? = nil
     ) {
         _model = State(
             initialValue: AddressListViewModel(accountID: accountID, loader: loader, writer: writer)
         )
-        self.isActive = isActive; self.onEdit = onEdit
+        self.isActive = isActive; self.onEdit = onEdit; self.onSelect = onSelect
     }
     private var active: Bool { isActive && scenePhase == .active }
     var body: some View {
@@ -71,7 +74,7 @@ import SwiftUI
             .accessibilityIdentifier(
                 "addresses.add")
         }
-        .navigationTitle("收货地址").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(onSelect == nil ? "收货地址" : "选择收货地址").navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(
             "确定删除该地址？",
             isPresented: Binding(
@@ -97,7 +100,7 @@ import SwiftUI
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 12) {
                 Button {
-                    onEdit(item.id)
+                    if let onSelect { onSelect(item) } else { onEdit(item.id) }
                 } label: {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(item.value.province + item.value.city + item.value.district).font(

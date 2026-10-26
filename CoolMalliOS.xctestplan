@@ -62,6 +62,22 @@
     },
     {
       "target": {
+        "containerPath": "container:Packages/MallKit",
+        "identifier": "OrdersFeatureTests",
+        "name": "OrdersFeatureTests"
+      },
+      "parallelizable": true
+    },
+    {
+      "target": {
+        "containerPath": "container:Packages/MallKit",
+        "identifier": "CheckoutFeatureTests",
+        "name": "CheckoutFeatureTests"
+      },
+      "parallelizable": true
+    },
+    {
+      "target": {
         "containerPath": "container:CoolMalliOS.xcodeproj",
         "identifier": "70806D7A1BF37458E51362EF",
         "name": "CoolMalliOSUITests"

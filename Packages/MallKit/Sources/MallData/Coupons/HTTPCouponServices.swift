@@ -166,7 +166,7 @@ enum CouponPageDecoder {
             items: items, page: requestedPage, size: size, total: body.pagination.total)
     }
 }
-private struct OwnedCouponDTO: Decodable {
+struct OwnedCouponDTO: Decodable {
     let id: Int64; let title: String; let description: String; let amount: Decimal
     let type: Int?; let status: Int?; let useStatus: Int?; let startTime: String?;
     let endTime: String?

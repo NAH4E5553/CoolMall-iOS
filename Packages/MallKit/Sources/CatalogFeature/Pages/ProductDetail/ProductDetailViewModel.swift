@@ -17,9 +17,10 @@ final class ProductDetailViewModel {
         case failed(ProductDetailLoadFailure)
     }
     let productID: Int64
-    private let footprintRecorder: (any FootprintRecording)?
+    private var footprintRecorder: (any FootprintRecording)?
     private var footprintTask: Task<Void, Never>?
     private var footprintTaskID: UUID?
+    private var needsScopeFootprint = false
     private(set) var footprintSaveFailed = false
     private let loader: any ProductDetailLoading
     private(set) var detailState: DetailState = .idle
@@ -53,6 +54,12 @@ final class ProductDetailViewModel {
         return selected.stock > 0 && quantity > 0 && quantity <= selected.stock
     }
 
+    /// Account-scoped adapters change without discarding this page's SKU browsing draft.
+    func replaceFootprintRecorder(_ recorder: (any FootprintRecording)?) {
+        setActive(false); footprintRecorder = recorder; footprintSaveFailed = false;
+        needsScopeFootprint = true
+    }
+
     func setActive(_ value: Bool) {
         guard active != value else { return }
         active = value
@@ -64,6 +71,12 @@ final class ProductDetailViewModel {
     }
 
     func loadDetail() async {
+        if active, !Task.isCancelled, needsScopeFootprint, let detail {
+            let epoch = detailGeneration
+            await saveFootprint(detail, generation: epoch)
+            if active, epoch == detailGeneration, !Task.isCancelled { needsScopeFootprint = false }
+            return
+        }
         guard active, !Task.isCancelled, case .idle = detailState else { return }
         guard productID > 0 else { detailState = .failed(.invalidProductID); return }
         detailGeneration += 1
@@ -76,6 +89,9 @@ final class ProductDetailViewModel {
             guard result.id == productID else { throw ProductDetailLoadFailure.invalidResponse }
             detailState = .ready(result)
             await saveFootprint(result, generation: generation)
+            if active, generation == detailGeneration, !Task.isCancelled {
+                needsScopeFootprint = false
+            }
         } catch {
             guard active, generation == detailGeneration else { return }
             detailState =

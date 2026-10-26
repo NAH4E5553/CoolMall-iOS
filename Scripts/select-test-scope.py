@@ -59,7 +59,9 @@ for path in list(PATH_TARGETS):
         PATH_TARGETS[path] = [CATALOG, *LIFECYCLE]
 # CI-only changes are verified by the complete governance suite and PR baseline;
 # changing product/test discovery/shared code still triggers conservative coverage.
-VERIFICATION_PATHS = {'.github/workflows/ios.yml', '.github/workflows/ios-full-advisory.yml', 'ENGINEERING.md', 'AGENTS.md'} | {
+VERIFICATION_PATHS = {'.github/workflows/ios.yml', '.github/workflows/ios-full-advisory.yml',
+                         '.github/workflows/ios-isolation-experiment.yml',
+                         'ENGINEERING.md', 'AGENTS.md'} | {
     'Scripts/' + name for name in [
         'SourceBoundaries.swift', 'check-boundaries.py', 'check-boundary-negative.sh',
         'check-source-boundaries.sh', 'check-compiler-boundary.py', 'check-project-boundaries.py',

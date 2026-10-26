@@ -1,0 +1,213 @@
+name: iOS Isolation Experiment (A/B)
+
+# Manual only. Not a required check and not a merge gate.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ios-isolation-experiment
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare shared build and shards
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      MALL_TEST_DIAGNOSTICS: never
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Select simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun simctl list runtimes
+          xcrun simctl list devices available
+          SIM=$(python3 Scripts/select-simulator.py --runtime-version 27.0)
+          echo "MALL_SIMULATOR_ID=$SIM" >> "$GITHUB_ENV"
+          xcrun simctl bootstatus "$SIM" -b
+      - name: Build, enumerate and split
+        shell: bash
+        env:
+          MALL_DIFF_BASE: ${{ github.event.repository.default_branch }}
+          MALL_DIFF_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          BASE=$(git merge-base "origin/${MALL_DIFF_BASE}" HEAD)
+          MALL_DIFF_BASE="$BASE" MALL_DIFF_HEAD="$MALL_DIFF_HEAD" \
+            Scripts/prepare-isolation-experiment.sh
+      - name: Upload shared artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: isolation-experiment-shared
+          path: .build/isolation-experiment
+          retention-days: 7
+          if-no-files-found: error
+
+  A:
+    name: A mixed 152
+    needs: [prepare]
+    runs-on: xcode-27
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: isolation-experiment-shared
+          path: .build/isolation-experiment
+      - name: Select clean simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          SIM=$(python3 Scripts/select-simulator.py --runtime-version 27.0)
+          echo "MALL_SIMULATOR_ID=$SIM" >> "$GITHUB_ENV"
+          xcrun simctl shutdown "$SIM" 2>/dev/null || true
+          xcrun simctl erase "$SIM"
+          xcrun simctl boot "$SIM"
+          xcrun simctl bootstatus "$SIM" -b
+      - name: Run A
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN=.build/isolation-experiment
+          XCTEST=$(find "$RUN" -name '*.xctestrun' -print -quit)
+          Scripts/run-isolation-shard.sh "$RUN/shards/expected-all.txt" \
+            "$RUN/A" "$XCTEST" 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isolation-experiment-A
+          path: .build/isolation-experiment/A
+          retention-days: 7
+          if-no-files-found: error
+
+  B-nonui:
+    name: B non-UI 135
+    needs: [prepare]
+    runs-on: xcode-27
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: isolation-experiment-shared
+          path: .build/isolation-experiment
+      - name: Select clean simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          SIM=$(python3 Scripts/select-simulator.py --runtime-version 27.0)
+          echo "MALL_SIMULATOR_ID=$SIM" >> "$GITHUB_ENV"
+          xcrun simctl shutdown "$SIM" 2>/dev/null || true
+          xcrun simctl erase "$SIM"
+          xcrun simctl boot "$SIM"
+          xcrun simctl bootstatus "$SIM" -b
+      - name: Run B non-UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN=.build/isolation-experiment
+          XCTEST=$(find "$RUN" -name '*.xctestrun' -print -quit)
+          Scripts/run-isolation-shard.sh "$RUN/shards/expected-nonui.txt" \
+            "$RUN/B-nonui" "$XCTEST" 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isolation-experiment-B-nonui
+          path: .build/isolation-experiment/B-nonui
+          retention-days: 7
+          if-no-files-found: error
+
+  B-ui:
+    name: B UI 17
+    needs: [prepare]
+    runs-on: xcode-27
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: isolation-experiment-shared
+          path: .build/isolation-experiment
+      - name: Select clean simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          SIM=$(python3 Scripts/select-simulator.py --runtime-version 27.0)
+          echo "MALL_SIMULATOR_ID=$SIM" >> "$GITHUB_ENV"
+          xcrun simctl shutdown "$SIM" 2>/dev/null || true
+          xcrun simctl erase "$SIM"
+          xcrun simctl boot "$SIM"
+          xcrun simctl bootstatus "$SIM" -b
+      - name: Run B UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN=.build/isolation-experiment
+          XCTEST=$(find "$RUN" -name '*.xctestrun' -print -quit)
+          Scripts/run-isolation-shard.sh "$RUN/shards/expected-ui.txt" \
+            "$RUN/B-ui" "$XCTEST" 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isolation-experiment-B-ui
+          path: .build/isolation-experiment/B-ui
+          retention-days: 7
+          if-no-files-found: error
+
+  report:
+    name: Report A/B separately
+    needs: [A, B-nonui, B-ui]
+    if: always()
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: isolation-experiment-shared
+          path: .build/isolation-experiment
+      - uses: actions/download-artifact@v4
+        with:
+          name: isolation-experiment-A
+          path: .build/isolation-experiment/A
+      - uses: actions/download-artifact@v4
+        with:
+          name: isolation-experiment-B-nonui
+          path: .build/isolation-experiment/B-nonui
+      - uses: actions/download-artifact@v4
+        with:
+          name: isolation-experiment-B-ui
+          path: .build/isolation-experiment/B-ui
+      - name: Report
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 Scripts/report-isolation-experiment.py .build/isolation-experiment
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isolation-experiment-report
+          path: .build/isolation-experiment
+          retention-days: 7
+          if-no-files-found: error

@@ -70,7 +70,8 @@ VERIFICATION_PATHS = {'.github/workflows/ios.yml', '.github/workflows/ios-full-a
         'verify-local.sh', 'with-banner-trace.py', 'classify-ci-changes.py',
         'test-duration-summary.py', 'check-test-support.py',
         'check-test-support-scope.py', 'check-test-support-execution.py',
-        'split-test-shards.py',
+        'split-test-shards.py', 'prepare-isolation-experiment.sh',
+        'run-isolation-shard.sh', 'report-isolation-experiment.py',
     ]}
 TEST_SUPPORT_MANIFEST = 'Tests/Governance/test-support-impact.json'
 

@@ -1240,6 +1240,8 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 | DEC-002 | 2026-10-07 | 购物车/会话由数据服务持有事实源，Feature/App 只持 UI 投影；消除跨 Feature 共享具体 Model 的依赖 | 首个对应状态实现前 |
 | DEC-003 | 2026-10-07 | 用户确认按功能模块化 + 页面按需 MVVM + UI 组件组合复用 + 协议注入；页面协调对象统一 ViewModel 命名，原泛称 Model 按职责澄清；见 1.3、2.5 | 从工程创建和首个页面起生效 |
 
+2026-10-26 CART-CHECKOUT-01：用户要求购物车结算复用确认订单，沿既有Cart/Checkout Targets与Core导航合同，新增只读CheckoutIntent聚合真实SKU行及cart来源scope/revision，CartEntryView.onCheckout输出此输入；现有BuyNowIntent保持单行消费者兼容。CartProductCheck仅携带新鲜catalog只读事实，购物车schema/owner不变。App按原scope注入同一store，不合并游客/账号。Checkout仅在创建已确认且原revision未变时调用既有remove命令；失败/未知或并发变化保留并提示。无新依赖/Target/SDK/支付/CI规则，消费者与验证见本轮scope.md。
+
 ## 8. 实施计划与当前状态
 
 ### 8.1 阶段顺序
@@ -1474,3 +1476,5 @@ Historical development note, superseded by8.3: 2026-10-25 COUPON-01 v0.1 in deve
 2026-10-26 ORDER-TRANSACTIONS-02 v0.1：确认页选券估算/备注/默认标识、创建→只读收银台→真实订单详情、待付款原因字典/取消后权威重读、横滑历史商品与来源栈已实现。Sol自检128单元、17订单UI及3地址券回归通过；尾部提交锁定回归与完整链、取消等待分类、HTTP401/403与原因登录恢复已定向补验，新增登录UI1条通过（分阶段复验/复用边界见Evidence，不冒称单次全量）。格式/边界/213治理及最终Debug/Release exit0；556仅发现，不全套。Astra同冻结265源/13构建独立49/0/0，另真实深色大字号1/0/0，native/exact均0且验前后身份一致；本轮限定范围本地验收通过，无真实账号写验、支付/iOS17/真机/fullVO/远程CI通过结论。初轮编译/边界/4条UI失败保留。唯一状态Evidence/iOS/2026-10-26-ORDER-TRANSACTIONS/state.json；保持PR31 stacked draft base account，不merge/retarget main。
 
 2026-10-26 CHECKOUT-COUPON-FEEDBACK-01 v0.1：删除确认页不使用入口，默认nil/再次点已选取消；按endpoint区分确认候选与MyCoupon严格状态，缺字段不伪造，明确失效/未知枚举/门槛仍拦截并说明原因。关闭时按钮展示用本次presentation快照，实际选择/金额仍归VM；刷新禁止旧券操作并结束弹框。Sol最终50单元+4UI、格式/边界及Debug/Release exit0，563仅发现；213治理exit0限定复用本轮未变策略。初轮两条UI失败及无效触摸/布局/AX试验保留并已撤回，原断言/60/120预算不变。Astra同冻结265源/13构建独立54/0/0、native/exact均0且验前后身份一致，本轮限定范围本地验收通过；无真实响应/后端资格或写入验证。唯一状态Evidence/iOS/2026-10-26-CHECKOUT-COUPON-FEEDBACK/state.json；保持PR31 stacked draft base account，不merge/retarget main。
+
+2026-10-26 CART-CHECKOUT-01 v0.1：Cart结算已接共用确认订单与原写入/收银台链；仅选中行新鲜核验/多商品精确合计，guest登录续接不合并，创建确认后按原scope/revision条件清选中行，同步失败保留并提示。自检110模型及12条UI分批完成（初轮系统保存密码遮挡与大字号首屏定位失败保留，驱动返修后对应场景通过），最终格式/边界/Debug/Release exit0，governance213/0；自检完成，独立验收结果以本轮state.json为准；无真实账号/后端写入/iOS17/真机/fullVO/远程CI通过声明。唯一状态Evidence/iOS/2026-10-26-CART-CHECKOUT/state.json。

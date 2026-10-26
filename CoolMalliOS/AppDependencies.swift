@@ -236,7 +236,10 @@ final class AppDependencies {
         #endif
         cartStorageURL = storageURL
         #if DEBUG
-            if let fixture = CartUITestSupport.make(loader: productDetails, directory: support) {
+            if let fixture = CartUITestSupport.make(
+                loader: productDetails, directory: support,
+                accountID: initialAccountState.profile.map { String($0.id) })
+            {
                 shoppingCart = fixture
             } else {
                 shoppingCart = LocalShoppingCart(
@@ -293,6 +296,11 @@ final class AppDependencies {
         #endif
         footprintStores[historyScope] = footprints
         accountCarts[shoppingCart.scope] = shoppingCart
+    }
+    /// Retains the same original partition across a guest-to-account checkout; no rows are copied.
+    func checkoutCart(for intent: CheckoutIntent) -> (any ShoppingCart)? {
+        guard case .cart(let scope, _) = intent.source else { return nil }
+        return accountCarts[scope]
     }
     /// Scope identity is selected only from a committed session profile. Each
     /// partition reuses its own store; login never copies guest rows.

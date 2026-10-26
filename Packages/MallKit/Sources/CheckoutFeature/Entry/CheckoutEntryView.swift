@@ -6,7 +6,7 @@ import SwiftUI
 
 @MainActor public struct CheckoutEntryView: View {
     private let accountID: Int64
-    private let intent: BuyNowIntent
+    private let intent: CheckoutIntent
     private let loader: any CheckoutLoading
     private let creator: (any OrderCreating)?
     private let isActive: Bool
@@ -14,21 +14,27 @@ import SwiftUI
     private let imagePipeline: MallImagePipeline?
     private let onChooseAddress: (@escaping @MainActor (ShippingAddress) -> Void) -> Void
     private let onCreated: (Int64) -> Void
+    private let cart: (any ShoppingCart)?
+    private let onCartCleanupFailure: () -> Void
     public init(
-        accountID: Int64, intent: BuyNowIntent, loader: any CheckoutLoading,
+        accountID: Int64, intent: CheckoutIntent, loader: any CheckoutLoading,
         isActive: Bool, imagePipeline: MallImagePipeline?, onRequestLogin: @escaping () -> Void,
         onChooseAddress: @escaping (@escaping @MainActor (ShippingAddress) -> Void) -> Void,
-        creator: (any OrderCreating)? = nil, onCreated: @escaping (Int64) -> Void = { _ in }
+        creator: (any OrderCreating)? = nil, cart: (any ShoppingCart)? = nil,
+        onCartCleanupFailure: @escaping () -> Void = {},
+        onCreated: @escaping (Int64) -> Void = { _ in }
     ) {
         self.accountID = accountID; self.intent = intent; self.loader = loader
         self.isActive = isActive; self.imagePipeline = imagePipeline
         self.onRequestLogin = onRequestLogin; self.onChooseAddress = onChooseAddress
-        self.creator = creator; self.onCreated = onCreated
+        self.creator = creator; self.onCreated = onCreated; self.cart = cart;
+        self.onCartCleanupFailure = onCartCleanupFailure
     }
     public var body: some View {
         CheckoutScreen(
-            accountID: accountID, intent: intent, loader: loader, creator: creator,
-            isActive: isActive, pipeline: imagePipeline, onRequestLogin: onRequestLogin,
+            accountID: accountID, intent: intent, loader: loader, creator: creator, cart: cart,
+            onCartCleanupFailure: onCartCleanupFailure, isActive: isActive, pipeline: imagePipeline,
+            onRequestLogin: onRequestLogin,
             onChooseAddress: onChooseAddress, onCreated: onCreated
         ).id("\(accountID):\(intent.id)")
     }
@@ -42,14 +48,18 @@ let checkoutAccent = Color(red: 0.29, green: 0.32, blue: 1)
     @State private var expanded: Set<Int64> = []
     @FocusState private var remarkFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var typeSize
     let onRequestLogin: () -> Void
     let isActive: Bool
     let pipeline: MallImagePipeline?
     let onChooseAddress: (@escaping @MainActor (ShippingAddress) -> Void) -> Void
     let onCreated: (Int64) -> Void
+    let onCartCleanupFailure: () -> Void
     init(
-        accountID: Int64, intent: BuyNowIntent, loader: any CheckoutLoading,
-        creator: (any OrderCreating)?, isActive: Bool, pipeline: MallImagePipeline?,
+        accountID: Int64, intent: CheckoutIntent, loader: any CheckoutLoading,
+        creator: (any OrderCreating)?, cart: (any ShoppingCart)?,
+        onCartCleanupFailure: @escaping () -> Void,
+        isActive: Bool, pipeline: MallImagePipeline?,
         onRequestLogin: @escaping () -> Void,
         onChooseAddress: @escaping (@escaping @MainActor (ShippingAddress) -> Void) -> Void,
         onCreated: @escaping (Int64) -> Void
@@ -57,9 +67,10 @@ let checkoutAccent = Color(red: 0.29, green: 0.32, blue: 1)
         _model = State(
             initialValue: CheckoutViewModel(
                 accountID: accountID, intent: intent,
-                loader: loader, creator: creator))
+                loader: loader, creator: creator, cart: cart))
         self.onRequestLogin = onRequestLogin; self.isActive = isActive; self.pipeline = pipeline
-        self.onChooseAddress = onChooseAddress; self.onCreated = onCreated
+        self.onChooseAddress = onChooseAddress; self.onCreated = onCreated;
+        self.onCartCleanupFailure = onCartCleanupFailure
     }
     private struct ReadKey: Equatable { let active: Bool; let attempt: Int }
     private var active: Bool { isActive && scenePhase == .active }
@@ -86,11 +97,16 @@ let checkoutAccent = Color(red: 0.29, green: 0.32, blue: 1)
                         .accessibilityIdentifier("checkout.error")
                     }
                     addressCard
-                    productCard
+                    productCards
+                    if model.intent.pricesChanged {
+                        Text("商品价格已更新，请核对后提交").font(.footnote).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("checkout.priceChange")
+                    }
                     VStack(spacing: 0) {
                         sectionTitle("价格明细")
                         amountRow(
-                            "商品总价", symbol: "storefront", value: money(model.intent.subtotalYuan)
+                            "商品总价", symbol: "storefront", value: money(model.intent.subtotalYuan),
+                            stacked: typeSize.isAccessibilitySize
                         )
                         .accessibilityIdentifier("checkout.subtotal")
                         Divider()
@@ -116,14 +132,16 @@ let checkoutAccent = Color(red: 0.29, green: 0.32, blue: 1)
                             Divider()
                             amountRow(
                                 "优惠券折扣", symbol: "yensign.circle",
-                                value: "−" + money(estimate.discountYuan), red: true
+                                value: "−" + money(estimate.discountYuan), red: true,
+                                stacked: typeSize.isAccessibilitySize
                             )
                             .accessibilityIdentifier("checkout.discount")
                         }
                         Divider()
                         amountRow(
                             "合计", symbol: "yensign.circle",
-                            value: model.estimate.map { money($0.totalYuan) } ?? "待确认"
+                            value: model.estimate.map { money($0.totalYuan) } ?? "待确认",
+                            stacked: typeSize.isAccessibilitySize
                         )
                         .accessibilityIdentifier("checkout.total")
                     }.background(.background, in: RoundedRectangle(cornerRadius: 18))
@@ -181,15 +199,26 @@ let checkoutAccent = Color(red: 0.29, green: 0.32, blue: 1)
             .navigationTitle("确认订单").navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
                 if !showsCoupons {
-                    HStack {
+                    let layout =
+                        typeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+                        : AnyLayout(HStackLayout())
+                    layout {
                         Text(model.estimate.map { money($0.totalYuan) } ?? "金额待确认")
-                            .font(.title2.bold()).foregroundStyle(.red).accessibilityIdentifier(
+                            .font(.title2.bold()).foregroundStyle(.red)
+                            .lineLimit(1).minimumScaleFactor(0.5).accessibilityIdentifier(
                                 "checkout.payable")
-                        Spacer()
+                        if !typeSize.isAccessibilitySize { Spacer() }
                         Button(model.submitting ? "正在提交" : "提交订单") {
                             remarkFocused = false
-                            Task { if let id = await model.submit() { onCreated(id) } }
-                        }.bold().padding(.horizontal, 20).padding(.vertical, 14)
+                            Task {
+                                if let id = await model.submit() {
+                                    if model.cartCleanupFailed { onCartCleanupFailure() };
+                                    onCreated(id)
+                                }
+                            }
+                        }.bold().lineLimit(1).padding(.horizontal, 20).padding(.vertical, 14)
+                            .frame(maxWidth: typeSize.isAccessibilitySize ? .infinity : nil)
                             .foregroundStyle(.white).background(
                                 checkoutAccent.opacity(model.canSubmit ? 1 : 0.45),
                                 in: RoundedRectangle(cornerRadius: 12)
@@ -208,7 +237,9 @@ let checkoutAccent = Color(red: 0.29, green: 0.32, blue: 1)
             .onChange(of: model.coupons) { _, _ in showsCoupons = false }
             .onChange(of: model.selectedCoupon?.id) { _, _ in showsCoupons = false }
             .onChange(of: model.recoveredOrderID) { _, id in
-                if active, let id { onCreated(id) }
+                if active, let id {
+                    if model.cartCleanupFailed { onCartCleanupFailure() }; onCreated(id)
+                }
             }
             .onChange(of: model.writeFailure) { _, failure in
                 if active, failure == .authenticationRequired { onRequestLogin() }
@@ -248,14 +279,32 @@ let checkoutAccent = Color(red: 0.29, green: 0.32, blue: 1)
         }.buttonStyle(.plain).disabled(model.submitting || model.writeLocked)
             .accessibilityIdentifier("checkout.address")
     }
-    private var productCard: some View {
+    @ViewBuilder private var productCards: some View {
+        if model.intent.lines.count == 1, let line = model.intent.lines.first {
+            productCard(line, index: 0)
+        } else {
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(Array(model.intent.lines.enumerated()), id: \.element.id) {
+                        index, line in
+                        productCard(line, index: index).containerRelativeFrame(.horizontal)
+                            .accessibilityElement(children: .contain)
+                            .accessibilityIdentifier(
+                                "checkout.product.\(line.productID).\(line.specificationID)")
+                    }
+                }.scrollTargetLayout()
+            }.scrollTargetBehavior(.viewAligned).scrollIndicators(.hidden)
+                .accessibilityIdentifier("checkout.products")
+        }
+    }
+    private func productCard(_ line: BuyNowIntent, index: Int) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(model.intent.title).font(.headline); Divider()
+            Text(line.title).font(.headline); Divider()
             HStack(spacing: 12) {
                 Group {
                     if let pipeline {
                         RemoteImage(
-                            url: model.intent.imageURL, targetSize: CGSize(width: 88, height: 88),
+                            url: line.imageURL, targetSize: CGSize(width: 88, height: 88),
                             contentMode: .fit, pipeline: pipeline, isEnabled: active)
                     } else {
                         Image(systemName: "photo").foregroundStyle(.secondary)
@@ -263,13 +312,20 @@ let checkoutAccent = Color(red: 0.29, green: 0.32, blue: 1)
                 }.frame(width: 88, height: 88).background(
                     .quinary, in: RoundedRectangle(cornerRadius: 12))
                 VStack(alignment: .leading, spacing: 16) {
-                    Text(model.intent.specification).font(.subheadline).foregroundStyle(.secondary)
-                    HStack {
-                        Text(money(model.intent.unitPriceYuan)).font(.headline).foregroundStyle(
-                            .red);
-                        Spacer()
-                        Text("数量：\(model.intent.quantity)").foregroundStyle(.secondary)
-                            .accessibilityIdentifier("checkout.quantity")
+                    Text(line.specification).font(.subheadline).foregroundStyle(.secondary)
+                    let layout =
+                        typeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+                        : AnyLayout(HStackLayout())
+                    layout {
+                        Text(money(line.unitPriceYuan)).font(.headline).foregroundStyle(
+                            .red
+                        ).lineLimit(1).minimumScaleFactor(0.5)
+                        if !typeSize.isAccessibilitySize { Spacer() }
+                        Text("数量：\(line.quantity)").foregroundStyle(.secondary)
+                            .accessibilityIdentifier(
+                                model.intent.lines.count == 1
+                                    ? "checkout.quantity" : "checkout.quantity.\(index)")
                     }
                 }
             }
@@ -339,9 +395,15 @@ func sectionTitle(_ text: String) -> some View {
         Spacer()
     }.padding(14)
 }
-func amountRow(_ text: String, symbol: String, value: String, red: Bool = false) -> some View {
-    HStack {
-        Label(text, systemImage: symbol); Spacer();
-        Text(value).foregroundStyle(red ? Color.red : .primary)
+func amountRow(
+    _ text: String, symbol: String, value: String, red: Bool = false, stacked: Bool = false
+) -> some View {
+    let layout =
+        stacked
+        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout())
+    return layout {
+        Label(text, systemImage: symbol)
+        if !stacked { Spacer() }
+        Text(value).foregroundStyle(red ? Color.red : .primary).lineLimit(1).minimumScaleFactor(0.5)
     }.padding(16).accessibilityElement(children: .combine)
 }

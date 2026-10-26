@@ -22,6 +22,8 @@ public struct CartProductVerifier: CartProductChecking {
                 specification: $0.name, imageURL: $0.imageURLs.first ?? detail.imageURLs.first,
                 price: try CartMoney(yuan: $0.priceYuan), stock: $0.stock)
         }
-        return .init(productID: productID, isAvailable: true, quotes: quotes)
+        return .init(
+            productID: productID, isAvailable: true, quotes: quotes, product: detail,
+            specifications: specifications)
     }
 }

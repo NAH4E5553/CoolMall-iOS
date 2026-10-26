@@ -50,10 +50,10 @@ struct OrderTransactionTests {
         #expect(spec["stock"] as? Int == 3); #expect(spec["price"] as? Int == 999)
         #expect(
             (spec["images"] as? [String])?.first
-                == input.intent.specificationImages.first?.absoluteString)
+                == input.intent.lines[0].specificationImages.first?.absoluteString)
         #expect(
             (line["goodsInfo"] as? [String: Any])?["mainPic"] as? String
-                == input.intent.productImageURL?.absoluteString)
+                == input.intent.lines[0].productImageURL?.absoluteString)
     }
     @Test func knownIdentityWinsOverChangedOrInvalidInputOnRecovery() async throws {
         let transport = CouponTransport(data: Data(#"{"code":1000,"data":{"id":71}}"#.utf8))
@@ -229,4 +229,59 @@ struct OrderTransactionTests {
             transport: CouponTransport(data: bytes))
         #expect(try await reader.loadOrder(accountID: 1, orderID: 71).amounts?.payableYuan == 5469)
     }
+    @Test func cartCreateEncodesEverySelectedSkuWithRealCatalogSnapshots() async throws {
+        let product = ProductDetailSnapshot(
+            id: 9, title: "商品", subtitle: nil, priceYuan: 99,
+            sold: 0, isAvailable: true, imageURLs: [base.appending(path: "product.png")],
+            contentImageURLs: [])
+        let specs = [4, 5].map {
+            ProductSpecification(
+                id: Int64($0), productID: 9,
+                name: "spec-\($0)", priceYuan: Decimal($0 * 100), stock: 8,
+                imageURLs: [base.appending(path: "sku-\($0).png")])
+        }
+        let quotes = try specs.map {
+            CartQuote(
+                productID: 9, specificationID: $0.id, title: product.title,
+                specification: $0.name, imageURL: $0.imageURLs.first,
+                price: try CartMoney(yuan: $0.priceYuan), stock: $0.stock)
+        }
+        let cart = ShoppingCartSnapshot(
+            scope: .init(environment: "test", accountID: "1"), revision: 8,
+            lines: quotes.map { CartLine(quote: $0, quantity: 2) })
+        let intent = try CheckoutIntent(
+            cart: cart, selection: Set(quotes.map(\.id)),
+            checks: [
+                9:
+                    CartProductCheck(
+                        productID: 9, isAvailable: true, quotes: quotes, product: product,
+                        specifications: specs)
+            ])
+        let transport = CouponTransport(data: Data(#"{"code":1000,"data":{"id":71}}"#.utf8))
+        #expect(
+            try await service(transport).createOrder(
+                accountID: 1,
+                input: OrderCreation(intent: intent, addressID: 8, coupon: nil, remark: "multi"))
+                == 71)
+        let request = try #require(await transport.requests.first)
+        let body = try #require(request.httpBody)
+        let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let data = try #require(json["data"] as? [String: Any])
+        let lines = try #require(data["goodsList"] as? [[String: Any]])
+        #expect(lines.count == 2); #expect(data["couponId"] == nil)
+        for (index, row) in lines.enumerated() {
+            #expect(row["goodsId"] as? Int == 9); #expect(row["count"] as? Int == 2)
+            let spec = try #require(row["spec"] as? [String: Any])
+            #expect(spec["id"] as? Int64 == specs[index].id)
+            #expect(spec["price"] as? Int == (index + 4) * 100)
+            #expect(
+                (spec["images"] as? [String])?.first == specs[index].imageURLs.first?.absoluteString
+            )
+            #expect(
+                (row["goodsInfo"] as? [String: Any])?["mainPic"] as? String
+                    == product.imageURLs.first?.absoluteString)
+        }
+        #expect(intent.subtotalYuan == 1800)
+    }
+
 }

@@ -37,6 +37,45 @@ public struct BuyNowIntent: Equatable, Hashable, Sendable, Identifiable {
     public static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
     public func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
+/// One immutable confirmation input. Cart state remains owned by the injected store.
+public struct CheckoutIntent: Equatable, Hashable, Sendable, Identifiable {
+    public enum Source: Equatable, Sendable {
+        case buyNow
+        case cart(scope: CartScope, revision: UInt64)
+    }
+    public let id: UUID
+    public let lines: [BuyNowIntent]
+    public let source: Source
+    public let subtotalYuan: Decimal
+    public let pricesChanged: Bool
+    public init(buyNow: BuyNowIntent) {
+        id = buyNow.id; lines = [buyNow]; source = .buyNow
+        subtotalYuan = buyNow.subtotalYuan; pricesChanged = false
+    }
+    public init(
+        cart: ShoppingCartSnapshot, selection: Set<CartItemID>, checks: [Int64: CartProductCheck]
+    ) throws {
+        let selected = cart.lines.filter { selection.contains($0.id) }
+        guard !selection.isEmpty, selected.count == selection.count,
+            Set(selected.map(\.id)).count == selected.count
+        else { throw ShoppingCartFailure.missingLine }
+        let lines = try selected.map { line in
+            guard let check = checks[line.productID], check.productID == line.productID,
+                check.isAvailable, let product = check.product, product.id == line.productID,
+                let spec = check.specifications.first(where: { $0.id == line.specificationID })
+            else { throw ShoppingCartFailure.unavailable }
+            return try BuyNowIntent(product: product, specification: spec, quantity: line.quantity)
+        }
+        let total = try lines.reduce(CartMoney.zero) {
+            try $0.adding(CartMoney(yuan: $1.subtotalYuan))
+        }
+        id = UUID(); self.lines = lines; source = .cart(scope: cart.scope, revision: cart.revision)
+        subtotalYuan = total.yuan
+        pricesChanged = zip(selected, lines).contains { $0.unitPrice.yuan != $1.unitPriceYuan }
+    }
+    public static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
+    public func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
 /// Address/coupon candidates only. This endpoint supplies no quote, freight or eligibility result.
 public struct CheckoutContext: Equatable, Sendable {
     public let defaultAddress: ShippingAddress?
@@ -67,11 +106,16 @@ public struct CheckoutEstimate: Equatable, Sendable {
     }
 }
 public struct OrderCreation: Sendable {
-    public let intent: BuyNowIntent
+    public let intent: CheckoutIntent
     public let addressID: Int64
     public let coupon: UserCoupon?
     public let remark: String
     public init(intent: BuyNowIntent, addressID: Int64, coupon: UserCoupon?, remark: String) {
+        self.init(
+            intent: CheckoutIntent(buyNow: intent), addressID: addressID, coupon: coupon,
+            remark: remark)
+    }
+    public init(intent: CheckoutIntent, addressID: Int64, coupon: UserCoupon?, remark: String) {
         self.intent = intent; self.addressID = addressID; self.coupon = coupon; self.remark = remark
     }
 }

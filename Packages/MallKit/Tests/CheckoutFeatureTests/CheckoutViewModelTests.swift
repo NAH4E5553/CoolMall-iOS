@@ -229,4 +229,163 @@ import Testing
         model.stop()
     }
 
+    actor CleanupCart: ShoppingCart {
+        nonisolated let scope: CartScope
+        var snapshot: ShoppingCartSnapshot
+        var removes = 0; var fail = false; var hold = false
+        var gate: CheckedContinuation<Void, Never>?
+        init(_ snapshot: ShoppingCartSnapshot) { self.snapshot = snapshot; scope = snapshot.scope }
+        func configure(fail: Bool = false, hold: Bool = false) {
+            self.fail = fail; self.hold = hold
+        }
+        func release() { gate?.resume(); gate = nil }
+        func change() {
+            snapshot = .init(scope: scope, revision: snapshot.revision + 1, lines: snapshot.lines)
+        }
+        func current() async -> ShoppingCartSnapshot {
+            if hold { hold = false; await withCheckedContinuation { gate = $0 } }
+            return snapshot
+        }
+        func observe() -> AsyncStream<ShoppingCartSnapshot> {
+            AsyncStream {
+                $0.yield(snapshot); $0.finish()
+            }
+        }
+        func remove(_ items: Set<CartItemID>, expectedRevision: UInt64) throws {
+            try Task.checkCancellation()
+            guard expectedRevision == snapshot.revision else {
+                throw ShoppingCartFailure.staleRevision
+            }
+            if fail { throw ShoppingCartFailure.writeFailed }
+            removes += 1
+            snapshot = .init(
+                scope: scope, revision: snapshot.revision + 1,
+                lines: snapshot.lines.filter { !items.contains($0.id) })
+        }
+        func add(quantity: Int64, quote: CartQuote, confirmedPrice: CartMoney?, operationID: UUID)
+            throws
+        { throw ShoppingCartFailure.unavailable }
+        func increase(
+            _ item: CartItemID, quote: CartQuote, confirmedPrice: CartMoney?,
+            expectedRevision: UInt64
+        ) throws { throw ShoppingCartFailure.unavailable }
+        func decrease(_ item: CartItemID, expectedRevision: UInt64) throws {
+            throw ShoppingCartFailure.unavailable
+        }
+    }
+    static func cartInput() throws -> (CheckoutIntent, ShoppingCartSnapshot) {
+        let product = ProductDetailSnapshot(
+            id: 9, title: "商品", subtitle: nil, priceYuan: 100,
+            sold: 0, isAvailable: true, imageURLs: [], contentImageURLs: [])
+        let specs = (4...6).map {
+            ProductSpecification(
+                id: Int64($0), productID: 9,
+                name: "spec-\($0)", priceYuan: 100, stock: 5, imageURLs: [])
+        }
+        let quotes = try specs.map {
+            CartQuote(
+                productID: 9, specificationID: $0.id, title: product.title,
+                specification: $0.name, imageURL: nil, price: try CartMoney(yuan: 100), stock: 5)
+        }
+        let snapshot = ShoppingCartSnapshot(
+            scope: .init(environment: "test", accountID: nil), revision: 0,
+            lines: quotes.map { CartLine(quote: $0, quantity: 1) })
+        let input = try CheckoutIntent(
+            cart: snapshot, selection: [quotes[0].id, quotes[1].id],
+            checks: [
+                9: .init(
+                    productID: 9, isAvailable: true, quotes: quotes, product: product,
+                    specifications: specs)
+            ])
+        return (input, snapshot)
+    }
+    @Test func confirmedCartOrderRemovesOnlySelectedRowsAndCanRecoverWithoutRecreation()
+        async throws
+    {
+        for recovering in [false, true] {
+            let (intent, snapshot) = try Self.cartInput();
+            let cart = CleanupCart(snapshot), creator = Creator()
+            if recovering { creator.known = 71 }
+            let model = CheckoutViewModel(
+                accountID: 1, intent: intent, loader: Loader(), creator: creator, cart: cart)
+            await model.activate(true)
+            if recovering {
+                #expect(model.recoveredOrderID == 71); #expect(creator.calls == 0)
+            } else {
+                #expect(await model.submit() == 71); #expect(creator.calls == 1)
+            }
+            #expect(await cart.removes == 1)
+            let value = await cart.current(); #expect(value.lines.map(\.specificationID) == [6])
+            #expect(!model.cartCleanupFailed); #expect(!model.canSubmit)
+            #expect(await model.submit() == nil); #expect(await cart.removes == 1)
+            model.stop()
+        }
+    }
+    @Test func rejectedAndUnknownOrdersNeverRemoveCart() async throws {
+        for error: OrderWriteFailure in [.rejected(code: 500, message: "库存不足"), .unconfirmed] {
+            let (intent, snapshot) = try Self.cartInput();
+            let cart = CleanupCart(snapshot), creator = Creator()
+            creator.error = error
+            let model = CheckoutViewModel(
+                accountID: 1, intent: intent, loader: Loader(), creator: creator, cart: cart)
+            await model.activate(true); #expect(await model.submit() == nil)
+            #expect(await cart.removes == 0); #expect(await cart.current().lines.count == 3)
+            #expect(model.writeFailure == error); model.stop()
+        }
+    }
+    @Test func changedCartOrCleanupFailureKeepsCreatedOrderLockedAndPreservesData() async throws {
+        for changed in [false, true] {
+            let (intent, snapshot) = try Self.cartInput();
+            let cart = CleanupCart(snapshot), creator = Creator()
+            let model = CheckoutViewModel(
+                accountID: 1, intent: intent, loader: Loader(), creator: creator, cart: cart)
+            await model.activate(true)
+            if changed { await cart.change() } else { await cart.configure(fail: true) }
+            #expect(await model.submit() == 71); #expect(model.writeLocked)
+            #expect(model.cartCleanupFailed); #expect(await cart.removes == 0)
+            #expect(await cart.current().lines.count == 3); #expect(creator.calls == 1)
+            #expect(await model.submit() == nil); model.stop()
+        }
+    }
+    @Test func leavingDuringCleanupRejectsLateNavigationAndCartDeletion() async throws {
+        let (intent, snapshot) = try Self.cartInput();
+        let cart = CleanupCart(snapshot), creator = Creator()
+        let model = CheckoutViewModel(
+            accountID: 1, intent: intent, loader: Loader(), creator: creator, cart: cart)
+        await model.activate(true); await cart.configure(hold: true)
+        let submit = Task { await model.submit() }
+        for _ in 0..<1000 { if await cart.gate != nil { break }; await Task.yield() }
+        #expect(await cart.gate != nil); model.stop(); await cart.release()
+        #expect(await submit.value == nil); #expect(await cart.removes == 0)
+        #expect(await cart.current().lines.count == 3)
+    }
+
+    @Test func recoveryLeavingDuringCleanupCannotDeleteOrNavigate() async throws {
+        let (intent, snapshot) = try Self.cartInput()
+        let cart = CleanupCart(snapshot), creator = Creator(); creator.known = 71
+        await cart.configure(hold: true)
+        let model = CheckoutViewModel(
+            accountID: 1, intent: intent, loader: Loader(), creator: creator, cart: cart)
+        let activation = Task { await model.activate(true) }
+        for _ in 0..<1000 { if await cart.gate != nil { break }; await Task.yield() }
+        #expect(await cart.gate != nil); model.stop(); await cart.release(); await activation.value
+        #expect(model.recoveredOrderID == nil); #expect(await cart.removes == 0)
+        #expect(creator.calls == 0); #expect(await cart.current().lines.count == 3)
+    }
+    @Test func missingOrDifferentScopeCartCannotSubmitOrDelete() async throws {
+        let (intent, snapshot) = try Self.cartInput()
+        for missing in [true, false] {
+            let other = ShoppingCartSnapshot(
+                scope: .init(environment: "another", accountID: "2"), revision: 0,
+                lines: snapshot.lines)
+            let cart = CleanupCart(other), creator = Creator()
+            let model = CheckoutViewModel(
+                accountID: 1, intent: intent, loader: Loader(), creator: creator,
+                cart: missing ? nil : cart)
+            await model.activate(true); #expect(!model.canSubmit)
+            #expect(await model.submit() == nil); #expect(creator.calls == 0)
+            #expect(await cart.removes == 0); model.stop()
+        }
+    }
+
 }

@@ -39,10 +39,6 @@ public actor HTTPOrderTransactions: OrderCreating, OrderCancelling {
         }
         guard input.addressID > 0 else { throw OrderWriteFailure.invalidInput }
         _ = try CheckoutEstimate(subtotalYuan: input.intent.subtotalYuan, coupon: input.coupon)
-        // Android's proven selected-SKU wire snapshot uses integral yuan. Never round.
-        guard
-            let wirePrice = Int64(NSDecimalNumber(decimal: input.intent.unitPriceYuan).stringValue)
-        else { throw OrderWriteFailure.invalidInput }
         struct Goods: Encodable { let id: Int64; let title: String; let mainPic: String? }
         struct Spec: Encodable {
             let id: Int64; let goodsId: Int64; let name: String; let price: Int64
@@ -56,23 +52,26 @@ public actor HTTPOrderTransactions: OrderCreating, OrderCancelling {
             let remark: String; let title: String
         }
         struct Body: Encodable { let data: Command }
-        let intent = input.intent
+        let selected = try input.intent.lines.map { line in
+            // Preserve Android's integral-yuan SKU contract; never round a price.
+            guard let wirePrice = Int64(NSDecimalNumber(decimal: line.unitPriceYuan).stringValue)
+            else { throw OrderWriteFailure.invalidInput }
+            return Selected(
+                goodsId: line.productID, count: line.quantity,
+                goodsInfo: Goods(
+                    id: line.productID, title: line.title,
+                    mainPic: line.productImageURL?.absoluteString),
+                spec: Spec(
+                    id: line.specificationID, goodsId: line.productID,
+                    name: line.specification, price: wirePrice, stock: line.stock,
+                    images: line.specificationImages.map(\.absoluteString)))
+        }
         let bytes = try JSONEncoder().encode(
             Body(
                 data: Command(
                     addressId: input.addressID,
-                    goodsList: [
-                        Selected(
-                            goodsId: intent.productID, count: intent.quantity,
-                            goodsInfo: Goods(
-                                id: intent.productID, title: intent.title,
-                                mainPic: intent.productImageURL?.absoluteString),
-                            spec: Spec(
-                                id: intent.specificationID, goodsId: intent.productID,
-                                name: intent.specification, price: wirePrice, stock: intent.stock,
-                                images: intent.specificationImages.map(\.absoluteString)))
-                    ],
-                    couponId: input.coupon?.id, remark: input.remark, title: "购买商品")))
+                    goodsList: selected, couponId: input.coupon?.id, remark: input.remark,
+                    title: "购买商品")))
         let response = try await write(
             key, context: context, path: "order/info/create", body: bytes)
         struct Receipt: Decodable { let id: Int64; let userId: Int64? }

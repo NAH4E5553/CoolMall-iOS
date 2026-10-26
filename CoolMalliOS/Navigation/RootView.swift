@@ -27,7 +27,7 @@ struct RootView: View {
         let id = UUID(); let accountID: Int64; let choose: @MainActor (ShippingAddress) -> Void
     }
     @State private var addressSelection: AddressSelection?
-    @State private var checkoutDeferred = false
+    @State private var cartCleanupNotice: UUID?
     @State private var unavailableNotice: UUID?
     @State private var categoryUnavailableNotice: UUID?
     @State private var categoryRequestedChildID: Int64?
@@ -72,8 +72,19 @@ struct RootView: View {
                         selection.choose(address); addressSelection = nil
                     })
             }
-            .alert("结算暂未开放", isPresented: $checkoutDeferred) {
-                Button("知道了", role: .cancel) {}
+            .overlay(alignment: .bottom) {
+                if cartCleanupNotice != nil {
+                    Text("订单已创建，购物车未同步，请核对后手动删除已下单商品")
+                        .font(.subheadline).foregroundStyle(.white).padding(14)
+                        .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 12))
+                        .padding().allowsHitTesting(false).accessibilityIdentifier(
+                            "order.cartCleanupNotice")
+                }
+            }
+            .task(id: cartCleanupNotice) {
+                guard let notice = cartCleanupNotice else { return }
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                if cartCleanupNotice == notice { cartCleanupNotice = nil }
             }
             .task {
                 for await state in await dependencies.accountSession.states() {
@@ -512,12 +523,9 @@ struct RootView: View {
             imagePipeline: dependencies.detailImagePipeline,
             isActive: router.selectedTab == tab && (root ? path.isEmpty : path.last == .cart),
             onOpenProduct: { router.append(.productDetail(goodsID: $0), on: tab) },
-            onCheckout: {
-                if dependencies.accountState.profile == nil {
-                    router.append(.login, on: tab)
-                } else {
-                    checkoutDeferred = true
-                }
+            onCheckout: { intent in
+                router.beginCartPurchase(
+                    intent, accountID: dependencies.accountState.profile?.id, on: tab)
             }
         )
         .id(dependencies.shoppingCart.scope)
@@ -668,6 +676,8 @@ struct RootView: View {
                             addressSelection = AddressSelection(
                                 accountID: profile.id, choose: callback)
                         }, creator: dependencies.orderCreator,
+                        cart: dependencies.checkoutCart(for: intent),
+                        onCartCleanupFailure: { cartCleanupNotice = UUID() },
                         onCreated: { id in
                             guard dependencies.accountState.profile?.id == profile.id else {
                                 return

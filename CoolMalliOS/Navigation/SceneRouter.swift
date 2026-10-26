@@ -16,7 +16,7 @@ final class SceneRouter {
         case orders(filter: OrderFilter)
         case orderDetail(id: Int64)
         case cashier(orderID: Int64)
-        case checkout(intent: BuyNowIntent, accountID: Int64?)
+        case checkout(intent: CheckoutIntent, accountID: Int64?)
         case login
         case profile
         case footprints
@@ -138,6 +138,11 @@ final class SceneRouter {
     }
     func beginPurchase(_ intent: BuyNowIntent, accountID: Int64?, on tab: Tab) {
         guard case .productDetail = path(on: tab).last else { return }
+        append(.checkout(intent: CheckoutIntent(buyNow: intent), accountID: accountID), on: tab)
+    }
+    func beginCartPurchase(_ intent: CheckoutIntent, accountID: Int64?, on tab: Tab) {
+        let source = path(on: tab)
+        guard (tab == .cart && source.isEmpty) || source.last == .cart else { return }
         append(.checkout(intent: intent, accountID: accountID), on: tab)
     }
     func openCart() { homePath.append(.cart) }

@@ -4,11 +4,13 @@ import Observation
 
 /// One page owns mutable selections; navigation carries only the immutable purchase input.
 @MainActor @Observable final class CheckoutViewModel {
-    let intent: BuyNowIntent
+    let intent: CheckoutIntent
     private let accountID: Int64
     private let loader: any CheckoutLoading
     private let now: () -> Date
     private let creator: (any OrderCreating)?
+    private let cart: (any ShoppingCart)?
+    private(set) var cartCleanupFailed = false
     var remark = ""
     private(set) var recoveredOrderID: Int64?
     private(set) var submitting = false
@@ -27,12 +29,21 @@ import Observation
     private(set) var failure: PageReadFailure?
     private(set) var attempt = 0
     private(set) var notice: String?
-    init(
+    convenience init(
         accountID: Int64, intent: BuyNowIntent, loader: any CheckoutLoading,
         now: @escaping () -> Date = Date.init, creator: (any OrderCreating)? = nil
     ) {
+        self.init(
+            accountID: accountID, intent: CheckoutIntent(buyNow: intent), loader: loader,
+            now: now, creator: creator)
+    }
+    init(
+        accountID: Int64, intent: CheckoutIntent, loader: any CheckoutLoading,
+        now: @escaping () -> Date = Date.init, creator: (any OrderCreating)? = nil,
+        cart: (any ShoppingCart)? = nil
+    ) {
         self.accountID = accountID; self.intent = intent; self.loader = loader; self.now = now;
-        self.creator = creator
+        self.creator = creator; self.cart = cart
     }
     func activate(_ value: Bool) async {
         active = value
@@ -44,7 +55,12 @@ import Observation
                     accountID: accountID, intentID: intent.id)
                 try Task.checkCancellation()
                 guard active, epoch == generation else { return }
-                if let known { recoveredOrderID = known; writeLocked = true; return }
+                if let known {
+                    let failed = try await synchronizeCart(epoch: epoch)
+                    try Task.checkCancellation()
+                    guard active, epoch == generation else { return }
+                    cartCleanupFailed = failed; recoveredOrderID = known; writeLocked = true; return
+                }
             } catch {
                 guard active, epoch == generation, !Task.isCancelled else { return }
             }
@@ -102,7 +118,8 @@ import Observation
         try? CheckoutEstimate(subtotalYuan: intent.subtotalYuan, coupon: selectedCoupon, now: now())
     }
     var canSubmit: Bool {
-        active && loaded && !loading && failure == nil && !submitting && !writeLocked
+        active && cartInputAvailable && loaded && !loading && failure == nil && !submitting
+            && !writeLocked
             && (address?.id ?? 0) > 0 && estimate != nil && creator != nil
     }
     func canUse(_ coupon: UserCoupon) -> Bool {
@@ -143,13 +160,42 @@ import Observation
                     coupon: selectedCoupon, remark: remark))
             try Task.checkCancellation()
             guard active, epoch == generation else { return nil }
-            writeLocked = true; return id
+            writeLocked = true
+            let failed: Bool
+            do { failed = try await synchronizeCart(epoch: epoch) } catch is CancellationError {
+                return nil
+            }
+            guard active, epoch == generation else { return nil }
+            cartCleanupFailed = failed; return id
         } catch {
             guard active, epoch == generation else { return nil }
             let failure = (error as? OrderWriteFailure) ?? .unconfirmed
             if failure == .unconfirmed { writeLocked = true }
             writeFailure = failure; return nil
         }
+    }
+    private var cartInputAvailable: Bool {
+        guard case .cart(let scope, _) = intent.source else { return true }
+        return cart?.scope == scope
+            && (scope.accountID == nil || scope.accountID == String(accountID))
+    }
+    /// Cleanup is a command to the original store after a confirmed receipt, never an order retry.
+    private func synchronizeCart(epoch: UInt64) async throws -> Bool {
+        guard case .cart(let scope, let revision) = intent.source else { return false }
+        guard cartInputAvailable, let cart, cart.scope == scope else { return true }
+        do {
+            let value = try await cart.current(); try Task.checkCancellation()
+            guard active, generation == epoch else { throw CancellationError() }
+            guard value.scope == scope else { return true }
+            let items = Set(
+                intent.lines.map {
+                    CartItemID(productID: $0.productID, specificationID: $0.specificationID)
+                })
+            if value.lines.allSatisfy({ !items.contains($0.id) }) { return false }
+            guard value.revision == revision else { return true }
+            try await cart.remove(items, expectedRevision: revision)
+            return false
+        } catch is CancellationError { throw CancellationError() } catch { return true }
     }
     func stop() {
         active = false; generation &+= 1; selectionGeneration &+= 1; loading = false;

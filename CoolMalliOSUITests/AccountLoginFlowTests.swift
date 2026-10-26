@@ -200,12 +200,33 @@ final class AccountLoginFlowTests: XCTestCase {
         app.buttons["cart.select.830001.1"].tap()
         app.buttons["cart.checkout"].tap()
         XCTAssertTrue(app.buttons["login.choosePassword"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["cart.quantity.830001.1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["cart.quantity.830001.3"].exists)
+        app.buttons["cart.select.830001.1"].tap(); app.buttons["cart.checkout"].tap()
+        XCTAssertTrue(app.buttons["login.choosePassword"].waitForExistence(timeout: 5))
         app.buttons["login.choosePassword"].tap()
         phone(app); app.secureTextFields["login.password"].tap()
         app.secureTextFields["login.password"].typeText("test-only"); hideKeyboard(app)
         app.buttons["login.submit"].tap()
-        XCTAssertTrue(app.staticTexts["cart.empty"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["checkout.quantity"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["checkout.quantity"].label, "数量：1")
+        // Dismiss the observed system AutoFill prompt before exercising native Back.
+        for surface in [app, XCUIApplication(bundleIdentifier: "com.apple.springboard")] {
+            let prompt = surface.staticTexts.matching(
+                NSPredicate(
+                    format: "label CONTAINS %@ OR label CONTAINS[c] %@", "保存密码", "Save Password")
+            ).firstMatch
+            if prompt.exists {
+                for title in ["以后", "Not Now"] where surface.buttons[title].exists {
+                    surface.buttons[title].tap(); break
+                }
+            }
+        }
         XCTAssertFalse(app.tabBars.buttons["首页"].exists)
+        app.navigationBars.buttons["BackButton"].tap()
+        // The one-time guest purchase input is not a merge into this account's cart.
+        XCTAssertTrue(app.staticTexts["cart.empty"].waitForExistence(timeout: 5))
         capture(app, "checkout-login-independent-account-cart")
         app.navigationBars.buttons["BackButton"].tap()
         XCTAssertTrue(app.staticTexts["detail.loaded"].waitForExistence(timeout: 5))

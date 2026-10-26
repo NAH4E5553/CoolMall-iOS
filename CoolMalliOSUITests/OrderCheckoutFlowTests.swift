@@ -2,7 +2,7 @@ import XCTest
 
 final class OrderCheckoutFlowTests: XCTestCase {
     @MainActor private func launch(
-        _ mode: String = "success", guest: Bool = false, large: Bool = false
+        _ mode: String = "success", guest: Bool = false, large: Bool = false, seedCart: Bool = false
     ) -> XCUIApplication {
         continueAfterFailure = false
         addUIInterruptionMonitor(withDescription: "Synthetic login password prompt") { alert in
@@ -22,6 +22,7 @@ final class OrderCheckoutFlowTests: XCTestCase {
             "valid", "--ui-account-fixture", "success", "--ui-orders", mode, "--ui-addresses",
             "success", "--ui-cart-store", UUID().uuidString,
         ]
+        if seedCart { app.launchArguments += ["--ui-cart-seed"] }
         if !guest { app.launchArguments += ["--ui-orders-signed-in"] }
         if large {
             app.launchArguments += [
@@ -30,6 +31,85 @@ final class OrderCheckoutFlowTests: XCTestCase {
         }
         app.launch(); XCTAssertTrue(app.tabBars.buttons["我的"].waitForExistence(timeout: 10))
         return app
+    }
+    @MainActor private func checkoutCart(_ app: XCUIApplication, all: Bool = true) {
+        app.tabBars.buttons["购物车"].tap()
+        let first = app.buttons["cart.select.830001.1"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        if all { app.buttons["cart.selectAll"].tap() } else { first.tap() }
+        let settle = app.buttons["cart.checkout"]; XCTAssertTrue(settle.isEnabled);
+        settle.doubleTap()
+    }
+    @MainActor func testCartMultipleSkusCouponSwipeAndBackPreservesCart() {
+        let app = launch(seedCart: true); checkoutCart(app)
+        let cards = app.scrollViews["checkout.products"]
+        XCTAssertTrue(cards.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            node(app, "checkout.subtotal").label.contains("8,098")
+                || node(app, "checkout.subtotal").label.contains("8098"))
+        XCTAssertTrue(app.staticTexts["checkout.quantity.0"].isHittable)
+        cards.swipeLeft()
+        XCTAssertTrue(app.staticTexts["checkout.quantity.1"].isHittable)
+        app.buttons["checkout.coupons"].tap()
+        let coupon = app.buttons["checkout.coupon.701"]
+        XCTAssertTrue(coupon.waitForExistence(timeout: 5)); coupon.tap()
+        XCTAssertTrue(node(app, "checkout.discount").exists)
+        XCTAssertTrue(
+            node(app, "checkout.total").label.contains("8,068")
+                || node(app, "checkout.total").label.contains("8068"))
+        capture(app, "cart-multiple-skus-confirmation")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.buttons["cart.select.830001.1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["cart.select.830001.3"].exists)
+        XCTAssertFalse(app.buttons["checkout.submit"].exists)
+    }
+    @MainActor func testLargeTextCartConfirmationKeepsHorizontalProductsAndTotalReadable() {
+        let app = launch(large: true, seedCart: true); checkoutCart(app)
+        let cards = app.scrollViews["checkout.products"]
+        XCTAssertTrue(cards.waitForExistence(timeout: 5))
+        capture(app, "cart-confirmation-large-initial")
+        let first = app.staticTexts["checkout.quantity.0"]
+        for _ in 0..<4 {
+            if first.isHittable { break }; app.scrollViews["checkout.page"].swipeUp()
+        }
+        XCTAssertTrue(first.isHittable)
+        cards.swipeLeft(); XCTAssertTrue(app.staticTexts["checkout.quantity.1"].isHittable)
+        for _ in 0..<4 { if node(app, "checkout.total").isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(node(app, "checkout.total").isHittable)
+        XCTAssertTrue(
+            node(app, "checkout.total").label.contains("8,098")
+                || node(app, "checkout.total").label.contains("8098"))
+        XCTAssertTrue(app.buttons["checkout.submit"].isHittable)
+        capture(app, "cart-confirmation-large-text")
+    }
+    @MainActor func testCartConfirmedOrderRemovesOnlyPurchasedSkuAndReturnsToCart() {
+        let app = launch(seedCart: true); checkoutCart(app, all: false)
+        XCTAssertTrue(app.staticTexts["checkout.quantity"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["checkout.quantity"].label, "数量：1")
+        let submit = app.buttons["checkout.submit"]; XCTAssertTrue(submit.isEnabled);
+        submit.doubleTap()
+        XCTAssertTrue(app.scrollViews["cashier.page"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.staticTexts["cashier.amount"].label.contains("3,999")
+                || app.staticTexts["cashier.amount"].label.contains("3999"))
+        app.buttons["cashier.back"].tap()
+        XCTAssertTrue(app.staticTexts["order.status"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["order.status"].label, "待付款")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.buttons["cart.select.830001.3"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["cart.select.830001.1"].exists)
+        XCTAssertFalse(app.buttons["checkout.submit"].exists)
+        capture(app, "cart-confirmed-selected-only-cleanup")
+    }
+    @MainActor func testCartUnknownCreationKeepsEverySkuAndReturnsToCart() {
+        let app = launch("createUnknown", seedCart: true); checkoutCart(app)
+        XCTAssertTrue(app.scrollViews["checkout.products"].waitForExistence(timeout: 5))
+        let submit = app.buttons["checkout.submit"]; submit.tap()
+        XCTAssertTrue(app.staticTexts["checkout.toast"].waitForExistence(timeout: 5))
+        XCTAssertFalse(submit.isEnabled); XCTAssertFalse(app.scrollViews["cashier.page"].exists)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.buttons["cart.select.830001.1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["cart.select.830001.3"].exists)
     }
     @MainActor private func orders(_ app: XCUIApplication) {
         app.tabBars.buttons["我的"].tap(); app.buttons["me.orders.all"].tap()

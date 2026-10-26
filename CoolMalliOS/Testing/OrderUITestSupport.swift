@@ -23,18 +23,18 @@
             let estimate = try CheckoutEstimate(
                 subtotalYuan: input.intent.subtotalYuan, coupon: input.coupon)
             created[id] = OrderSnapshot(
-                id: id, number: "TEST-\(id)", status: 0, title: input.intent.title,
+                id: id, number: "TEST-\(id)", status: 0,
+                title: input.intent.lines.map(\.title).joined(separator: "、"),
                 createdAt: "2026-10-26 12:00:00", paidAt: nil,
                 address: OrderAddressSnapshot(
                     contact: "联系人1", phone: "13800000000", location: "北京市 北京市 东城区 测试街道1号",
                     isDefault: true),
-                lines: [
+                lines: input.intent.lines.enumerated().map { index, line in
                     OrderLineSnapshot(
-                        id: id * 10, title: input.intent.title,
-                        specification: input.intent.specification,
-                        imageURL: input.intent.imageURL, quantity: input.intent.quantity,
-                        unitPriceYuan: input.intent.unitPriceYuan)
-                ],
+                        id: id * 10 + Int64(index), title: line.title,
+                        specification: line.specification, imageURL: line.imageURL,
+                        quantity: line.quantity, unitPriceYuan: line.unitPriceYuan)
+                },
                 amounts: try OrderAmounts(
                     subtotalYuan: input.intent.subtotalYuan, discountYuan: estimate.discountYuan),
                 remark: input.remark)

@@ -49,6 +49,15 @@ import Observation
     private let accountID: Int64
     private let orderID: Int64
     private let loader: any OrdersLoading
+    private let canceller: (any OrderCancelling)?
+    private var lifecycle: UInt64 = 0
+    private var writing = false
+    private(set) var cancelLocked = false
+    private(set) var reasons: [OrderCancelReason]?
+    private(set) var reasonsLoading = false
+    private(set) var selectedReason: OrderCancelReason?
+    private(set) var cancelFailure: OrderWriteFailure?
+    private(set) var cancelling = false
     private var generation: UInt64 = 0
     private var active = false
     private var needsRead = true
@@ -56,12 +65,18 @@ import Observation
     private(set) var failure: PageReadFailure?
     private(set) var loading = false
     private(set) var attempt = 0
-    init(accountID: Int64, orderID: Int64, loader: any OrdersLoading) {
-        self.accountID = accountID; self.orderID = orderID; self.loader = loader
+    init(
+        accountID: Int64, orderID: Int64, loader: any OrdersLoading,
+        canceller: (any OrderCancelling)? = nil
+    ) {
+        self.accountID = accountID; self.orderID = orderID; self.loader = loader;
+        self.canceller = canceller
     }
     func retry() { needsRead = true; failure = nil; attempt += 1 }
     func activate(_ active: Bool) async {
+        let returning = !self.active && active
         self.active = active
+        if returning, order != nil { needsRead = true }
         guard active else { stop(); return }
         guard needsRead, failure == nil, !loading else { return }
         await refresh()
@@ -82,5 +97,52 @@ import Observation
             needsRead = true; failure = (error as? PageReadFailure) ?? .invalidResponse
         }
     }
-    func stop() { active = false; generation &+= 1; loading = false }
+    var canCancel: Bool {
+        active && order?.status == 0 && !cancelLocked && !writing && canceller != nil
+    }
+    func clearCancelFailure() { cancelFailure = nil }
+    func selectReason(_ reason: OrderCancelReason) {
+        guard !writing, reasons?.contains(reason) == true else { return }; selectedReason = reason
+    }
+    func loadReasons() async {
+        guard canCancel, !reasonsLoading, let canceller else { return }
+        let epoch = lifecycle; reasonsLoading = true; cancelFailure = nil
+        defer { if epoch == lifecycle { reasonsLoading = false } }
+        do {
+            let values = try await canceller.loadCancelReasons(accountID: accountID)
+            try Task.checkCancellation()
+            guard active, epoch == lifecycle else { return }
+            reasons = values; selectedReason = values.first
+        } catch {
+            guard active, epoch == lifecycle else { return }
+            cancelFailure =
+                (error as? OrderWriteFailure)
+                ?? ((error as? PageReadFailure) == .authenticationRequired
+                    ? .authenticationRequired : .unavailable)
+        }
+    }
+    /// Acknowledgement alone never fabricates a closed order; refresh owns the status.
+    func cancel() async -> Bool {
+        guard canCancel, let reason = selectedReason, let canceller else { return false }
+        let epoch = lifecycle; writing = true; cancelling = true; cancelFailure = nil
+        defer { writing = false; cancelling = false }
+        do {
+            try await canceller.cancelOrder(accountID: accountID, orderID: orderID, reason: reason)
+            guard active, epoch == lifecycle, !Task.isCancelled else { return false }
+            cancelLocked = true
+            // A read started before acknowledgement cannot replace the required post-write read.
+            generation &+= 1; loading = false
+            await refresh()
+            return true
+        } catch {
+            guard active, epoch == lifecycle else { return false }
+            let failure = (error as? OrderWriteFailure) ?? .unconfirmed
+            if failure == .unconfirmed { cancelLocked = true }
+            cancelFailure = failure; return false
+        }
+    }
+    func stop() {
+        active = false; lifecycle &+= 1; generation &+= 1; loading = false; reasonsLoading = false;
+        cancelling = false
+    }
 }

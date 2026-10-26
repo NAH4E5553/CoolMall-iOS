@@ -163,7 +163,7 @@ final class BoundaryVisitor: SyntaxVisitor {
         ],
         "CartFeature": ["CartEntryView"],
         "OrdersFeature": ["OrderListEntryView", "OrderDetailEntryView"],
-        "CheckoutFeature": ["CheckoutEntryView"],
+        "CheckoutFeature": ["CheckoutEntryView", "CashierEntryView"],
         "AccountFeature": [
             "MeEntryView", "LoginEntryView", "ProfileEntryView", "FootprintEntryView",
             "CouponEntryView", "CouponReceiveEntryView", "AddressEntryView",

@@ -107,4 +107,73 @@ import Testing
         #expect(model.selectedCoupon == nil)
         model.stop()
     }
+    @MainActor final class Creator: OrderCreating {
+        var calls = 0
+        var known: Int64?
+        func knownCreatedOrder(accountID: Int64, intentID: UUID) async throws -> Int64? { known }
+        var error: OrderWriteFailure?
+        var hold = false
+        var gate: CheckedContinuation<Int64, Error>?
+        func createOrder(accountID: Int64, input: OrderCreation) async throws -> Int64 {
+            calls += 1
+            if hold { return try await withCheckedThrowingContinuation { gate = $0 } }
+            if let error { throw error }; return 71
+        }
+    }
+    @Test func createOwnsSelectionsAndDoubleClickCannotSendTwice() async throws {
+        let loader = Loader(), creator = Creator(); creator.hold = true
+        let model = CheckoutViewModel(
+            accountID: 1, intent: try Self.intent(), loader: loader, creator: creator)
+        await model.activate(true); model.chooseCoupon(Self.coupon(1))
+        #expect(model.estimate?.totalYuan == 1968)
+        let task = Task { await model.submit() }; await wait { creator.gate != nil }
+        #expect(await model.submit() == nil); #expect(creator.calls == 1)
+        model.chooseCoupon(nil); #expect(model.selectedCoupon?.id == 1)
+        creator.gate?.resume(returning: 71); #expect(await task.value == 71)
+        #expect(!model.canSubmit); #expect(model.writeLocked)
+    }
+    @Test func unknownCreateLocksWhileRejectedMessageRemainsRetryableAndLateSuccessCannotNavigate()
+        async throws
+    {
+        let loader = Loader(), creator = Creator()
+        let model = CheckoutViewModel(
+            accountID: 1, intent: try Self.intent(), loader: loader, creator: creator)
+        await model.activate(true); creator.error = .rejected(code: 500, message: "库存不足")
+        #expect(await model.submit() == nil); #expect(model.canSubmit)
+        #expect(model.writeFailure?.message == "库存不足")
+        creator.error = .unconfirmed; #expect(await model.submit() == nil);
+        #expect(!model.canSubmit)
+        let late = Creator(); late.hold = true
+        let other = CheckoutViewModel(
+            accountID: 1, intent: try Self.intent(), loader: loader, creator: late)
+        await other.activate(true)
+        let task = Task { await other.submit() }; await wait { late.gate != nil }
+        other.stop(); late.gate?.resume(returning: 71); #expect(await task.value == nil)
+    }
+
+    @Test func establishedOrderRestoresBeforeUnavailableContextOrCouponValidation() async throws {
+        let loader = Loader(); loader.fail = true
+        let creator = Creator(); creator.known = 71
+        let model = CheckoutViewModel(
+            accountID: 1, intent: try Self.intent(), loader: loader, creator: creator)
+        await model.activate(true)
+        #expect(model.recoveredOrderID == 71); #expect(model.writeLocked)
+        #expect(loader.calls == 0); #expect(creator.calls == 0)
+    }
+
+    @Test func couponExpiringDuringWriteCannotMutateSubmittedSelectionOnRepeatedTap() async throws {
+        let end = try #require(ISO8601DateFormatter().date(from: "2030-01-01T00:00:00Z"))
+        let clock = Clock(end.addingTimeInterval(-1)), loader = Loader(), creator = Creator()
+        creator.hold = true
+        let model = CheckoutViewModel(
+            accountID: 1, intent: try Self.intent(), loader: loader,
+            now: { clock.date }, creator: creator)
+        await model.activate(true); model.chooseCoupon(Self.coupon(1))
+        let task = Task { await model.submit() }; await wait { creator.gate != nil }
+        clock.date = end
+        #expect(await model.submit() == nil); #expect(creator.calls == 1)
+        #expect(model.selectedCoupon?.id == 1); #expect(model.writeFailure == nil)
+        creator.gate?.resume(returning: 71); #expect(await task.value == 71)
+    }
+
 }

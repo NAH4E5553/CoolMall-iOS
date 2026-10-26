@@ -15,6 +15,7 @@ final class SceneRouter {
         case cart
         case orders(filter: OrderFilter)
         case orderDetail(id: Int64)
+        case cashier(orderID: Int64)
         case checkout(intent: BuyNowIntent, accountID: Int64?)
         case login
         case profile
@@ -78,7 +79,7 @@ final class SceneRouter {
             guard old != new else { return path }
             if let index = path.firstIndex(where: { route in
                 switch route {
-                case .orders, .orderDetail, .checkout: true;
+                case .orders, .orderDetail, .checkout, .cashier: true;
                 default: false
                 }
             }) {
@@ -92,7 +93,7 @@ final class SceneRouter {
     var hasMeOrderIntent: Bool {
         mePath.contains { route in
             switch route {
-            case .orders, .orderDetail, .checkout: true;
+            case .orders, .orderDetail, .checkout, .cashier: true;
             default: false
             }
         }
@@ -103,6 +104,36 @@ final class SceneRouter {
         case .category: categoryPath;
         case .cart: cartPath;
         case .me: mePath
+        }
+    }
+    private(set) var orderRevision: UInt64 = 0
+    func orderChanged() { orderRevision &+= 1 }
+    func orderCreated(_ id: Int64, from route: Route, on tab: Tab) {
+        guard id > 0, path(on: tab).last == route, case .checkout = route else { return }
+        var path = path(on: tab); path.removeLast(); path.append(.cashier(orderID: id))
+        assign(path, on: tab); orderChanged()
+    }
+    func cashierBack(on tab: Tab) {
+        guard case .cashier(let id) = path(on: tab).last else { return }
+        var path = path(on: tab); path.removeLast()
+        if path.last != .orderDetail(id: id) { path.append(.orderDetail(id: id)) }
+        assign(path, on: tab)
+    }
+    /// Native pop has the same semantics as the explicit cashier Back action.
+    func setPath(_ value: [Route], on tab: Tab) {
+        let old = path(on: tab)
+        if case .cashier = old.last, value == Array(old.dropLast()) {
+            cashierBack(on: tab)
+        } else {
+            assign(value, on: tab)
+        }
+    }
+    private func assign(_ value: [Route], on tab: Tab) {
+        switch tab {
+        case .home: homePath = value
+        case .category: categoryPath = value
+        case .cart: cartPath = value
+        case .me: mePath = value
         }
     }
     func beginPurchase(_ intent: BuyNowIntent, accountID: Int64?, on tab: Tab) {

@@ -4,6 +4,7 @@ import MallImages
 import SwiftUI
 
 @MainActor public struct OrderListEntryView: View {
+    private let refreshRevision: UInt64
     private let accountID: Int64
     private let filter: OrderFilter
     private let loader: any OrdersLoading
@@ -14,8 +15,9 @@ import SwiftUI
     public init(
         accountID: Int64, filter: OrderFilter, loader: any OrdersLoading,
         isActive: Bool, imagePipeline: MallImagePipeline?, onRequestLogin: @escaping () -> Void,
-        onOpenOrder: @escaping (Int64) -> Void
+        onOpenOrder: @escaping (Int64) -> Void, refreshRevision: UInt64 = 0
     ) {
+        self.refreshRevision = refreshRevision
         self.onRequestLogin = onRequestLogin
         self.accountID = accountID; self.filter = filter; self.loader = loader
         self.isActive = isActive; self.imagePipeline = imagePipeline; self.onOpenOrder = onOpenOrder
@@ -23,11 +25,14 @@ import SwiftUI
     public var body: some View {
         OrderListScreen(
             accountID: accountID, filter: filter, loader: loader, isActive: isActive,
-            pipeline: imagePipeline, onRequestLogin: onRequestLogin, onOpenOrder: onOpenOrder
+            pipeline: imagePipeline, onRequestLogin: onRequestLogin, onOpenOrder: onOpenOrder,
+            refreshRevision: refreshRevision
         ).id(accountID)
     }
 }
 @MainActor private struct OrderListScreen: View {
+    let refreshRevision: UInt64
+    @State private var seenRevision: UInt64
     @State private var model: OrderListViewModel
     @Environment(\.scenePhase) private var scenePhase
     let isActive: Bool
@@ -37,15 +42,18 @@ import SwiftUI
     init(
         accountID: Int64, filter: OrderFilter, loader: any OrdersLoading, isActive: Bool,
         pipeline: MallImagePipeline?, onRequestLogin: @escaping () -> Void,
-        onOpenOrder: @escaping (Int64) -> Void
+        onOpenOrder: @escaping (Int64) -> Void, refreshRevision: UInt64
     ) {
+        self.refreshRevision = refreshRevision; _seenRevision = State(initialValue: refreshRevision)
         _model = State(
             initialValue: OrderListViewModel(accountID: accountID, filter: filter, loader: loader))
         self.onRequestLogin = onRequestLogin
         self.isActive = isActive; self.pipeline = pipeline; self.onOpenOrder = onOpenOrder
     }
     private func requestLogin() { model.prepareLogin(); onRequestLogin() }
-    private struct ReadKey: Equatable { let active: Bool; let filter: OrderFilter }
+    private struct ReadKey: Equatable {
+        let active: Bool; let filter: OrderFilter; let revision: UInt64
+    }
     private var active: Bool { isActive && scenePhase == .active }
     var body: some View {
         VStack(spacing: 0) {
@@ -118,7 +126,12 @@ import SwiftUI
         }
         .background(Color.primary.opacity(0.035)).navigationTitle("我的订单")
         .navigationBarTitleDisplayMode(.inline).tint(orderAccent)
-        .task(id: ReadKey(active: active, filter: model.filter)) { await model.activate(active) }
+        .task(id: ReadKey(active: active, filter: model.filter, revision: refreshRevision)) {
+            await model.activate(active)
+            if active, seenRevision != refreshRevision {
+                seenRevision = refreshRevision; await model.refresh()
+            }
+        }
         .onDisappear { model.stop() }
     }
 }

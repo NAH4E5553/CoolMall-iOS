@@ -1,5 +1,6 @@
 import Foundation
 import MallCore
+import MallDesignSystem
 import MallImages
 import SwiftUI
 
@@ -7,164 +8,327 @@ import SwiftUI
     private let accountID: Int64
     private let intent: BuyNowIntent
     private let loader: any CheckoutLoading
+    private let creator: (any OrderCreating)?
     private let isActive: Bool
     private let onRequestLogin: () -> Void
     private let imagePipeline: MallImagePipeline?
     private let onChooseAddress: (@escaping @MainActor (ShippingAddress) -> Void) -> Void
+    private let onCreated: (Int64) -> Void
     public init(
         accountID: Int64, intent: BuyNowIntent, loader: any CheckoutLoading,
         isActive: Bool, imagePipeline: MallImagePipeline?, onRequestLogin: @escaping () -> Void,
-        onChooseAddress: @escaping (@escaping @MainActor (ShippingAddress) -> Void) -> Void
+        onChooseAddress: @escaping (@escaping @MainActor (ShippingAddress) -> Void) -> Void,
+        creator: (any OrderCreating)? = nil, onCreated: @escaping (Int64) -> Void = { _ in }
     ) {
-        self.onRequestLogin = onRequestLogin
         self.accountID = accountID; self.intent = intent; self.loader = loader
-        self.isActive = isActive; self.imagePipeline = imagePipeline;
-        self.onChooseAddress = onChooseAddress
+        self.isActive = isActive; self.imagePipeline = imagePipeline
+        self.onRequestLogin = onRequestLogin; self.onChooseAddress = onChooseAddress
+        self.creator = creator; self.onCreated = onCreated
     }
     public var body: some View {
         CheckoutScreen(
-            accountID: accountID, intent: intent, loader: loader, isActive: isActive,
-            pipeline: imagePipeline, onRequestLogin: onRequestLogin,
-            onChooseAddress: onChooseAddress
+            accountID: accountID, intent: intent, loader: loader, creator: creator,
+            isActive: isActive, pipeline: imagePipeline, onRequestLogin: onRequestLogin,
+            onChooseAddress: onChooseAddress, onCreated: onCreated
         ).id("\(accountID):\(intent.id)")
     }
 }
+let checkoutAccent = Color(red: 0.29, green: 0.32, blue: 1)
 @MainActor private struct CheckoutScreen: View {
     @State private var model: CheckoutViewModel
     @State private var showsCoupons = false
+    @State private var expanded: Set<Int64> = []
+    @FocusState private var remarkFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
     let onRequestLogin: () -> Void
     let isActive: Bool
     let pipeline: MallImagePipeline?
     let onChooseAddress: (@escaping @MainActor (ShippingAddress) -> Void) -> Void
-    private let accent = Color(red: 0.29, green: 0.32, blue: 1)
+    let onCreated: (Int64) -> Void
     init(
-        accountID: Int64, intent: BuyNowIntent, loader: any CheckoutLoading, isActive: Bool,
-        pipeline: MallImagePipeline?, onRequestLogin: @escaping () -> Void,
-        onChooseAddress: @escaping (@escaping @MainActor (ShippingAddress) -> Void) -> Void
+        accountID: Int64, intent: BuyNowIntent, loader: any CheckoutLoading,
+        creator: (any OrderCreating)?, isActive: Bool, pipeline: MallImagePipeline?,
+        onRequestLogin: @escaping () -> Void,
+        onChooseAddress: @escaping (@escaping @MainActor (ShippingAddress) -> Void) -> Void,
+        onCreated: @escaping (Int64) -> Void
     ) {
         _model = State(
-            initialValue: CheckoutViewModel(accountID: accountID, intent: intent, loader: loader))
-        self.onRequestLogin = onRequestLogin
-        self.isActive = isActive; self.pipeline = pipeline; self.onChooseAddress = onChooseAddress
+            initialValue: CheckoutViewModel(
+                accountID: accountID, intent: intent,
+                loader: loader, creator: creator))
+        self.onRequestLogin = onRequestLogin; self.isActive = isActive; self.pipeline = pipeline
+        self.onChooseAddress = onChooseAddress; self.onCreated = onCreated
     }
     private struct ReadKey: Equatable { let active: Bool; let attempt: Int }
     private var active: Bool { isActive && scenePhase == .active }
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                if model.loading { ProgressView("正在读取确认信息") }
-                if let failure = model.failure {
-                    VStack(spacing: 12) {
-                        Text(failure == .authenticationRequired ? "请重新登录后确认订单" : "确认信息读取失败，请重试")
-                        if failure == .authenticationRequired {
-                            Button("重新登录") {
-                                model.retry(); onRequestLogin()
-                            }.accessibilityIdentifier("checkout.login")
-                        } else {
-                            Button("重试") { model.retry() }.accessibilityIdentifier("checkout.retry")
-                        }
-                    }.frame(maxWidth: .infinity).padding().accessibilityElement(children: .contain)
-                        .accessibilityIdentifier("checkout.error")
-                }
-                Button {
-                    onChooseAddress(model.addressSelection())
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 8) {
-                            if let address = model.address {
-                                Text(address.value.contact + "  " + address.value.phone)
-                                Text(
-                                    [
-                                        address.value.province, address.value.city,
-                                        address.value.district, address.value.address,
-                                    ].joined(separator: " ")
-                                )
-                                .foregroundStyle(.secondary)
+        ZStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if model.loading { ProgressView("正在读取确认信息") }
+                    if let failure = model.failure {
+                        VStack(spacing: 12) {
+                            Text(failure == .authenticationRequired ? "请重新登录后确认订单" : "确认信息读取失败，请重试")
+                            if failure == .authenticationRequired {
+                                Button("重新登录") {
+                                    model.retry(); onRequestLogin()
+                                }
+                                .accessibilityIdentifier("checkout.login")
                             } else {
-                                Label("请选择收货地址", systemImage: "mappin.and.ellipse")
+                                Button("重试") { model.retry() }.accessibilityIdentifier(
+                                    "checkout.retry")
                             }
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                        Image(systemName: "chevron.right").foregroundStyle(.secondary)
-                    }.padding(16).background(.background, in: RoundedRectangle(cornerRadius: 18))
-                }.buttonStyle(.plain).accessibilityIdentifier("checkout.address")
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .top, spacing: 12) {
-                        Group {
-                            if let pipeline {
-                                RemoteImage(
-                                    url: model.intent.imageURL,
-                                    targetSize: CGSize(width: 88, height: 88),
-                                    contentMode: .fit, pipeline: pipeline, isEnabled: active)
-                            } else {
-                                Image(systemName: "photo").foregroundStyle(.secondary)
-                            }
-                        }.frame(width: 88, height: 88).background(
-                            .quinary, in: RoundedRectangle(cornerRadius: 12))
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(model.intent.title).font(.headline)
-                            Text(model.intent.specification).foregroundStyle(.secondary)
-                            Text("数量：\(model.intent.quantity)").accessibilityIdentifier(
-                                "checkout.quantity")
-                            Text(model.intent.unitPriceYuan.formatted(.currency(code: "CNY")))
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    Divider()
-                    LabeledContent(
-                        "商品小计", value: model.intent.subtotalYuan.formatted(.currency(code: "CNY"))
-                    )
-                    .accessibilityIdentifier("checkout.subtotal")
-                }.padding(16).background(.background, in: RoundedRectangle(cornerRadius: 18))
-                Button {
-                    showsCoupons = true
-                } label: {
-                    HStack {
-                        Text("优惠券"); Spacer()
-                        Text(
-                            model.selectedCoupon?.title
-                                ?? (model.coupons == nil ? "信息待确认" : "选择优惠券")
+                        }.frame(maxWidth: .infinity).padding().accessibilityElement(
+                            children: .contain
                         )
-                        .foregroundStyle(.secondary)
-                        Image(systemName: "chevron.right").foregroundStyle(.secondary)
-                    }.padding(16).background(.background, in: RoundedRectangle(cornerRadius: 18))
-                }.buttonStyle(.plain).disabled(model.coupons == nil)
-                    .accessibilityIdentifier("checkout.coupons")
-                if let notice = model.notice { Text(notice).foregroundStyle(.secondary) }
-                Text("运费与优惠待确认，商品小计不代表最终应付金额。")
-                    .font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier(
-                        "checkout.amountNotice")
-            }.padding(16)
-        }.accessibilityIdentifier("checkout.page").background(Color.primary.opacity(0.035))
-            .navigationTitle("确认订单").navigationBarTitleDisplayMode(.inline).tint(accent)
-            .refreshable { await model.refresh() }
-            .sheet(isPresented: $showsCoupons) {
-                NavigationStack {
-                    List {
-                        Button("不使用优惠券") {
-                            model.chooseCoupon(nil); showsCoupons = false
+                        .accessibilityIdentifier("checkout.error")
+                    }
+                    addressCard
+                    productCard
+                    VStack(spacing: 0) {
+                        sectionTitle("价格明细")
+                        amountRow(
+                            "商品总价", symbol: "storefront", value: money(model.intent.subtotalYuan)
+                        )
+                        .accessibilityIdentifier("checkout.subtotal")
+                        Divider()
+                        Button {
+                            remarkFocused = false; showsCoupons = true
+                        } label: {
+                            HStack {
+                                Label("优惠券", systemImage: "ticket"); Spacer()
+                                Text(
+                                    model.selectedCoupon?.title
+                                        ?? (model.coupons == nil ? "信息待确认" : "选择")
+                                )
+                                .font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                                Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                            }.padding(16).contentShape(Rectangle())
+                        }.buttonStyle(.plain).disabled(
+                            model.coupons == nil || model.submitting || model.writeLocked
+                        )
+                        .accessibilityIdentifier("checkout.coupons")
+                        if let estimate = model.estimate, estimate.discountYuan > 0 {
+                            Divider()
+                            amountRow(
+                                "优惠券折扣", symbol: "yensign.circle",
+                                value: "−" + money(estimate.discountYuan), red: true
+                            )
+                            .accessibilityIdentifier("checkout.discount")
                         }
-                        .accessibilityIdentifier("checkout.coupon.none")
-                        if model.coupons?.isEmpty == true { Text("暂无优惠券") }
-                        ForEach(model.coupons ?? []) { coupon in
-                            Button {
-                                model.chooseCoupon(coupon); showsCoupons = false
-                            } label: {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(coupon.title).foregroundStyle(.primary)
-                                    Text(coupon.description).font(.subheadline).foregroundStyle(
-                                        .secondary)
-                                    Text("优惠以结算确认为准").font(.footnote).foregroundStyle(.secondary)
-                                }.padding(.vertical, 8)
-                            }.disabled(coupon.availability() != .available)
-                                .accessibilityIdentifier("checkout.coupon.\(coupon.id)")
-                        }
-                    }.navigationTitle("选择优惠券").navigationBarTitleDisplayMode(.inline)
-                }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible).tint(
-                    accent)
+                        Divider()
+                        amountRow(
+                            "合计", symbol: "yensign.circle",
+                            value: model.estimate.map { money($0.totalYuan) } ?? "待确认"
+                        )
+                        .accessibilityIdentifier("checkout.total")
+                    }.background(.background, in: RoundedRectangle(cornerRadius: 18))
+                    VStack(spacing: 12) {
+                        sectionTitle("订单备注")
+                        TextField("选填，付款后商家可见", text: $model.remark, axis: .vertical)
+                            .lineLimit(4...6).focused($remarkFocused).padding(16)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14).stroke(
+                                    remarkFocused ? checkoutAccent : Color.secondary.opacity(0.15),
+                                    lineWidth: remarkFocused ? 2 : 1)
+                            )
+                            .overlay(alignment: .topLeading) {
+                                if remarkFocused || !model.remark.isEmpty {
+                                    Text("订单备注").font(.caption).foregroundStyle(
+                                        remarkFocused ? checkoutAccent : .secondary
+                                    )
+                                    .padding(.horizontal, 4).background(.background).offset(
+                                        x: 12, y: -7)
+                                }
+                            }.padding(.horizontal, 12).padding(.bottom, 14)
+                            .disabled(model.submitting || model.writeLocked)
+                            .accessibilityIdentifier("checkout.remark")
+                    }.background(.background, in: RoundedRectangle(cornerRadius: 18))
+                    if let notice = model.notice {
+                        Text(notice).font(.footnote).foregroundStyle(.secondary)
+                    }
+                    Text("优惠按当前券门槛估算，最终金额以创建的订单为准。")
+                        .font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier(
+                            "checkout.amountNotice")
+                }.padding(12)
+            }.accessibilityIdentifier("checkout.page")
+                .accessibilityHidden(showsCoupons).allowsHitTesting(!showsCoupons)
+            if showsCoupons {
+                FixedBottomSheet(title: "选择优惠券", onDismiss: { showsCoupons = false }) {
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            Button("不使用优惠券") {
+                                model.chooseCoupon(nil); showsCoupons = false
+                            }
+                            .accessibilityIdentifier("checkout.coupon.none")
+                            if model.coupons?.isEmpty == true { Text("暂无优惠券").padding() }
+                            ForEach(model.coupons ?? []) { coupon in couponCard(coupon) }
+                        }.padding(.horizontal, 16).padding(.bottom, 24)
+                    }.background(Color.primary.opacity(0.035)).accessibilityIdentifier(
+                        "checkout.coupon.list")
+                }.zIndex(2)
             }
+            if let failure = model.writeFailure {
+                Text(failure.message).font(.subheadline).foregroundStyle(.white).padding(14)
+                    .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 12))
+                    .padding(24).allowsHitTesting(false).accessibilityIdentifier("checkout.toast")
+                    .task(id: failure) {
+                        try? await Task.sleep(for: .seconds(3))
+                        if !Task.isCancelled { model.clearWriteFailure() }
+                    }
+            }
+        }.background(Color.primary.opacity(0.035)).tint(checkoutAccent)
+            .navigationTitle("确认订单").navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                if !showsCoupons {
+                    HStack {
+                        Text(model.estimate.map { money($0.totalYuan) } ?? "金额待确认")
+                            .font(.title2.bold()).foregroundStyle(.red).accessibilityIdentifier(
+                                "checkout.payable")
+                        Spacer()
+                        Button(model.submitting ? "正在提交" : "提交订单") {
+                            remarkFocused = false
+                            Task { if let id = await model.submit() { onCreated(id) } }
+                        }.bold().padding(.horizontal, 20).padding(.vertical, 14)
+                            .foregroundStyle(.white).background(
+                                checkoutAccent.opacity(model.canSubmit ? 1 : 0.45),
+                                in: RoundedRectangle(cornerRadius: 12)
+                            )
+                            .disabled(!model.canSubmit).accessibilityIdentifier("checkout.submit")
+                    }.padding(12).background(.background)
+                }
+            }
+            .refreshable { await model.refresh() }
             .task(id: ReadKey(active: active, attempt: model.attempt)) {
                 await model.activate(active)
             }
+            .onChange(of: model.recoveredOrderID) { _, id in
+                if active, let id { onCreated(id) }
+            }
+            .onChange(of: model.writeFailure) { _, failure in
+                if active, failure == .authenticationRequired { onRequestLogin() }
+            }
             .onDisappear { model.stop() }
     }
+    private var addressCard: some View {
+        Button {
+            remarkFocused = false; onChooseAddress(model.addressSelection())
+        } label: {
+            VStack(alignment: .leading, spacing: 12) {
+                if let address = model.address {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(
+                                address.value.province + address.value.city + address.value.district
+                            ).font(.headline)
+                            Text(address.value.address).foregroundStyle(.secondary)
+                        }; Spacer(); Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                    }
+                    Divider()
+                    HStack {
+                        Text(address.value.contact + "  " + address.value.phone).foregroundStyle(
+                            .secondary)
+                        Spacer()
+                        if address.value.isDefault {
+                            Text("默认").font(.caption).foregroundStyle(.white).padding(6)
+                                .background(checkoutAccent, in: Capsule()).accessibilityIdentifier(
+                                    "checkout.address.default")
+                        }
+                    }
+                } else {
+                    Label("请选择收货地址", systemImage: "mappin.and.ellipse")
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                .background(.background, in: RoundedRectangle(cornerRadius: 18))
+        }.buttonStyle(.plain).disabled(model.submitting || model.writeLocked)
+            .accessibilityIdentifier("checkout.address")
+    }
+    private var productCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(model.intent.title).font(.headline); Divider()
+            HStack(spacing: 12) {
+                Group {
+                    if let pipeline {
+                        RemoteImage(
+                            url: model.intent.imageURL, targetSize: CGSize(width: 88, height: 88),
+                            contentMode: .fit, pipeline: pipeline, isEnabled: active)
+                    } else {
+                        Image(systemName: "photo").foregroundStyle(.secondary)
+                    }
+                }.frame(width: 88, height: 88).background(
+                    .quinary, in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(model.intent.specification).font(.subheadline).foregroundStyle(.secondary)
+                    HStack {
+                        Text(money(model.intent.unitPriceYuan)).font(.headline).foregroundStyle(
+                            .red);
+                        Spacer()
+                        Text("数量：\(model.intent.quantity)").foregroundStyle(.secondary)
+                            .accessibilityIdentifier("checkout.quantity")
+                    }
+                }
+            }
+        }.padding(16).background(.background, in: RoundedRectangle(cornerRadius: 18))
+    }
+    private func couponCard(_ coupon: UserCoupon) -> some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "ticket").font(.title2).foregroundStyle(.white).frame(
+                    width: 46, height: 46
+                )
+                .background(checkoutAccent.opacity(0.85), in: RoundedRectangle(cornerRadius: 10))
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(coupon.title).font(.headline)
+                    if let end = coupon.endTime {
+                        Text("有效期至 " + end).font(.caption).foregroundStyle(.secondary)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .trailing, spacing: 8) {
+                    Text(money(coupon.amountYuan)).foregroundStyle(.red).font(.title3.bold())
+                    Text(coupon.minimumSpendYuan.map { "满\($0)元可用" } ?? "门槛待确认").font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }.padding(12)
+            Divider()
+            HStack {
+                Button {
+                    if !expanded.insert(coupon.id).inserted { expanded.remove(coupon.id) }
+                } label: {
+                    Label(
+                        "使用说明",
+                        systemImage: expanded.contains(coupon.id) ? "chevron.up" : "chevron.down"
+                    ).font(.subheadline).foregroundStyle(.secondary)
+                }.buttonStyle(.plain)
+                Spacer()
+                Button(model.canUse(coupon) ? "选择" : "不可用") {
+                    model.chooseCoupon(coupon); showsCoupons = false
+                }.padding(.horizontal, 22).padding(.vertical, 10).foregroundStyle(.white)
+                    .background(
+                        checkoutAccent.opacity(model.canUse(coupon) ? 1 : 0.4), in: Capsule()
+                    )
+                    .disabled(!model.canUse(coupon)).accessibilityIdentifier(
+                        "checkout.coupon.\(coupon.id)")
+            }.padding(12)
+            if expanded.contains(coupon.id) {
+                Text(coupon.description).font(.subheadline).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(
+                        [.horizontal, .bottom], 12)
+            }
+        }.background(.background, in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+func money(_ value: Decimal) -> String {
+    value.formatted(.currency(code: "CNY").locale(Locale(identifier: "zh_CN")))
+}
+func sectionTitle(_ text: String) -> some View {
+    HStack {
+        Capsule().fill(checkoutAccent).frame(width: 4, height: 20); Text(text).font(.headline);
+        Spacer()
+    }.padding(14)
+}
+func amountRow(_ text: String, symbol: String, value: String, red: Bool = false) -> some View {
+    HStack {
+        Label(text, systemImage: symbol); Spacer();
+        Text(value).foregroundStyle(red ? Color.red : .primary)
+    }.padding(16).accessibilityElement(children: .combine)
 }

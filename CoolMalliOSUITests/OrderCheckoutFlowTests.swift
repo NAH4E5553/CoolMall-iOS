@@ -78,7 +78,7 @@ final class OrderCheckoutFlowTests: XCTestCase {
             app.scrollViews["order.detail"].staticTexts.matching(
                 NSPredicate(format: "label ENDSWITH %@", "TEST-910001")
             ).firstMatch.exists)
-        for label in ["取消订单", "去支付", "确认收货", "申请退款"] { XCTAssertFalse(app.buttons[label].exists) }
+        for label in ["确认收货", "申请退款"] { XCTAssertFalse(app.buttons[label].exists) }
         capture(app, "order-readonly-detail"); app.navigationBars.buttons.firstMatch.tap()
         let filter = app.buttons["orders.filter.unevaluated"]
         let filters = app.scrollViews["orders.filters"]
@@ -150,7 +150,8 @@ final class OrderCheckoutFlowTests: XCTestCase {
         XCTAssertTrue(
             node(app, "checkout.subtotal").label.contains("7,998")
                 || node(app, "checkout.subtotal").label.contains("7998"))
-        XCTAssertFalse(app.buttons["提交订单"].exists); XCTAssertFalse(app.buttons["去支付"].exists)
+        XCTAssertTrue(app.buttons["checkout.submit"].exists);
+        XCTAssertFalse(app.buttons["去支付"].exists)
         capture(app, "checkout-guest-login-resumed")
     }
     @MainActor func testCheckoutAddressCouponAndBackKeepSubtotalAndDetailSelection() {
@@ -167,7 +168,8 @@ final class OrderCheckoutFlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["checkout.coupons"].waitForExistence(timeout: 5));
         XCTAssertTrue(app.buttons["checkout.coupons"].label.contains("意向优惠券"))
         XCTAssertEqual(node(app, "checkout.subtotal").label, subtotal);
-        capture(app, "checkout-selections-no-invented-deduction")
+        XCTAssertTrue(node(app, "checkout.discount").exists)
+        capture(app, "checkout-selections-discount")
         app.navigationBars.buttons.firstMatch.tap(); app.buttons["detail.openSpecifications"].tap()
         XCTAssertEqual(app.staticTexts["detail.spec.quantity"].label, "2")
     }
@@ -182,7 +184,7 @@ final class OrderCheckoutFlowTests: XCTestCase {
                         predicate: NSPredicate(format: "label CONTAINS %@", "联系人1"),
                         object: app.buttons["checkout.address"])
                 ], timeout: 5) == .completed)
-        XCTAssertFalse(app.buttons["提交订单"].exists); capture(app, "checkout-context-retry")
+        XCTAssertTrue(app.buttons["checkout.submit"].exists); capture(app, "checkout-context-retry")
     }
     @MainActor func testAddressPickerInterruptionCancelsAndNewPickerAcceptsSelection() {
         let app = launch(); buy(app, quantity: 1)
@@ -222,7 +224,7 @@ final class OrderCheckoutFlowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["checkout.quantity"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["checkout.quantity"].label, "数量：2")
         XCTAssertTrue(app.buttons["checkout.address"].label.contains("联系人1"))
-        XCTAssertFalse(app.buttons["提交订单"].exists)
+        XCTAssertTrue(app.buttons["checkout.submit"].exists)
         capture(app, "checkout-reauthenticated")
     }
 
@@ -233,4 +235,117 @@ final class OrderCheckoutFlowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["order.status"].waitForExistence(timeout: 5)); app.swipeUp()
         XCTAssertTrue(node(app, "order.info").exists); capture(app, "order-accessibility")
     }
+    @MainActor func testCreateCouponCashierReturnCancelAndBackToProduct() {
+        let app = launch(); buy(app, quantity: 1)
+        XCTAssertTrue(app.buttons["checkout.address"].waitForExistence(timeout: 5))
+        app.buttons["checkout.coupons"].tap()
+        let coupon = app.buttons["checkout.coupon.701"]
+        XCTAssertTrue(coupon.waitForExistence(timeout: 5)); coupon.tap()
+        XCTAssertTrue(node(app, "checkout.discount").exists)
+        XCTAssertTrue(app.staticTexts["checkout.address.default"].exists)
+        let remark = app.textFields["checkout.remark"]
+        app.swipeUp(); XCTAssertTrue(remark.isHittable); remark.tap();
+        remark.typeText("Please call")
+        capture(app, "confirmation-coupon-discount-remark")
+        let submit = app.buttons["checkout.submit"]; XCTAssertTrue(submit.isEnabled);
+        submit.doubleTap()
+        XCTAssertTrue(app.scrollViews["cashier.page"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.staticTexts["cashier.amount"].label.contains("3,969")
+                || app.staticTexts["cashier.amount"].label.contains("3969"))
+        capture(app, "cashier-authoritative-amount")
+        app.buttons["cashier.back"].tap()
+        XCTAssertTrue(app.staticTexts["order.status"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["order.status"].label, "待付款")
+        app.buttons["order.cancel"].tap()
+        let reasonHeader = node(app, "fixedSheet.header")
+        let originalHeaderY = reasonHeader.frame.minY
+        let reasons = app.scrollViews["order.reason.list"]; reasons.swipeUp()
+        XCTAssertEqual(reasonHeader.frame.minY, originalHeaderY, accuracy: 2)
+        XCTAssertTrue(app.buttons["order.reason.9"].isHittable)
+        reasons.swipeDown()
+        let reason = app.buttons["order.reason.1"];
+        XCTAssertTrue(reason.waitForExistence(timeout: 5)); reason.tap()
+        app.buttons["order.cancel.confirm"].tap()
+        XCTAssertTrue(
+            XCTWaiter.wait(
+                for: [
+                    XCTNSPredicateExpectation(
+                        predicate: NSPredicate(format: "label == %@", "已关闭"),
+                        object: app.staticTexts["order.status"])
+                ], timeout: 5) == .completed)
+        XCTAssertFalse(app.buttons["order.cancel"].exists);
+        XCTAssertFalse(app.buttons["order.cashier"].exists)
+        capture(app, "cancelled-authoritative-closed")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.buttons["detail.buyNow"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["checkout.submit"].exists)
+    }
+    @MainActor func testCouponListScrollingDoesNotDismissAndHeaderDragOrBackdropDoes() {
+        let app = launch(); buy(app, quantity: 1)
+        app.buttons["checkout.coupons"].tap()
+        let header = node(app, "fixedSheet.header")
+        XCTAssertTrue(header.waitForExistence(timeout: 5)); let original = header.frame.minY
+        let shortStart = header.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+        shortStart.press(
+            forDuration: 0.1, thenDragTo: shortStart.withOffset(CGVector(dx: 0, dy: 25)))
+        XCTAssertTrue(header.exists)
+        let list = app.scrollViews["checkout.coupon.list"]; list.swipeUp()
+        XCTAssertEqual(header.frame.minY, original, accuracy: 2)
+        let fourth = app.buttons["checkout.coupon.704"]; XCTAssertTrue(fourth.isHittable)
+        capture(app, "coupon-fixed-height-scroll-fourth")
+        let start = header.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+        start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 150)))
+        XCTAssertTrue(app.buttons["checkout.coupons"].waitForExistence(timeout: 5))
+        XCTAssertFalse(header.exists)
+        app.buttons["checkout.coupons"].tap(); XCTAssertTrue(header.waitForExistence(timeout: 5))
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
+        XCTAssertFalse(header.exists)
+    }
+    @MainActor func testListDetailCashierReturnsSameDetailThenOriginalListAndGoodsSwipe() {
+        let app = launch(); orders(app)
+        let first = app.buttons["orders.item.910001"];
+        XCTAssertTrue(first.waitForExistence(timeout: 5)); first.tap()
+        let carousel = app.scrollViews["order.goods.carousel"];
+        XCTAssertTrue(carousel.waitForExistence(timeout: 5))
+        carousel.swipeLeft()
+        XCTAssertTrue(carousel.staticTexts["第二件历史商品"].isHittable)
+        capture(app, "order-multiple-goods-horizontal")
+        app.buttons["order.cashier"].tap()
+        XCTAssertTrue(app.scrollViews["cashier.page"].waitForExistence(timeout: 5))
+        app.buttons["cashier.back"].tap()
+        XCTAssertTrue(app.staticTexts["order.status"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+    }
+    @MainActor func testCreateBusinessFailureUsesToastAndPreservesConfirmation() {
+        let app = launch("createRejected"); buy(app, quantity: 1)
+        let submit = app.buttons["checkout.submit"];
+        XCTAssertTrue(submit.waitForExistence(timeout: 5)); submit.tap()
+        XCTAssertTrue(app.staticTexts["checkout.toast"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["checkout.toast"].label, "库存不足，请重新选择")
+        XCTAssertFalse(app.scrollViews["cashier.page"].exists); XCTAssertTrue(submit.isEnabled)
+        capture(app, "create-rejection-server-message")
+    }
+    @MainActor func testCreateUnknownLocksSubmitWithoutFabricatingCashier() {
+        let app = launch("createUnknown"); buy(app, quantity: 1)
+        let submit = app.buttons["checkout.submit"];
+        XCTAssertTrue(submit.waitForExistence(timeout: 5)); submit.tap()
+        XCTAssertTrue(app.staticTexts["checkout.toast"].waitForExistence(timeout: 5))
+        XCTAssertFalse(submit.isEnabled); XCTAssertFalse(app.scrollViews["cashier.page"].exists)
+        capture(app, "create-unknown-no-replay")
+    }
+
+    @MainActor func testCancelReasonAuthenticationCanLoginAndResumeDetail() {
+        let app = launch("reasonAuthFailure"); orders(app)
+        let first = app.buttons["orders.item.910001"];
+        XCTAssertTrue(first.waitForExistence(timeout: 5)); first.tap()
+        let cancel = app.buttons["order.cancel"];
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5)); cancel.tap()
+        XCTAssertTrue(app.buttons["login.choosePassword"].waitForExistence(timeout: 5)); login(app)
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5)); cancel.tap()
+        XCTAssertTrue(app.buttons["order.reason.1"].waitForExistence(timeout: 5))
+        capture(app, "cancel-reason-authentication-resumed")
+    }
+
 }

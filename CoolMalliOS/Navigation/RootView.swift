@@ -148,7 +148,9 @@ struct RootView: View {
                 set: { router.selectFromTabBar($0) }
             )
         ) {
-            NavigationStack(path: $router.homePath) {
+            NavigationStack(
+                path: Binding(get: { router.homePath }, set: { router.setPath($0, on: .home) })
+            ) {
                 homeRoot
                     .navigationDestination(for: SceneRouter.Route.self) { route in
                         destination(for: route, on: .home)
@@ -156,7 +158,10 @@ struct RootView: View {
             }
             .tabItem { Label("首页", systemImage: "house") }
             .tag(SceneRouter.Tab.home)
-            NavigationStack(path: $router.categoryPath) {
+            NavigationStack(
+                path: Binding(
+                    get: { router.categoryPath }, set: { router.setPath($0, on: .category) })
+            ) {
                 categoryRoot
                     .navigationDestination(for: SceneRouter.Route.self) { route in
                         destination(for: route, on: .category)
@@ -164,7 +169,9 @@ struct RootView: View {
             }
             .tabItem { Label("分类", systemImage: "square.grid.2x2") }
             .tag(SceneRouter.Tab.category)
-            NavigationStack(path: $router.cartPath) {
+            NavigationStack(
+                path: Binding(get: { router.cartPath }, set: { router.setPath($0, on: .cart) })
+            ) {
                 cartEntry(on: .cart, root: true)
                     .navigationDestination(for: SceneRouter.Route.self) { route in
                         destination(for: route, on: .cart)
@@ -176,7 +183,9 @@ struct RootView: View {
                     ? cartBadge.count.flatMap { $0 > 0 ? String($0) : nil } : nil
             )
             .tag(SceneRouter.Tab.cart)
-            NavigationStack(path: $router.mePath) {
+            NavigationStack(
+                path: Binding(get: { router.mePath }, set: { router.setPath($0, on: .me) })
+            ) {
                 meRoot
                     .navigationDestination(for: SceneRouter.Route.self) { route in
                         destination(for: route, on: .me)
@@ -622,7 +631,8 @@ struct RootView: View {
                         isActive: router.selectedTab == tab && router.path(on: tab).last == route,
                         imagePipeline: dependencies.detailImagePipeline,
                         onRequestLogin: { router.append(.login, on: tab) },
-                        onOpenOrder: { router.append(.orderDetail(id: $0), on: tab) })
+                        onOpenOrder: { router.append(.orderDetail(id: $0), on: tab) },
+                        refreshRevision: router.orderRevision)
                 } else {
                     orderLogin(on: tab)
                 }
@@ -634,7 +644,13 @@ struct RootView: View {
                         accountID: profile.id, orderID: id, loader: dependencies.orders,
                         isActive: router.selectedTab == tab && router.path(on: tab).last == route,
                         imagePipeline: dependencies.detailImagePipeline,
-                        onRequestLogin: { router.append(.login, on: tab) })
+                        onRequestLogin: { router.append(.login, on: tab) },
+                        canceller: dependencies.orderCanceller,
+                        onCashier: {
+                            guard router.path(on: tab).last == route else { return };
+                            router.append(.cashier(orderID: id), on: tab)
+                        },
+                        onChanged: { router.orderChanged() })
                 } else {
                     orderLogin(on: tab)
                 }
@@ -651,8 +667,26 @@ struct RootView: View {
                             guard router.path(on: tab).last == route else { return }
                             addressSelection = AddressSelection(
                                 accountID: profile.id, choose: callback)
+                        }, creator: dependencies.orderCreator,
+                        onCreated: { id in
+                            guard dependencies.accountState.profile?.id == profile.id else {
+                                return
+                            }
+                            router.orderCreated(id, from: route, on: tab)
                         })
                 } else if dependencies.accountState.profile == nil {
+                    orderLogin(on: tab)
+                }
+            }.toolbar(.hidden, for: .tabBar).toolbar(.visible, for: .navigationBar)
+        case .cashier(let id):
+            Group {
+                if let profile = dependencies.accountState.profile {
+                    CashierEntryView(
+                        accountID: profile.id, orderID: id, loader: dependencies.orders,
+                        isActive: router.selectedTab == tab && router.path(on: tab).last == route,
+                        onBack: { router.cashierBack(on: tab) },
+                        onRequestLogin: { router.append(.login, on: tab) })
+                } else {
                     orderLogin(on: tab)
                 }
             }.toolbar(.hidden, for: .tabBar).toolbar(.visible, for: .navigationBar)

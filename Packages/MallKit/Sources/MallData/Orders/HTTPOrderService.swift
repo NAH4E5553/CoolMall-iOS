@@ -105,6 +105,11 @@ private struct OrderDTO: Decodable {
     let title: String?
     let createTime: String?
     let payTime: String?
+    let price: Decimal?
+    let discountPrice: Decimal?
+    let payType: Int?
+    let remark: String?
+    let closeRemark: String?
     let address: HistoricalAddressDTO?
     let goodsList: [OrderLineDTO]?
     func value(accountID: Int64) throws -> OrderSnapshot {
@@ -118,7 +123,10 @@ private struct OrderDTO: Decodable {
         return OrderSnapshot(
             id: id, number: trimmed(orderNum), status: status, title: trimmed(title),
             createdAt: trimmed(createTime), paidAt: trimmed(payTime),
-            address: address?.value, lines: lines)
+            address: address?.value, lines: lines,
+            amounts: price.flatMap { price in
+                discountPrice.flatMap { try? OrderAmounts(subtotalYuan: price, discountYuan: $0) }
+            }, payType: payType, remark: trimmed(remark), closeRemark: trimmed(closeRemark))
     }
 }
 private struct OrderLineDTO: Decodable {
@@ -127,6 +135,7 @@ private struct OrderLineDTO: Decodable {
     let id: Int64
     let orderId: Int64?
     let count: Int64
+    let price: Decimal?
     let goodsInfo: Goods?
     let spec: Specification?
     func value(orderID: Int64) throws -> OrderLineSnapshot {
@@ -138,16 +147,18 @@ private struct OrderLineDTO: Decodable {
         }
         return OrderLineSnapshot(
             id: id, title: trimmed(goodsInfo?.title),
-            specification: trimmed(spec?.name), imageURL: image, quantity: count)
+            specification: trimmed(spec?.name), imageURL: image, quantity: count,
+            unitPriceYuan: price.flatMap { try? CartMoney(yuan: $0).yuan })
     }
 }
 private struct HistoricalAddressDTO: Decodable {
     let contact: String?; let phone: String?; let province: String?; let city: String?
-    let district: String?; let address: String?
+    let district: String?; let address: String?; let isDefault: Bool?
     var value: OrderAddressSnapshot {
         OrderAddressSnapshot(
             contact: trimmed(contact), phone: trimmed(phone),
-            location: [province, city, district, address].compactMap(trimmed).joined(separator: " ")
+            location: [province, city, district, address].compactMap(trimmed).joined(
+                separator: " "), isDefault: isDefault
         )
     }
 }

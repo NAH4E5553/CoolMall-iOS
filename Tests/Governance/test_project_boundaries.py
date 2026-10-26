@@ -63,6 +63,10 @@ class ProjectBoundariesTests(unittest.TestCase):
         self.reject('MOD-02:.*unregistered Feature public type')
 
 
+    def test_cashier_registration_does_not_allow_extra_public_entries_or_models(self):
+        self.append('public struct CashierSettingsEntryView {}\n', target='CheckoutFeature')
+        self.reject('MOD-02:.*unregistered Feature public type CashierSettingsEntryView')
+
     def test_simulator_identity_missing_setting_rejected(self):
         def mutation(objects):
             config = next(o for o in objects.values() if o.get('isa') == 'XCBuildConfiguration' and 'MALL_SIMULATOR_ENTITLEMENTS_NO' in o['buildSettings'])

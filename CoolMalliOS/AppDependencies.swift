@@ -29,6 +29,8 @@ final class AppDependencies {
     let category: any CategoryLoading
     let orders: any OrdersLoading
     let checkout: any CheckoutLoading
+    let orderCreator: any OrderCreating
+    let orderCanceller: any OrderCancelling
     let addresses: any AddressLoading & AddressWriting
     let addressRegions: any AddressRegionsLoading
     let userCoupons: any UserCouponsLoading
@@ -191,15 +193,21 @@ final class AppDependencies {
         #if DEBUG
             if let fixture = OrderUITestSupport.make(arguments: ProcessInfo.processInfo.arguments) {
                 orders = fixture; checkout = fixture
+                orderCreator = fixture; orderCanceller = fixture
             } else if let session = accountSession as? SessionCoordinator {
                 let service = HTTPOrderService(environment: environment, session: session)
                 orders = service; checkout = service
+                let transactions = HTTPOrderTransactions(environment: environment, session: session)
+                orderCreator = transactions; orderCanceller = transactions
             } else {
                 orders = UnavailableOrderReads(); checkout = UnavailableOrderReads()
+                orderCreator = UnavailableOrderReads(); orderCanceller = UnavailableOrderReads()
             }
         #else
             let orderService = HTTPOrderService(environment: environment, session: session)
             orders = orderService; checkout = orderService
+            let transactions = HTTPOrderTransactions(environment: environment, session: session)
+            orderCreator = transactions; orderCanceller = transactions
         #endif
         let initialAccountState = accountSession.initialState
         accountState = initialAccountState
@@ -343,7 +351,18 @@ final class AppDependencies {
 #endif
 
 #if DEBUG
-    private struct UnavailableOrderReads: OrdersLoading, CheckoutLoading {
+    private struct UnavailableOrderReads: OrdersLoading, CheckoutLoading, OrderCreating,
+        OrderCancelling
+    {
+        func createOrder(accountID: Int64, input: OrderCreation) async throws -> Int64 {
+            throw OrderWriteFailure.unavailable
+        }
+        func loadCancelReasons(accountID: Int64) async throws -> [OrderCancelReason] {
+            throw OrderWriteFailure.unavailable
+        }
+        func cancelOrder(accountID: Int64, orderID: Int64, reason: OrderCancelReason) async throws {
+            throw OrderWriteFailure.unavailable
+        }
         func loadOrders(accountID: Int64, filter: OrderFilter, page: Int, pageSize: Int)
             async throws -> NumberedPage<OrderSnapshot>
         { throw PageReadFailure.invalidConfiguration }

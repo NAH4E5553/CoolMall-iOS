@@ -1,3 +1,4 @@
+import AccountFeature
 import CartFeature
 import CatalogFeature
 import Foundation
@@ -8,11 +9,19 @@ import SwiftUI
 @MainActor
 struct RootView: View {
     let dependencies: AppDependencies
+    @Environment(\.scenePhase) private var accountScenePhase
     @State private var router = SceneRouter()
     @State private var cartBadge = CartBadgeViewModel()
+    @State private var observedAccount: AccountState?
     #if DEBUG
         @Environment(\.scenePhase) private var bannerAuditScenePhase
     #endif
+    private struct ClaimPresentation: Identifiable {
+        let id = UUID()
+        let offers: [CouponClaimOffer]
+    }
+    @State private var claimPresentation: ClaimPresentation?
+    @State private var checkoutDeferred = false
     @State private var unavailableNotice: UUID?
     @State private var categoryUnavailableNotice: UUID?
     @State private var categoryRequestedChildID: Int64?
@@ -33,8 +42,40 @@ struct RootView: View {
 
     var body: some View {
         rootContent
+            .allowsHitTesting(claimPresentation == nil)
+            .accessibilityHidden(claimPresentation != nil)
+            .overlay {
+                if let presentation = claimPresentation {
+                    CouponReceiveEntryView(
+                        offers: presentation.offers, state: dependencies.accountState,
+                        receiver: dependencies.couponReceiver, session: dependencies.accountSession,
+                        challenges: dependencies.loginChallenges,
+                        notifier: dependencies.codeNotifier,
+                        onDismiss: { claimPresentation = nil }
+                    ).id(presentation.id)
+                }
+            }
+            .alert("结算暂未开放", isPresented: $checkoutDeferred) {
+                Button("知道了", role: .cancel) {}
+            }
+            .task {
+                for await state in await dependencies.accountSession.states() {
+                    guard !Task.isCancelled else { return }
+                    let old = observedAccount ?? dependencies.accountState
+                    dependencies.applyAccount(state)
+                    observedAccount = state
+                    if old.profile?.id != state.profile?.id || (state == .guest && old != .guest) {
+                        let resumesCoupons =
+                            old == .guest && state.profile != nil
+                            && (router.mePath == [.coupons] || router.mePath == [.addresses])
+                        if !resumesCoupons { router.mePath = [] }
+                    }
+                }
+            }
             .task(id: dependencies.shoppingCart.scope) {
-                if !usesCartFixture { await cartBadge.observe(dependencies.shoppingCart) }
+                if !usesCartFixture {
+                    await cartBadge.observe(dependencies.shoppingCart)
+                }
             }
             #if DEBUG
                 .onChange(of: bannerAuditScenePhase, initial: true) { _, phase in
@@ -106,21 +147,44 @@ struct RootView: View {
                     }
             }
             .tabItem { Label("购物车", systemImage: "cart") }
-            .badge(cartBadge.count.flatMap { $0 > 0 ? String($0) : nil })
+            .badge(
+                cartBadge.scope == dependencies.shoppingCart.scope
+                    ? cartBadge.count.flatMap { $0 > 0 ? String($0) : nil } : nil
+            )
             .tag(SceneRouter.Tab.cart)
             NavigationStack(path: $router.mePath) {
-                PendingTabView(
-                    marker: "me.pending",
-                    title: "我的",
-                    detail: "个人中心待接入 · 本入口为导航占位",
-                    pushProbe: { router.mePath.append(.fixturePathProbe(label: "me")) }
-                )
-                .navigationDestination(for: SceneRouter.Route.self) { route in
-                    destination(for: route, on: .me)
-                }
+                meRoot
+                    .navigationDestination(for: SceneRouter.Route.self) { route in
+                        destination(for: route, on: .me)
+                    }
             }
             .tabItem { Label("我的", systemImage: "person") }
             .tag(SceneRouter.Tab.me)
+        }
+    }
+
+    @ViewBuilder private var meRoot: some View {
+        if usesCartFixture {
+            PendingTabView(
+                marker: "me.pending", title: "我的", detail: "个人中心待接入 · 本入口为导航占位",
+                pushProbe: { router.mePath.append(.fixturePathProbe(label: "me")) })
+        } else {
+            MeEntryView(
+                state: dependencies.accountState, imagePipeline: dependencies.detailImagePipeline,
+                footprints: dependencies.footprints,
+                isActive: router.selectedTab == .me && router.mePath.isEmpty
+                    && accountScenePhase == .active,
+                onOpenFootprints: { router.mePath.append(.footprints) },
+                onOpenCoupons: { router.mePath.append(.coupons) },
+                onOpenAddresses: { router.mePath.append(.addresses) },
+                onOpenProduct: { router.mePath.append(.productDetail(goodsID: $0)) }
+            ) {
+                if case .guest = dependencies.accountState {
+                    router.mePath.append(.login)
+                } else {
+                    router.mePath.append(.profile)
+                }
+            }
         }
     }
 
@@ -130,9 +194,10 @@ struct RootView: View {
         router.selectedTab == .home && router.homePath.isEmpty
     }
 
-    /// Only an explicit DEBUG home-fixture launch may suppress banner playback
-    /// for controlled manual chains; Release and normal Debug always allow it.
+    /// Coupon presentations pause playback while home images remain active.
+    /// Explicit DEBUG fixture launches may also suppress playback for manual tests.
     private var allowsBannerAutoplay: Bool {
+        guard claimPresentation == nil else { return false }
         #if DEBUG
             return
                 !(dependencies.homeTesting.fixtureMode != nil
@@ -265,6 +330,9 @@ struct RootView: View {
                     .accessibilityIdentifier("home.source")
             }
             #if DEBUG
+                if dependencies.homeTesting.fixtureMode == .couponMany {
+                    ImageUITestMetricsView(compact: true)
+                }
                 if dependencies.homeTesting.fixtureMode == .pageControlled {
                     PageHomeTestControlsView()
                 }
@@ -299,7 +367,8 @@ struct RootView: View {
                 allowsBannerAutoplay: allowsBannerAutoplay,
                 showsReadVerification: dependencies.showsHomeReadVerification,
                 onUnavailableAction: showUnavailable,
-                onOpenProduct: { router.append(.productDetail(goodsID: $0), on: .home) }
+                onOpenProduct: { router.append(.productDetail(goodsID: $0), on: .home) },
+                onReceiveCoupons: beginClaims
             )
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -351,12 +420,25 @@ struct RootView: View {
         return ProductDetailEntryView(
             productID: goodsID, loader: dependencies.productDetails,
             imagePipeline: dependencies.detailImagePipeline,
-            isActive: router.selectedTab == tab && path.last == .productDetail(goodsID: goodsID),
+            isActive: router.selectedTab == tab && path.last == .productDetail(goodsID: goodsID)
+                && claimPresentation == nil,
             onShowAllReviews: { router.append(.productReviews(goodsID: $0), on: tab) },
-            shoppingCart: dependencies.shoppingCart, cartVerifier: dependencies.cartVerifier,
-            onOpenCart: { router.append(.cart, on: tab) })
+            footprintRecorder: dependencies.footprints,
+            shoppingCart: dependencies.shoppingCart,
+            cartVerifier: dependencies.cartVerifier,
+            onOpenCart: { router.append(.cart, on: tab) }, onReceiveCoupon: beginClaim
+        )
+        .id(dependencies.shoppingCart.scope)
     }
 
+    private func beginClaim(_ offer: CouponClaimOffer) { beginClaims([offer]) }
+    private func beginClaims(_ offers: [CouponClaimOffer]) {
+        guard claimPresentation == nil, !offers.isEmpty,
+            Set(offers.map(\.id)).count == offers.count,
+            offers.allSatisfy({ $0.id > 0 && !$0.title.isEmpty })
+        else { return }
+        claimPresentation = ClaimPresentation(offers: offers)
+    }
     private var usesCartFixture: Bool {
         #if DEBUG
             navTestControl.isEnabled
@@ -379,6 +461,9 @@ struct RootView: View {
         #endif
     }
     private func productionCart(on tab: SceneRouter.Tab, root: Bool) -> some View {
+        productionCartContent(on: tab, root: root)
+    }
+    private func productionCartContent(on tab: SceneRouter.Tab, root: Bool) -> some View {
         let path: [SceneRouter.Route]
         switch tab {
         case .home: path = router.homePath
@@ -390,7 +475,16 @@ struct RootView: View {
             store: dependencies.shoppingCart, verifier: dependencies.cartVerifier,
             imagePipeline: dependencies.detailImagePipeline,
             isActive: router.selectedTab == tab && (root ? path.isEmpty : path.last == .cart),
-            onOpenProduct: { router.append(.productDetail(goodsID: $0), on: tab) })
+            onOpenProduct: { router.append(.productDetail(goodsID: $0), on: tab) },
+            onCheckout: {
+                if dependencies.accountState.profile == nil {
+                    router.append(.login, on: tab)
+                } else {
+                    checkoutDeferred = true
+                }
+            }
+        )
+        .id(dependencies.shoppingCart.scope)
     }
 
     /// Pushed routes cover the tab bar (the PRD-016 pattern from NAV-01), so
@@ -402,6 +496,92 @@ struct RootView: View {
     @ViewBuilder
     private func destination(for route: SceneRouter.Route, on tab: SceneRouter.Tab) -> some View {
         switch route {
+        case .login:
+            LoginEntryView(
+                session: dependencies.accountSession, challenges: dependencies.loginChallenges,
+                notifier: dependencies.codeNotifier,
+                isActive: router.selectedTab == tab && accountScenePhase != .background,
+                onAuthenticated: {
+                    switch tab {
+                    case .home: router.homePath.removeAll { $0 == .login }
+                    case .category: router.categoryPath.removeAll { $0 == .login }
+                    case .cart: router.cartPath.removeAll { $0 == .login }
+                    case .me:
+                        router.mePath = router.mePath.contains(.coupons) ? [.coupons] : []
+                    }
+                }
+            )
+            .toolbar(.hidden, for: .tabBar)
+            .toolbar(.visible, for: .navigationBar)
+        case .coupons:
+            Group {
+                if let profile = dependencies.accountState.profile {
+                    CouponEntryView(
+                        accountID: profile.id, loader: dependencies.userCoupons,
+                        isActive: router.selectedTab == tab && router.mePath.last == .coupons,
+                        onUse: { router.append(.couponProducts(minimumPriceYuan: $0), on: tab) },
+                        onRequestLogin: { router.append(.login, on: tab) })
+                } else {
+                    LoginEntryView(
+                        session: dependencies.accountSession,
+                        challenges: dependencies.loginChallenges,
+                        notifier: dependencies.codeNotifier,
+                        isActive: router.selectedTab == tab && router.mePath.last == .coupons
+                            && accountScenePhase != .background,
+                        onAuthenticated: {})
+                }
+            }.toolbar(.hidden, for: .tabBar).toolbar(.visible, for: .navigationBar)
+        case .addresses:
+            Group {
+                if let profile = dependencies.accountState.profile {
+                    AddressEntryView(
+                        accountID: profile.id, loader: dependencies.addresses,
+                        writer: dependencies.addresses,
+                        isActive: router.selectedTab == tab && router.mePath.last == .addresses,
+                        onEdit: { router.append(.addressEditor(id: $0), on: tab) })
+                } else {
+                    LoginEntryView(
+                        session: dependencies.accountSession,
+                        challenges: dependencies.loginChallenges,
+                        notifier: dependencies.codeNotifier,
+                        isActive: router.selectedTab == tab && router.mePath.last == .addresses
+                            && accountScenePhase != .background,
+                        onAuthenticated: {})
+                }
+            }.toolbar(.hidden, for: .tabBar).toolbar(.visible, for: .navigationBar)
+        case .addressEditor(let id):
+            Group {
+                if let profile = dependencies.accountState.profile {
+                    AddressEditorEntryView(
+                        accountID: profile.id, id: id, loader: dependencies.addresses,
+                        writer: dependencies.addresses,
+                        regions: dependencies.addressRegions,
+                        isActive: router.selectedTab == tab && router.mePath.last == route,
+                        onSaved: { if router.mePath.last == route { router.mePath.removeLast() } })
+                }
+            }.toolbar(.hidden, for: .tabBar).toolbar(.visible, for: .navigationBar)
+        case .couponProducts(let minimum):
+            CouponProductsEntryView(
+                minimumPriceYuan: minimum, loader: dependencies.couponProducts,
+                imagePipeline: dependencies.detailImagePipeline,
+                isActive: router.selectedTab == tab && router.mePath.last == route,
+                onOpenProduct: { router.append(.productDetail(goodsID: $0), on: tab) }
+            )
+            .id(minimum).toolbar(.hidden, for: .tabBar).toolbar(.visible, for: .navigationBar)
+        case .footprints:
+            FootprintEntryView(
+                store: dependencies.footprints, imagePipeline: dependencies.detailImagePipeline,
+                isActive: router.selectedTab == tab && router.mePath.last == .footprints,
+                onOpenProduct: { router.append(.productDetail(goodsID: $0), on: tab) }
+            )
+            .toolbar(.hidden, for: .tabBar).toolbar(.visible, for: .navigationBar)
+        case .profile:
+            ProfileEntryView(
+                state: dependencies.accountState, session: dependencies.accountSession,
+                imagePipeline: dependencies.detailImagePipeline
+            )
+            .toolbar(.hidden, for: .tabBar)
+            .toolbar(.visible, for: .navigationBar)
         case .cart:
             cartEntry(on: tab, root: false)
                 .toolbar(.hidden, for: .tabBar)

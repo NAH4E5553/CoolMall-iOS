@@ -19,6 +19,17 @@ final class BoundaryVisitor: SyntaxVisitor {
         job.target == "MallData"
             && job.path.hasSuffix("/Sources/MallData/Cart/PersistentCartStore.swift")
     }
+    private var isFootprintStore: Bool {
+        job.target == "MallData"
+            && job.path.hasSuffix("/Sources/MallData/Footprints/PersistentFootprintStore.swift")
+    }
+    private func isAccountAdapter(_ file: String) -> Bool {
+        job.target == "MallData" && job.path.hasSuffix("/Sources/MallData/Authentication/" + file)
+    }
+    private var isCaptchaImage: Bool {
+        job.target == "AccountFeature"
+            && job.path.hasSuffix("/Sources/AccountFeature/Components/CaptchaImage.swift")
+    }
     func fail(_ rule: String, _ message: String) {
         failures.append("\(rule): \(job.path): \(message)")
     }
@@ -28,10 +39,23 @@ final class BoundaryVisitor: SyntaxVisitor {
         if !job.imports.contains(module) {
             fail("MOD-01", "forbidden import \(module) in \(job.target)")
         }
-        if job.target == "MallData", module == "SwiftData", !isPersistentCartStore {
+        if job.target == "MallData", module == "SwiftData", !isPersistentCartStore,
+            !isFootprintStore
+        {
             fail(
                 "MOD-01",
-                "SwiftData import is scoped to Sources/MallData/Cart/PersistentCartStore.swift")
+                "SwiftData import is scoped to registered Cart/Footprints persistent adapters")
+        }
+        if module == "Security", !isAccountAdapter("KeychainCredentialStore.swift") {
+            fail("MOD-01", "Security import is scoped to KeychainCredentialStore.swift")
+        }
+        if module == "UserNotifications", !isAccountAdapter("LocalVerificationCodeNotifier.swift") {
+            fail(
+                "MOD-01",
+                "UserNotifications import is scoped to LocalVerificationCodeNotifier.swift")
+        }
+        if ["ImageIO", "CoreGraphics"].contains(module), !isCaptchaImage {
+            fail("MOD-01", "captcha image import is scoped to CaptchaImage.swift")
         }
         for attribute in node.attributes {
             guard let value = attribute.as(AttributeSyntax.self) else { continue }
@@ -95,13 +119,34 @@ final class BoundaryVisitor: SyntaxVisitor {
         {
             fail("MOD-05", "direct API \(node.text)")
         }
+        let credentialAPIs: Set<String> = [
+            "SecItemAdd", "SecItemCopyMatching", "SecItemUpdate", "SecItemDelete",
+        ]
+        if job.target == "MallData", credentialAPIs.contains(node.text),
+            !isAccountAdapter("KeychainCredentialStore.swift")
+        {
+            fail("MOD-05", "Keychain API is scoped to KeychainCredentialStore.swift")
+        }
+        if node.text.hasPrefix("UNUserNotification") || node.text.hasPrefix("UNNotification")
+            || node.text == "UNMutableNotificationContent"
+            || node.text == "UNTimeIntervalNotificationTrigger"
+        {
+            if !isAccountAdapter("LocalVerificationCodeNotifier.swift") {
+                fail("MOD-05", "notification API is scoped to LocalVerificationCodeNotifier.swift")
+            }
+        }
+        if job.target == "AccountFeature", node.text.hasPrefix("CGImageSource"), !isCaptchaImage {
+            fail("MOD-05", "captcha image API is scoped to CaptchaImage.swift")
+        }
         let swiftDataAPIs: Set<String> = [
             "ModelContext", "ModelContainer", "PersistentContainer", "NSPersistentContainer",
         ]
-        if job.target == "MallData", swiftDataAPIs.contains(node.text), !isPersistentCartStore {
+        if job.target == "MallData", swiftDataAPIs.contains(node.text), !isPersistentCartStore,
+            !isFootprintStore
+        {
             fail(
                 "MOD-05",
-                "SwiftData API is scoped to Sources/MallData/Cart/PersistentCartStore.swift")
+                "SwiftData API is scoped to registered Cart/Footprints persistent adapters")
         }
         if node.text == "unchecked" { fail("MOD-02", "unchecked concurrency conformance") }
         return .visitChildren
@@ -114,9 +159,14 @@ final class BoundaryVisitor: SyntaxVisitor {
     static let registeredFeatureEntries: [String: [String]] = [
         "CatalogFeature": [
             "CatalogEntryView", "HomeEntryView", "CategoryEntryView", "ProductDetailEntryView",
-            "ProductReviewsEntryView",
+            "ProductReviewsEntryView", "CouponProductsEntryView",
         ],
         "CartFeature": ["CartEntryView"],
+        "AccountFeature": [
+            "MeEntryView", "LoginEntryView", "ProfileEntryView", "FootprintEntryView",
+            "CouponEntryView", "CouponReceiveEntryView", "AddressEntryView",
+            "AddressEditorEntryView",
+        ],
     ]
 
     func checkType(_ name: String, _ modifiers: DeclModifierListSyntax) {

@@ -9,18 +9,20 @@ public struct CartEntryView: View {
     private let verifier: (any CartProductChecking)?
     private let pipeline: MallImagePipeline?
     private let isActive: Bool
+    private let onCheckout: (() -> Void)?
     private let onOpenProduct: (Int64) -> Void
     public init(cart: any CartObserving) {
         fixture = cart; store = nil; verifier = nil; pipeline = nil; isActive = true;
-        onOpenProduct = { _ in }
+        onOpenProduct = { _ in }; onCheckout = nil
     }
     public init(
         store: any ShoppingCart, verifier: any CartProductChecking,
         imagePipeline: MallImagePipeline? = nil, isActive: Bool,
-        onOpenProduct: @escaping (Int64) -> Void
+        onOpenProduct: @escaping (Int64) -> Void, onCheckout: (() -> Void)? = nil
     ) {
         fixture = nil; self.store = store; self.verifier = verifier
         pipeline = imagePipeline; self.isActive = isActive; self.onOpenProduct = onOpenProduct
+        self.onCheckout = onCheckout
     }
     public var body: some View {
         if let fixture {
@@ -28,7 +30,7 @@ public struct CartEntryView: View {
         } else if let store, let verifier {
             ShoppingCartScreen(
                 store: store, verifier: verifier, pipeline: pipeline,
-                isActive: isActive, onOpenProduct: onOpenProduct
+                isActive: isActive, onOpenProduct: onOpenProduct, onCheckout: onCheckout
             )
             .id(store.scope)
         }
@@ -44,13 +46,15 @@ private struct ShoppingCartScreen: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     let pipeline: MallImagePipeline?
     let isActive: Bool
+    let onCheckout: (() -> Void)?
     let onOpenProduct: (Int64) -> Void
     init(
         store: any ShoppingCart, verifier: any CartProductChecking, pipeline: MallImagePipeline?,
-        isActive: Bool, onOpenProduct: @escaping (Int64) -> Void
+        isActive: Bool, onOpenProduct: @escaping (Int64) -> Void, onCheckout: (() -> Void)?
     ) {
         _model = State(initialValue: CartViewModel(store: store, verifier: verifier))
         self.pipeline = pipeline; self.isActive = isActive; self.onOpenProduct = onOpenProduct
+        self.onCheckout = onCheckout
     }
     private var active: Bool { isActive && scenePhase == .active }
     private struct ReadKey: Equatable { let active: Bool; let retry: Int }
@@ -300,7 +304,7 @@ private struct ShoppingCartScreen: View {
     }
     private var actionButton: some View {
         Button {
-            if model.editing { model.removeSelected() }
+            if model.editing { model.removeSelected() } else { onCheckout?() }
         } label: {
             Text(
                 model.editing
@@ -314,6 +318,6 @@ private struct ShoppingCartScreen: View {
             .buttonStyle(.plain).accessibilityIdentifier(
                 model.editing ? "cart.delete" : "cart.checkout"
             )
-            .accessibilityHint(model.editing ? "删除所选规格" : "结算功能暂缓实现")
+            .accessibilityHint(model.editing ? "删除所选规格" : "结算时需要登录")
     }
 }

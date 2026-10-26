@@ -38,4 +38,22 @@ struct HomeProductDTO: Decodable {
 struct HomeCouponDTO: Decodable {
     let id: Int64
     let title: String
+    let description: String?
+    let amount: Decimal?
+    let endTime: String?
+    let condition: HomeCouponConditionDTO?
+}
+struct HomeCouponConditionDTO: Decodable {
+    let fullAmount: Decimal?
+    private enum CodingKeys: String, CodingKey { case fullAmount }
+    init(from decoder: any Decoder) throws {
+        if let text = try? decoder.singleValueContainer().decode(String.self) {
+            fullAmount =
+                text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? nil : try JSONDecoder().decode(Self.self, from: Data(text.utf8)).fullAmount
+        } else {
+            fullAmount = try decoder.container(keyedBy: CodingKeys.self)
+                .decodeIfPresent(Decimal.self, forKey: .fullAmount)
+        }
+    }
 }

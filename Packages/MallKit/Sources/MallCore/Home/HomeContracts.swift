@@ -89,15 +89,15 @@ public struct HomeProductSummary: Equatable, Sendable {
     }
 }
 
-/// Coupon title projection; claimability/conditions are out of scope (H0).
+/// Immutable available-coupon projection. Missing details remain unknown, never invented.
 public struct HomeCouponSummary: Equatable, Sendable {
-    public let id: Int64
-    public let title: String
-
+    public let claimOffer: CouponClaimOffer
+    public var id: Int64 { claimOffer.id }
+    public var title: String { claimOffer.title }
     public init(id: Int64, title: String) {
-        self.id = id
-        self.title = title
+        claimOffer = CouponClaimOffer(id: id, title: title)
     }
+    public init(claimOffer: CouponClaimOffer) { self.claimOffer = claimOffer }
 }
 
 /// Recoverable home read failures surfaced to the page model. Carries no raw

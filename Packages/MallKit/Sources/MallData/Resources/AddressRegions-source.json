@@ -1,0 +1,40 @@
+{
+  "revision": "4dec8e0dbd7dd12b3d58c38e3d0f3449f9c41ecb",
+  "commit": {
+    "author": {
+      "name": "kaelanvoss",
+      "email": "iamkaelan.voss@gmail.com",
+      "date": "2026-10-14T11:51:23Z"
+    },
+    "committer": {
+      "name": "GitHub",
+      "email": "noreply@github.com",
+      "date": "2026-10-14T11:51:23Z"
+    },
+    "message": "fix(area-data): update Minzhong and Nanlang labels (#13941)\n\nCo-authored-by: kaelanvoss <339506662+kaelanvoss@users.noreply.github.com>",
+    "tree": {
+      "sha": "33c6a96ad9c24974995dbdd93c5c61b5af1d55a8",
+      "url": "https://api.github.com/repos/youzan/vant/git/trees/33c6a96ad9c24974995dbdd93c5c61b5af1d55a8"
+    },
+    "url": "https://api.github.com/repos/youzan/vant/git/commits/4dec8e0dbd7dd12b3d58c38e3d0f3449f9c41ecb",
+    "comment_count": 0,
+    "verification": {
+      "verified": true,
+      "reason": "valid",
+      "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJqz2y7CRC1aQ7uu5UhlAAAlwgQAAM1MYlz9KyuJXhEAtgGKlDz\nS0lkWH722D0R2wx7EKKXlrD834Rhqq2nwVguHXZSgQ7FaKb8/FdI6aRDb5L138Sa\nQdUkD/k2cxznO2KqjCS3ZOrnmllu3ztllMFDNKylp5svEzSpxJlaRemMSi4Uw5fl\nPPDbpMqzimJRk1Mz2xm7wxbeKTs7vUrUUxKnrgZAXivipLD3KOxI3RYFwzYYdmcS\no/Qxq5YjzHF0vcQw+FafBenFatSsJOOPTvoeaxxJvJna068dg0XhIWdEZ/GSmGdo\nyPOqmaz71Estbk+/YCEKHquuCvLvi+6QiY5trV+XnwW64vd8tYH2OvDwMlSf5Gj4\nXWMH4gBdovgIccXRZ5aaoEQa+Tnqf+Ktiz4MMe20m5nV3E0QMKxSEDrRhcc9diHS\n04UsfrHjwsUybSENSwBAhygE0WviiZeC3olaItdgh6/DqSo6e4zLU7fn8IBU0rc1\n4yBraNBgNCueutWOUTjpNlvlfEjSRtD8P+QlZ/4aXXTTY6Mlb+FZc96yk4mlG7Fu\nPCWa/Bp/0MKFZYvEdVQ517jm6CvjoUEtvntr9LXBI3AZQBihrSzIVMT3gnhVn1ak\n6kAyNIK9VCFhE6lHC4r2Nzag/n3eSw7Fi/W/bRy9ZZk1aaJzkMzTY5Fh1yhLxRmL\nFT/TIq7QFPVAUAPWg7S1\n=KxDz\n-----END PGP SIGNATURE-----\n",
+      "payload": "tree 33c6a96ad9c24974995dbdd93c5c61b5af1d55a8\nparent cb63aed024d2945e5372d5e07c214d13087ebdce\nauthor kaelanvoss <iamkaelan.voss@gmail.com> 1791978683 +0800\ncommitter GitHub <noreply@github.com> 1791978683 +0800\n\nfix(area-data): update Minzhong and Nanlang labels (#13941)\n\nCo-authored-by: kaelanvoss <339506662+kaelanvoss@users.noreply.github.com>",
+      "verified_at": "2026-10-14T11:51:24Z"
+    }
+  },
+  "repository": "https://github.com/youzan/vant",
+  "path": "packages/vant-area-data",
+  "packageVersion": "2.2.0",
+  "counts": {
+    "province": 34,
+    "city": 369,
+    "county": 3478
+  },
+  "upstreamSHA256": "3a720f1c799e0df3a30b454ccf705794870dd6423937280e2c64764ad62b16fc",
+  "resourceSHA256": "61af62aa89375e8823673ae520240eb948e78d57d0baa830e5006854e3722b3a",
+  "transformation": "Exact province/city/county mapping by 2/4 digit parent prefix, sorted upstream codes; no names or codes invented. County column includes upstream special administrative/municipal town and street options. This is the pinned Vant dataset, not a claim of current official 2026 certification."
+}

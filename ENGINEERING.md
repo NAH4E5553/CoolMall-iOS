@@ -81,7 +81,7 @@ Android 与 iOS 复用的是设计思想和业务合同；具体 API、任务取
 
 ### 2.1 模块职责与依赖组装
 
-**决定：第一条商品→购物车链路就建立 Feature Target 隔离，取消原方案的单一 MallUI Target。** 一个本地 Swift Package `MallKit`，首期五个生产库 Target；IMAGE-01按批准新增第六库MallImages，加一个 App Target。不是每个页面一个 Package，也不提前建立空的账号、订单和支付模块。决策依据、代价和后续拆分触发器见第 3 章。
+**决定：第一条商品→购物车链路就建立 Feature Target 隔离，取消原方案的单一 MallUI Target。** 一个本地 Swift Package `MallKit`，首期五个生产库 Target；IMAGE-01按批准新增第六库MallImages，ACCOUNT-LOGIN-01按批准新增第七库AccountFeature，加一个 App Target。不是每个页面一个 Package，也不提前建立空的账号、订单和支付模块。决策依据、代价和后续拆分触发器见第 3 章。
 
 | 模块 | 拥有内容 | 允许的直接项目依赖 | 不允许承担 |
 | --- | --- | --- | --- |
@@ -90,8 +90,9 @@ Android 与 iOS 复用的是设计思想和业务合同；具体 API、任务取
 | `MallDesignSystem` | 设计语义、无业务依赖的控件和展示组件 | 无 | 商品/订单实体、业务服务、会话、购物车单例 |
 | `CatalogFeature` | 首页商品入口、分类/搜索、商品列表与详情；页面模型和专用组件 | MallCore、MallDesignSystem、MallImages | CartFeature 内部模型、MallData、HTTP/数据库/凭据 API |
 | `CartFeature` | 购物车页面、编辑交互、只读快照投影 | MallCore、MallDesignSystem | 自建第二个购物车事实源、CatalogFeature、MallData |
+| `AccountFeature` | 我的静态展示、登录表单、只读个人中心与退出意图 | MallCore、MallDesignSystem、MallImages | Keychain/通知/网络副作用、其他 Feature、第二会话事实源 |
 | `MallImages` | 图片管线、缓存与RemoteImage薄包装（IMAGE-01） | 精确Nuke/NukeUI13.2.0 | 业务HTTP/会话/商城凭据、商品事实源 |
-| `CoolMalliOS` App | 依赖创建与生命周期、Scene 根导航、跨功能路由、系统回调、根 UI 投影 | 上述六个库 | 业务规则、逐页实现、自己执行数据库事务 |
+| `CoolMalliOS` App | 依赖创建与生命周期、Scene 根导航、跨功能路由、系统回调、根 UI 投影 | 上述七个库 | 业务规则、逐页实现、自己执行数据库事务 |
 
 ```mermaid
 flowchart TD
@@ -387,6 +388,11 @@ let package = Package(
     "MallImages": [
       "Nuke",
       "NukeUI"
+    ],
+    "AccountFeature": [
+      "MallCore",
+      "MallDesignSystem",
+      "MallImages"
     ]
   },
   "tests": {
@@ -408,6 +414,10 @@ let package = Package(
     "MallImagesTests": [
       "MallImages",
       "Nuke"
+    ],
+    "AccountFeatureTests": [
+      "AccountFeature",
+      "MallCore"
     ]
   },
   "externalPackages": {
@@ -452,7 +462,9 @@ F0 系统模块允许列表如下；项目模块依赖仍只读取上方精确�
     "MallData": [
       "Swift",
       "Foundation",
-      "SwiftData"
+      "SwiftData",
+      "Security",
+      "UserNotifications"
     ],
     "MallDesignSystem": [
       "Swift",
@@ -512,6 +524,19 @@ F0 系统模块允许列表如下；项目模块依赖仍只读取上方精确�
       "Swift",
       "Foundation",
       "SwiftUI",
+      "Testing"
+    ],
+    "AccountFeature": [
+      "Swift",
+      "SwiftUI",
+      "Observation",
+      "Foundation",
+      "ImageIO",
+      "CoreGraphics"
+    ],
+    "AccountFeatureTests": [
+      "Swift",
+      "Foundation",
       "Testing"
     ]
   }
@@ -1132,6 +1157,19 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 
 ### 7.5 例外与规则变更
 
+2026-10-25 ADDRESS-01：用户地址截图及iOS风格/不新增按钮授权既有AccountFeature内地址管理；精确新增AddressEntryView、AddressEditorEntryView两个入口，Core地址值/输入/读写失败/能力与地区只读合同，Data HTTPAddressService供App组装；不新增Target/SDK/系统import/禁止依赖/存储副本。SourceBoundaries同步精确入口正反例，无CI政策更改。状态、取消、未知写与待定地区来源见Evidence/iOS/2026-10-25-ADDRESS/scope.md；默认唯一/自动默认无证据，不自行实现。
+
+2026-10-25 COUPON-FEEDBACK-03：用户明确移除领券卡片状态/查看我的券，采用稳定立即领取按钮与toast，并支持仅顶部下滑关闭。必要移除现有CouponReceiveEntryView.init的onShowCoupons参数及App无用路由闭包；无新public类型/Target/SDK/依赖/存储或规则例外。状态/失败/取消与实际接口取证范围见本轮scope.md，不因toast擅改成功合同或自动重放。 最新用户指定toast读取接口message，覆盖先前500精确ack候选：现有CouponReceiving返回String?成功message，既有CouponClaimFailure增加rejectedMessage(code,String)保留拒绝文案；所有非1000仍拒绝，不据message改判成功。1000原非空String data合同、会话/取消校验不变，缺失/空/错型message兜底；仅同步既有适配/替身/测试，无新增public类型。
+
+2026-10-25 COUPON-SHEET-02：用户明确要求全部接口券的列表弹层与完整卡片，授权现有CouponClaimOffer/HomeCouponSummary及HomeEntryView/CouponReceiveEntryView的必要字段和数组参数演进，具体差异与消费者见本轮scope.md。公开类型/Target集合不扩大，无新增依赖/SDK/存储/禁止项例外，既有SourceBoundaries精确入口登记与CI政策保持。
+
+2026-10-25 COUPON-01 v0.2（用户截图请求及明确追加“同时接通首页和商品详情领券”）：在既有 Target 内精确增加 AccountFeature.CouponEntryView、AccountFeature.CouponReceiveEntryView、CatalogFeature.CouponProductsEntryView；SourceBoundaries 与对应正反例同步登记。Core 仅增加实际消费的券/商品摘要、读/领取窄合同及 NumberedPageCoordinator；两个页面各自 VM 持有实例与只读投影，协调器唯一拥有该实例分页状态。Data 复用 APIClient，SessionCoordinator 内部绑定 account/generation/environment 的瞬时授权，Token 不公开；App 组装一个 HTTPCouponReceiver actor，按 account/coupon 单飞。登录不自动领取，未知写结果不重放/不假报失败或回滚，转已领列表核验；未确认服务端幂等、时区/失效业务码不编造合同。只做门槛价格浏览，不代表 SKU 资格或结算抵扣。本次没有新增 Target/SDK/import/持久副本/依赖或 CI 政策豁免，其他禁止项保持。具体状态/取消/验证见8.3与 COUPON 证据 scope.md。
+
+2026-10-25 APPROVAL-ACCOUNT-LOGIN-20261025：用户截图和本轮明确范围授权 AccountFeature（MallCore/MallDesignSystem/MallImages）及 AccountFeatureTests（AccountFeature/MallCore），MeEntryView/LoginEntryView/ProfileEntryView 为该轮批准的公开 Feature 入口；后续入口以各自明确任务登记为准。Core AccountProfile/AccountState/AccountFailure/LoginCredential/LoginCaptcha、AccountSession/LoginChallenges/VerificationCodeDelivering/LoginValidation 是实际 App/Feature/Data 消费的值和窄合同；Data SessionCoordinator 与 LocalVerificationCodeNotifier 供 App 组装。Keychain 仅 Authentication/KeychainCredentialStore.swift，UserNotifications 仅 Authentication/LocalVerificationCodeNotifier.swift，ImageIO/CoreGraphics 仅 AccountFeature/Components/CaptchaImage.swift。所有其他 Feature 副作用禁令保留，新 Target 并非例外；用户另明确批准本任务完成登记及正反例。
+
+状态合同：SessionCoordinator 为应用唯一会话写入者，按固定环境持有 Keychain 的单条原子凭据/只读资料快照；登录先获取真实稳定账号ID，凭据保存成功后才发布。取消/generation 拒绝旧响应；退出删除失败不谎报成功。App 按 environment+accountID 切换独立购物车 Store 并销毁旧页面草稿；游客车不合并，账号车保留。验证码/密码仅内存，发送不自动重试。PRD-007 使用本地通知，权限拒绝明确告知，可改用密码登录。Token expire/refreshExpire 暂只保留原值，服务端单位/失效码未验证前不自动刷新；提供重新登录，不能声称自动续期已实现。
+
+
 2026-10-24 approved read-only catalog contracts: APPROVAL-CATEGORY-01-PUBLIC-20261021 authorizes CategoryNode/CategoryLoading/CategoryLoadFailure, HTTPCategoryService and CategoryEntryView. APPROVAL-GOODS-DETAIL-READ-SPEC-20261023 authorizes ProductDetailSnapshot/ProductSpecification/ProductDetailLoading/ProductDetailLoadFailure, HTTPProductDetailService, ProductDetailEntryView, HomeEntryView product-ID intents and RemoteImage.preservesIntrinsicAspectRatio default false. APPROVAL-GOODS-DETAIL-ANDROID-PARITY-20261023 adds read-only coupon/review mapping and detail overlays; deferred share/claim/cart/purchase actions remain entries only. APPROVAL-GOODS-REVIEWS-READ-20261023 authorizes ProductReviewPage/ProductReviewsLoading, HTTPProductReviewsService, ProductReviewsEntryView, optional createdAt and detail view-all product-ID callback. Only exact approved Feature entries are registered; no new Target/SDK/system import exception.
 
 规则有三个等级：MOD/STATE/VM/CHANGE 与“必须”条款是阻断规则；REVIEW 是必须给出结论的评审触发器；标为建议/候选的选型可在约定内决定。检查脚本暂未实现的阻断规则仍需人工核对，不能因没报错而视为允许；F0 未完成不能开始 F1 扩展。
@@ -1174,6 +1212,34 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 每项基础能力的完成定义：有真实使用场景、最小清晰 API、正确归属、失败/取消合同、自动化验证和必要的设备验证；不存在第二套页面私有实现绕过它；文档状态更新为实际结果。
 
 ### 8.3 当前实施状态
+
+2026-10-25 ADDRESS-01 v0.1 本地独立验收通过：我的地址管理已接page/info/add/update/delete；列表与编辑独立VM、草稿/默认Toggle、整框焦点与精确提示、固定高度省市区三级弹层，外侧/顶部下拖取消且与列表滚动隔离，无额外表单按钮。用户选内置完整地区，MallData以MIT许可固定Vant2.2.0 revision4dec8e0dbd7dd12b3d58c38e3d0f3449f9c41ecb，34/369/3478节点；不称官方实时2026校验。开发最终5/0/0，Debug/Release/格式/边界通过，治理208；Astra同冻结包完整定向29/0/0、深色2/0/0，244源码/配置、18构建、15资源前后匹配。原失败及非致命运行警告保留；真实后端地址写入、iOS17/硬件/完整VoiceOver未验，checkout选择不在本轮。证据Evidence/iOS/2026-10-25-ADDRESS/astra-review/review.md；无commit/push/PR/merge。
+
+2026-10-26 ADDRESS-FEEDBACK-01 v0.1本地独立验收通过：截图10位手机号依原11位规则禁用正确，完整表单补明确提示，补有效号码启用；原unknown锁/保存单飞保留。Toggle为accountAccent，保存私有ButtonStyle白字、可用蓝紫/禁用45%浅紫，无新增按钮。地区header以global坐标驱动整层正向跟手，短拖临界阻尼回位、原64pt长拖取消；列表双向滚动/固定height/背景AX/取消不回填保持。开发最终地区完整链1/0/0及前包有界复用，Astra同冻结包15/0/0＋dark2/0/0，244源/18构建/15资源前后匹配；Debug/Release/格式/边界通过。原失败、8+2运行警告及未知原因保留，减弱动态仅静态核对，真实后端写入/iOS17/硬件/fullVO未验。证据Evidence/iOS/2026-10-25-ADDRESS-FEEDBACK/astra-review/review.md；仅本地无commit/push/PR/merge。
+
+2026-10-26 ADDRESS-COLOR-01 v0.1本地独立验收通过：默认标记/新增地址按钮及联系人/手机号/详细地址聚焦边框、浮动标签、光标统一accountAccent，与保存按钮同色。仅两个私有View局部配色、现有用例增加列表截图及本状态，无新增按钮/状态/布局/VM/接口/依赖/Target/CI变化。开发2/0/0，Astra同冻结包浅色2/0/0、深色2/0/0（两个不同方法四次执行），实际8张新图已独立目视；244源/18构建/15资源前后全匹配，Debug/Release/格式/边界通过。原行为/AX5有界复用，不称本轮15或492全套；原frame/host/AX警告保留。真实写入/iOS17/硬件/fullVO未验。证据Evidence/iOS/2026-10-26-ADDRESS-COLOR/astra-review/review.md；无commit/push/PR/merge。
+
+2026-10-25 COUPON-FEEDBACK-03 v0.2 本地独立验收通过：实际第三券code500/message“已领取过该优惠券”，最终按用户最新要求toast优先message，所有非1000仍拒绝、不据文案伪成功；卡片稳定按钮、顶部下滑与列表隔离、生命周期清理实现。开发最终19/0/0、Astra同冻结包34/0/0（9VM+7Data+18UI），230源码/18构建验前后哈希一致；Debug/Release、格式/边界通过，默认60/max120不变。前候选31与17及原失败保留；本次13条frame警告、历史unknown未归因、最终真实线上UI领取/iOS17/真机/fullVO未验证保留。无提交/推送/PR/合并。Evidence/iOS/2026-10-25-COUPON-FEEDBACK/state.json与astra-review/review.md。
+
+2026-10-25 COUPON-SHEET-02 v0.1 本地独立验收通过：首页全券底部overlay、外部点击关闭/无关闭按钮、统一立即领取、前三卡/更多竖滚及首页图片保持完成。真实GET本次3券；修复旧claim遮挡使homeIsVisible=false→nil request→missing，仅分离首页图片活跃与轮播暂停，保留Tab/push/background规则。Astra同冻结包实际49/0/0（35模型/真实宿主+14UI），exact集合/验前后230源配置与18构建身份一致；Debug/Release、格式/边界及开发深色2通过，完整记录 Evidence/iOS/2026-10-25-COUPON-SHEET/state.json 与 astra-review/review.md。原始失败、未唯一确认的输入时序原因及10条frame warning保留；不把461枚举称全套通过。真实账号资产/线上领取、iOS17/真机/fullVO未验证；现有类型/Target集合及CI规则未扩大，无提交/推送/PR/合并。
+
+2026-10-25 CAPTCHA-UI-01 v0.1 本地同包独立验收通过：图形验证码提交业务拒绝提示改为“图形验证码输入错误！”，删除安全验证弹层“取消”与键盘“完成”，保留“完成验证”、点图刷新及原生下拉关闭，外层登录表单Done保留。Astra实际12+1两个批次合计13不同方法通过（9模型＋4直接UI消费者，含真实系统本地通知），精确集合/源码身份核验通过，验前后230源配置＋18构建零差异。Debug/Release、现有边界/格式检查通过或按未变生产身份限定复用；不称全452通过。原文案复现9=8/1、开发10/2及11/1驱动失败、编译/格式/MOD03原失败与几何非同刻限度保留；独立两summary仍3+1条runtime warning，不称根因消除。真实账号请求、iOS17/真机/完整VoiceOver未验证；无接口/Target/依赖/SDK/边界/CI政策变化。报告 Evidence/iOS/2026-10-25-CAPTCHA-UI/astra-review/review.md，唯一状态该目录state.json；本段仅验后状态文字更新，无提交/推送/合并。
+
+2026-10-25 COUPON-01 v0.2 本地同包独立验收通过：Astra新执行53/0/0（33模型＋15券UI＋5既有直接回归）及67项边界正反例，精确原生方法集/源码身份通过，验前后230源配置与18构建文件零差异。范围含我的优惠券读取/说明/空态/真实下拉/追加/重试/重登录、按门槛浏览商品及详情、首页和详情所选券显式确认领取与未知结果恢复。归属/失败和取消合同见7.5；独立报告 Evidence/iOS/2026-10-25-COUPON/astra-review/review.md，唯一状态为该目录state.json。开发Debug/Release、边界/格式、同包深色AX2/0/0按未变身份限定复用；不称独立55或全449已执行。native01调用范围错误零模型、exit75及开发原失败完整保留，native02仍17条frame warning，不称根因消除。真实账号资产领取、结算核销、后端时区/幂等保证、iOS17/真机/完整VoiceOver未验证；结算功能未实现。仅本地，未提交/推送/合并。本段是验收后状态文字更新，生产/测试/规则与构建不改。
+
+2026-10-25 FOOTPRINT-01 v0.2 local independent repair acceptance passed (developer8/0/0 and Astra same-package8/0/0; no remote delivery). User approved local footprint preview/all/refresh/more and guest/account isolation. v0.1 independent37 methods36/1/0 first-pull failure retained; bounded presentation/input repair now8/0/0 UI, exact native inventory and source checks, Debug/Release and boundary/format passed. Unchanged30 model methods plus cart regression and63 governance retain their original independent scope. Latest state and all original failures: Evidence/iOS/2026-10-25-FOOTPRINT/state.json and refresh-repair/handoff.md. Historical first-pull mechanism remains not uniquely established; no budget/assertion/CI change. Existing AccountFeature adds public FootprintEntryView; Core footprint values/recording/browsing contracts, Data PersistentFootprintStore is the only new scoped SwiftData adapter under Footprints/. Existing cart adapter and all other prohibitions remain. Detail recording, local latest8 and20-item pages, refresh/clear, scope ownership and acceptance contract in Evidence/iOS/2026-10-25-FOOTPRINT/scope.md. No new Target/SDK/dependency/CI policy.
+
+
+2026-10-25 ACCOUNT-LOGIN-01 Keychain repair independently accepted locally: real App integration reproduced save failure, OSStatus -34018. Earlier entitled standalone probe missed App executable identity. Simulator-only App build identity is registered exactly in check-project-boundaries.py; signed simulator builds use native CODE_SIGN_ENTITLEMENTS, unsigned builds embed the same minimal simulator application-identifier/group via conditional linker flags. No device entitlement, shared group, storage fallback or credential schema change. DEBUG isolated synthetic HTTP tests retain actual SessionCoordinator and Keychain in the real App process. Independent real-App13/0/0 and governance59 passed; four simulator executable identities checked, device settings unchanged. Scope/evidence: Evidence/iOS/2026-10-25-ACCOUNT-LOGIN/keychain-repair/astra-review/review.md. Live account/hardware remain unverified; original failures retained. No commit/push/merge.
+
+
+2026-10-25 ACCOUNT-LOGIN-01 v0.2 accepted locally after explicit user correction: guest/signedIn only, credential-read failure is guest; guest add/edit/delete permitted, checkout alone checks login; full read-only profile. GPT-6 Astra independently27/0/0 including original detail-add and checkout-login return stack. Debug/Release and source boundaries/format passed; earlier failures/warnings and unverified live-account/iOS17/hardware limits retained. Evidence: Evidence/iOS/2026-10-25-ACCOUNT-LOGIN/revision-02/astra-review/review.md. No commit/push/merge. This status-only update follows frozen acceptance; implementation and binaries unchanged. Earlier development records below are historical.
+
+
+2026-10-25 ACCOUNT-LOGIN-01 v0.2开发中：本轮用户明确将AccountState统一guest/signedIn，读取凭据失败按guest开放游客车，仅结算登录检查；按截图二补齐个人中心。覆盖此前第三态/阻止游客车合同，存储失败、隔离和取消规则保留。CartEntryView新增可选onCheckout意图，App依据实时会话导航。详见revision-02/scope.md。
+
+2026-10-25 ACCOUNT-LOGIN-01 本地实现及 GPT-6 Astra 独立验收通过：用户批准验证码与密码真实登录、我的静态订单/足迹/菜单、只读个人中心与退出；注册/找回/第三方/写资料/订单/足迹业务暂缓。用户明确授权本任务只在 account-login-v1 工作树完成最小边界登记及正反例，覆盖此前本任务涉及登记文件的 DeepSeek 独占安排，其他 CI/工作流/HomeLoadTests 所有权不变。基线 65339ff，未提交/推送/合并。独立同包原生28/0/0、治理51条、真实Keychain隔离宿主双进程验证通过；Debug/Release与影响链限定复用详见 Evidence/iOS/2026-10-25-ACCOUNT-LOGIN/astra-review/review.md。线上真实账号、iOS17/真机/完整VoiceOver未验证，SwiftUI布局warning及历史失败保留。本次验收后仅更新状态文字，生产/测试/边界规则及二进制保持冻结身份。
+
 
 2026-10-24 R-REVIEWS-01 accepted local repair: the reviews refresh action concurrently waits for the read and a cancellable 300ms minimum hold, allowing the observed refresh-entry transition to reach its normal cleanup path. Only ProductReviewsEntryView changes; original gestures, assertions, idle waits and 60/120s limits remain. Independent clean Debug/Release builds succeeded; the original full chain passed five consecutive runs (29.813/44.484/28.391/27.331/27.068s), empty refresh20.235s and failed refresh24.765s, exact7/0/0. Preserve all original failures. This is bounded iPhone17/iOS27.0 simulator acceptance, not all-runtime proof: 300ms is empirical, private state4/5 thresholds are unconfirmed, probe notifier-pairing warnings limit causal claims, and iOS17/26/hardware remain unverified. Owner authorizes commit/push to PR17; remote CI and owner-deferred closure remain separate, with no CI exemption or merge authorization.
 
@@ -1352,3 +1418,7 @@ F0-01/F0-02 已有真实代码和本地验证，F0-03 已接入并有远程正�
 ### IMAGE-01 approved adapter contract (2026-10-13)
 
 APPROVAL-IMAGE01-I02-20261013 approves MallImages with Nuke/NukeUI exact13.2.0, revision30f7a7e72e0607d304fbf69c799474bd5fb6d1ce. CatalogFeature is the sole Feature consumer; App owns the shared adapter. Public interfaces use only own/Foundation/SwiftUI types. MallImagePipeline.swift alone adapts URLSession/URLRequest/FileManager; ImageUITestSupport.swift alone adapts URLSession/URLRequest/URLProtocol under DEBUG. APPROVAL-IMAGE01-DEBUG-SEAM-20261013 additionally approves the DEBUG-only init(configuration:testingProtocolClasses:[URLProtocol.Type]); Release has no test injection. Unknown versions/products/imports and missing or modified resolution pins remain rejected. MallImagesTests is required and nonempty; existing timeouts and tests remain required. Private image authentication is out of scope; ordinary homepage CDN assets remain placeholders pending resource permission.
+
+Historical development note, superseded by8.3: 2026-10-25 COUPON-01 v0.1 in development. User screenshot request authorizes My Coupons read/browse and GoUse price-filter product page; receiving/settlement remain deferred pending scope response. Existing AccountFeature adds exact public CouponEntryView; existing CatalogFeature adds exact public CouponProductsEntryView. Core owns numbered-page coordinator and coupon/value/read contracts; Data uses existing APIClient transport plus SessionCoordinator-internal generation/account/environment-bound authorization. No public token, Target, SDK, dependency, persistent coupon copy or CI policy change. Source boundary exact entries plus positive/negative governance cases updated. Scope and eventual acceptance status: Evidence/iOS/2026-10-25-COUPON/state.json.
+
+2026-10-25 COUPON-01 v0.2: user explicitly expanded scope to home/detail receiving. Adds exact AccountFeature.CouponReceiveEntryView, Core id/title intent and narrow CouponReceiving/write errors; shared Data HTTPCouponReceiver actor is injected once by App, protects account/coupon in-flight ownership and uses existing SessionCoordinator-internal environment/generation authorization plus existing APIClient. Home/Detail only send intent, no Feature cross-import or invented offer fields. Native Account sheet owns confirmation/Login/VM request, never auto-submits after login, uncertain writes never auto-replay or claim rollback. Busy offers Stop Waiting; result unknown routes authoritative owned-coupon read. Existing Me account-change path reset remains (guest Me-footprint-detail source returns Me root after login); Home/category/cart source stacks stay. No Target/SDK/storage/CI-policy changes; exact boundary registration tests included. Independent early review receive-early-review.md and receive-implementation-review.md; final acceptance pending.

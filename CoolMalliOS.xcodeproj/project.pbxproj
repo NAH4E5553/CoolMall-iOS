@@ -201,6 +201,7 @@
 				<string>1612A33B2F30484E89F356D4</string>
 				<string>E22A9DA5233930C0C8183821</string>
 				<string>A10000000000000000000011</string>
+				<string>E02E7A635D114D5F83E91D29</string>
 			</array>
 			<key>name</key>
 			<string>CoolMalliOS</string>
@@ -226,6 +227,10 @@
 				<string>A10000000000000000000012</string>
 				<string>2FBAD855FBE637B793EEAE29</string>
 				<string>B35C02AA56414D9CC3D71312</string>
+				<string>05169D9404AF23D70CBF969F</string>
+				<string>032F6F23F77FD41128438D97</string>
+				<string>76148AA9BDAE4E3791C6F29B</string>
+				<string>A3455D618CDB889A33E9BEE7</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>
@@ -244,6 +249,7 @@
 				<string>26C1C204C428D7590928B38A</string>
 				<string>274E3FF24D886BFC9736ED20</string>
 				<string>A10000000000000000000002</string>
+				<string>AF2A4D15597FA16D704DD804</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>
@@ -316,6 +322,20 @@
 				<string>0.1.0</string>
 				<key>ONLY_ACTIVE_ARCH</key>
 				<string>YES</string>
+				<key>CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]</key>
+				<string>CoolMalliOS/Simulator.entitlements</string>
+				<key>OTHER_LDFLAGS[sdk=iphonesimulator*]</key>
+				<string>$(inherited) $(MALL_SIMULATOR_ENTITLEMENTS_$(CODE_SIGNING_ALLOWED))</string>
+				<key>MALL_SIMULATOR_ENTITLEMENTS_NO</key>
+				<string>-Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker $(SRCROOT)/CoolMalliOS/Simulator.entitlements</string>
+				<key>MALL_SIMULATOR_ENTITLEMENTS_YES</key>
+				<string></string>
+				<key>ENABLE_DEBUG_DYLIB[sdk=iphonesimulator*]</key>
+				<string>$(MALL_SIMULATOR_DEBUG_DYLIB_$(CODE_SIGNING_ALLOWED))</string>
+				<key>MALL_SIMULATOR_DEBUG_DYLIB_NO</key>
+				<string>NO</string>
+				<key>MALL_SIMULATOR_DEBUG_DYLIB_YES</key>
+				<string>YES</string>
 			</dict>
 		</dict>
 		<key>1DAC554E0E59C5F7C036939D</key>
@@ -360,6 +380,14 @@
 				<string>0.1.0</string>
 				<key>ONLY_ACTIVE_ARCH</key>
 				<string>NO</string>
+				<key>CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]</key>
+				<string>CoolMalliOS/Simulator.entitlements</string>
+				<key>OTHER_LDFLAGS[sdk=iphonesimulator*]</key>
+				<string>$(inherited) $(MALL_SIMULATOR_ENTITLEMENTS_$(CODE_SIGNING_ALLOWED))</string>
+				<key>MALL_SIMULATOR_ENTITLEMENTS_NO</key>
+				<string>-Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker $(SRCROOT)/CoolMalliOS/Simulator.entitlements</string>
+				<key>MALL_SIMULATOR_ENTITLEMENTS_YES</key>
+				<string></string>
 			</dict>
 		</dict>
 		<key>37AF596E125FD2B7C6CD1B5F</key>
@@ -402,6 +430,7 @@
 				<string>C29F7C05BF7C72588510E150</string>
 				<string>9C3551151EB0012AB46FDA96</string>
 				<string>A10000000000000000000001</string>
+				<string>9276121E4225EF039564408C</string>
 			</array>
 			<key>productName</key>
 			<string>CoolMalliOS</string>
@@ -457,6 +486,7 @@
 				<string>B41B0A33E5AD433C38A82134</string>
 				<string>A10000000000000000000013</string>
 				<string>653A738F306AADEBBCDA0EA4</string>
+				<string>3019266C04FC48D3846B89B5</string>
 			</array>
 			<key>name</key>
 			<string>CoolMalliOSUITests</string>
@@ -478,6 +508,10 @@
 				<string>A10000000000000000000014</string>
 				<string>2B85BBB9E22258A61CDE76A8</string>
 				<string>E0F5FAAA5B5EAB55F8C8EAC0</string>
+				<string>AB691FBA725AD6C074024F95</string>
+				<string>DE17EC1D3500E634021E76B2</string>
+				<string>ACABE816A5394F44AA8E29A7</string>
+				<string>AA9C1000271B65A587A92FC2</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>
@@ -681,6 +715,12 @@
 				<string>718E6CB0D6A057C5E8C06645</string>
 				<string>A6A5E2382585B6548BC8FB81</string>
 				<string>9C576416B5C5701A2C292081</string>
+				<string>114BC14EB5A28467A4200725</string>
+				<string>2BD17BF1D408DF2F48D29C78</string>
+				<string>C3640D7C9A8D853A619C8F6C</string>
+				<string>830B45A9620C35AB6DE42688</string>
+				<string>49D9038BE9F48C991EA63CF1</string>
+				<string>C69386AAA54C9D4391E88610</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -1008,6 +1048,164 @@
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>9C576416B5C5701A2C292081</string>
+		</dict>
+		<key>9276121E4225EF039564408C</key>
+		<dict>
+			<key>isa</key>
+			<string>XCSwiftPackageProductDependency</string>
+			<key>productName</key>
+			<string>AccountFeature</string>
+		</dict>
+		<key>AF2A4D15597FA16D704DD804</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>productRef</key>
+			<string>9276121E4225EF039564408C</string>
+		</dict>
+		<key>114BC14EB5A28467A4200725</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOS/Testing/AccountUITestSupport.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>05169D9404AF23D70CBF969F</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>114BC14EB5A28467A4200725</string>
+		</dict>
+		<key>2BD17BF1D408DF2F48D29C78</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOSUITests/AccountLoginFlowTests.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>AB691FBA725AD6C074024F95</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>2BD17BF1D408DF2F48D29C78</string>
+		</dict>
+		<key>C3640D7C9A8D853A619C8F6C</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOS/Testing/FootprintUITestSupport.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>032F6F23F77FD41128438D97</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C3640D7C9A8D853A619C8F6C</string>
+		</dict>
+		<key>830B45A9620C35AB6DE42688</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOSUITests/FootprintFlowTests.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>DE17EC1D3500E634021E76B2</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>830B45A9620C35AB6DE42688</string>
+		</dict>
+		<key>E02E7A635D114D5F83E91D29</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOS/Testing/CouponUITestSupport.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>76148AA9BDAE4E3791C6F29B</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E02E7A635D114D5F83E91D29</string>
+		</dict>
+		<key>3019266C04FC48D3846B89B5</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOSUITests/CouponFlowTests.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>ACABE816A5394F44AA8E29A7</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>3019266C04FC48D3846B89B5</string>
+		</dict>
+		<key>49D9038BE9F48C991EA63CF1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOS/Testing/AddressUITestSupport.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>A3455D618CDB889A33E9BEE7</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>49D9038BE9F48C991EA63CF1</string>
+		</dict>
+		<key>C69386AAA54C9D4391E88610</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOSUITests/AddressFlowTests.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>AA9C1000271B65A587A92FC2</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C69386AAA54C9D4391E88610</string>
 		</dict>
 	</dict>
 	<key>rootObject</key>

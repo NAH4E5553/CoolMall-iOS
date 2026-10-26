@@ -13,6 +13,7 @@ struct HomeContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     var onUnavailableAction: () -> Void = {}
     var onOpenProduct: ((Int64) -> Void)? = nil
+    var onReceiveCoupons: (([CouponClaimOffer]) -> Void)? = nil
     var body: some View {
         VStack(spacing: 16) {
             if !snapshot.banners.isEmpty {
@@ -24,8 +25,14 @@ struct HomeContentView: View {
                 )
             }
             if !snapshot.coupons.isEmpty {
-                HomeCouponSectionView(coupons: snapshot.coupons) { _ in onUnavailableAction() }
-                    .background(surface, in: RoundedRectangle(cornerRadius: 12))
+                HomeCouponSectionView(coupons: snapshot.coupons) { _ in
+                    if let onReceiveCoupons {
+                        onReceiveCoupons(snapshot.coupons.map(\.claimOffer))
+                    } else {
+                        onUnavailableAction()
+                    }
+                }
+                .background(surface, in: RoundedRectangle(cornerRadius: 12))
             }
             if !snapshot.categories.isEmpty {
                 HomeCategorySectionView(

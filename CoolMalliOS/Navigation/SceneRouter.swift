@@ -12,6 +12,13 @@ final class SceneRouter {
     enum Tab: Hashable { case home; case category; case cart; case me }
     enum Route: Hashable {
         case cart
+        case login
+        case profile
+        case footprints
+        case addresses
+        case addressEditor(id: Int64?)
+        case coupons
+        case couponProducts(minimumPriceYuan: Decimal?)
         /// Typed route into the real read-only detail entry. The explicit DEBUG
         /// catalog fixture retains its original navigation-only probe.
         case productDetail(goodsID: Int64)

@@ -42,7 +42,8 @@
 
         init?(mode: HomeUITestSupport.FixtureMode?) {
             guard
-                mode == .imageSuccess || mode == .imageFailure || mode == .imagePending
+                mode == .couponMany || mode == .imageSuccess || mode == .imageFailure
+                    || mode == .imagePending
                     || mode == .bannerSingle || mode == .bannerMultiple || mode == .bannerReconcile
                     || mode == .bannerRefreshFailure || mode == .bannerPending
             else {
@@ -61,6 +62,7 @@
     }
 
     struct ImageUITestMetricsView: View {
+        var compact = false
         @ObservedObject private var metrics = ImageUITestSupport.metrics
         var body: some View {
             VStack {
@@ -73,20 +75,22 @@
                 if metrics.pendingPastDeadline {
                     Text("挂起超过10秒").accessibilityIdentifier("home.image.pending-aged")
                 }
-                HStack {
-                    Button("图片超时") { metrics.timeoutCommand += 1 }
-                        .accessibilityIdentifier("home.image.timeout")
-                    Button("返回旧图") { metrics.lateCommand += 1 }
-                        .accessibilityIdentifier("home.image.release-old")
-                }
-                if !metrics.urlStarts.isEmpty {
-                    Text(
-                        metrics.urlStarts.keys.sorted().map { key in
-                            "\(key)=\(metrics.urlStarts[key, default: 0])/\(metrics.urlCancellations[key, default: 0])"
-                        }.joined(separator: "；") + "；迟到尝试：\(metrics.lateAttempts)"
-                    )
-                    .font(.caption2).fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("home.image.urlMetrics")
+                if !compact {
+                    HStack {
+                        Button("图片超时") { metrics.timeoutCommand += 1 }
+                            .accessibilityIdentifier("home.image.timeout")
+                        Button("返回旧图") { metrics.lateCommand += 1 }
+                            .accessibilityIdentifier("home.image.release-old")
+                    }
+                    if !metrics.urlStarts.isEmpty {
+                        Text(
+                            metrics.urlStarts.keys.sorted().map { key in
+                                "\(key)=\(metrics.urlStarts[key, default: 0])/\(metrics.urlCancellations[key, default: 0])"
+                            }.joined(separator: "；") + "；迟到尝试：\(metrics.lateAttempts)"
+                        )
+                        .font(.caption2).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("home.image.urlMetrics")
+                    }
                 }
             }
         }
@@ -224,6 +228,7 @@
                 while true { try await Task.sleep(nanoseconds: 50_000_000) }
             }
             let base = try await FixtureHomeService().loadHome()
+            if mode == .couponMany { return couponSnapshot(base) }
             if mode.rawValue.hasPrefix("banner-") {
                 return bannerSnapshot(base: base, call: call)
             }
@@ -243,6 +248,37 @@
                 banners: banners, categories: base.categories,
                 allCategories: base.allCategories, featured: base.featured,
                 recommendations: base.recommendations, goods: base.goods, coupons: base.coupons)
+        }
+
+        private func couponSnapshot(_ base: HomeSnapshot) -> HomeSnapshot {
+            let image = URL(string: "https://image-tests.invalid/success-a")
+            func products(_ items: [HomeProductSummary]) -> [HomeProductSummary] {
+                items.map {
+                    HomeProductSummary(
+                        id: $0.id, title: $0.title, subtitle: $0.subtitle, imageURL: image,
+                        priceYuan: $0.priceYuan, sold: $0.sold)
+                }
+            }
+            let extra = (4...7).map { index in
+                HomeCouponSummary(
+                    claimOffer: CouponClaimOffer(
+                        id: Int64(860000 + index), title: "滚动测试券 \(index)",
+                        description: "第\(index)张券独立说明", amountYuan: Decimal(index),
+                        minimumSpendYuan: Decimal(index * 100), endTime: "2030-01-01 00:00:00"))
+            }
+            return HomeSnapshot(
+                banners: base.banners.enumerated().map { index, banner in
+                    HomeBanner(
+                        id: banner.id, description: banner.description,
+                        imageURL: index == 0 ? image : nil)
+                },
+                categories: base.categories.map {
+                    HomeCategory(
+                        id: $0.id, name: $0.name, parentID: $0.parentID, imageURL: image)
+                },
+                allCategories: base.allCategories, featured: products(base.featured),
+                recommendations: products(base.recommendations), goods: products(base.goods),
+                coupons: base.coupons + extra)
         }
 
         private func bannerSnapshot(base: HomeSnapshot, call: Int) -> HomeSnapshot {

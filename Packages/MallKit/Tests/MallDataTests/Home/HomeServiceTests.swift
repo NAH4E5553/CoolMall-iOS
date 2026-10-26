@@ -304,7 +304,7 @@ struct HomeServiceTests {
 
     @Test func unknownFieldsAreIgnored() async throws {
         let body = """
-            {"code":1000,"data":{"coupon":[{"id":860001,"title":"券","condition":"满299","type":9,
+            {"code":1000,"data":{"coupon":[{"id":860001,"title":"券","futureCondition":"满299","type":9,
             "startTime":"2026-01-01","unknownObject":{"a":1}}],"goods":[{"id":1,"title":"商品",
             "typeId":801001,"status":1,"createTime":"x","price":10}]}}
             """
@@ -362,6 +362,43 @@ struct HomeServiceTests {
         #expect(snapshot.goods[0].subtitle == nil)
         #expect(snapshot.goods[1].subtitle == nil)
         #expect(snapshot.goods[2].subtitle == "旗舰")
+    }
+
+    @Test func couponDetailsPreserveAllSevenInSourceOrderAndExactDecimal() async throws {
+        let rows = (1...7).map { index in
+            "{\"id\":\(index),\"title\":\"券\(index)\",\"amount\":30.25,"
+                + "\"description\":\"范围\(index)\",\"endTime\":\"2030-01-01 00:00:00\","
+                + "\"condition\":{\"fullAmount\":299.50}}"
+        }.joined(separator: ",")
+        let bytes = Data("{\"code\":1000,\"data\":{\"coupon\":[\(rows)]}}".utf8)
+        let snapshot = try await Self.service(StubTransport(responses: [Self.ok(bytes)])).loadHome()
+        #expect(snapshot.coupons.map(\.id) == (1...7).map(Int64.init))
+        let offer = try #require(snapshot.coupons.last?.claimOffer)
+        #expect(offer.amountYuan == Decimal(string: "30.25"))
+        #expect(offer.minimumSpendYuan == Decimal(string: "299.50"))
+        #expect(offer.endTime == "2030-01-01 00:00:00" && offer.description == "范围7")
+    }
+    @Test func couponOptionalDetailsStayUnknownAndStringConditionIsDecoded() async throws {
+        let bytes = Data(
+            #"{"code":1000,"data":{"coupon":[{"id":1,"title":"无详情"},{"id":2,"title":"字符串条件","condition":"{\"fullAmount\":999.75}"}]}}"#
+                .utf8)
+        let snapshot = try await Self.service(StubTransport(responses: [Self.ok(bytes)])).loadHome()
+        #expect(snapshot.coupons[0].claimOffer.amountYuan == nil)
+        #expect(snapshot.coupons[0].claimOffer.minimumSpendYuan == nil)
+        #expect(snapshot.coupons[0].claimOffer.endTime == nil)
+        #expect(snapshot.coupons[1].claimOffer.minimumSpendYuan == Decimal(string: "999.75"))
+    }
+    @Test func malformedOrNegativeCouponDetailsRejectPayloadInsteadOfInventingValues() async {
+        for field in [
+            #""amount":-1"#, #""amount":"30""#,
+            #""condition":{"fullAmount":-1}"#, #""condition":"not-json""#,
+        ] {
+            let bytes = Data(
+                "{\"code\":1000,\"data\":{\"coupon\":[{\"id\":1,\"title\":\"券\",\(field)}]}}".utf8)
+            await #expect(throws: HomeLoadFailure.invalidPayload) {
+                _ = try await Self.service(StubTransport(responses: [Self.ok(bytes)])).loadHome()
+            }
+        }
     }
 
     @Test func fixtureServiceMapsBundledValidEnvelope() async throws {

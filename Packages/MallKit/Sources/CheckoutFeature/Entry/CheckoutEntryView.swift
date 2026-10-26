@@ -37,6 +37,8 @@ let checkoutAccent = Color(red: 0.29, green: 0.32, blue: 1)
 @MainActor private struct CheckoutScreen: View {
     @State private var model: CheckoutViewModel
     @State private var showsCoupons = false
+    // Immutable selection at presentation; the ViewModel still owns the live choice.
+    @State private var presentedSelection: Int64?
     @State private var expanded: Set<Int64> = []
     @FocusState private var remarkFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
@@ -93,7 +95,8 @@ let checkoutAccent = Color(red: 0.29, green: 0.32, blue: 1)
                         .accessibilityIdentifier("checkout.subtotal")
                         Divider()
                         Button {
-                            remarkFocused = false; showsCoupons = true
+                            remarkFocused = false; presentedSelection = model.selectedCoupon?.id;
+                            showsCoupons = true
                         } label: {
                             HStack {
                                 Label("优惠券", systemImage: "ticket"); Spacer()
@@ -105,7 +108,8 @@ let checkoutAccent = Color(red: 0.29, green: 0.32, blue: 1)
                                 Image(systemName: "chevron.right").foregroundStyle(.secondary)
                             }.padding(16).contentShape(Rectangle())
                         }.buttonStyle(.plain).disabled(
-                            model.coupons == nil || model.submitting || model.writeLocked
+                            model.coupons == nil || model.loading || model.submitting
+                                || model.writeLocked
                         )
                         .accessibilityIdentifier("checkout.coupons")
                         if let estimate = model.estimate, estimate.discountYuan > 0 {
@@ -157,10 +161,6 @@ let checkoutAccent = Color(red: 0.29, green: 0.32, blue: 1)
                 FixedBottomSheet(title: "选择优惠券", onDismiss: { showsCoupons = false }) {
                     ScrollView {
                         VStack(spacing: 12) {
-                            Button("不使用优惠券") {
-                                model.chooseCoupon(nil); showsCoupons = false
-                            }
-                            .accessibilityIdentifier("checkout.coupon.none")
                             if model.coupons?.isEmpty == true { Text("暂无优惠券").padding() }
                             ForEach(model.coupons ?? []) { coupon in couponCard(coupon) }
                         }.padding(.horizontal, 16).padding(.bottom, 24)
@@ -202,6 +202,11 @@ let checkoutAccent = Color(red: 0.29, green: 0.32, blue: 1)
             .task(id: ReadKey(active: active, attempt: model.attempt)) {
                 await model.activate(active)
             }
+            .onChange(of: model.loading) { _, loading in
+                if loading { showsCoupons = false }
+            }
+            .onChange(of: model.coupons) { _, _ in showsCoupons = false }
+            .onChange(of: model.selectedCoupon?.id) { _, _ in showsCoupons = false }
             .onChange(of: model.recoveredOrderID) { _, id in
                 if active, let id { onCreated(id) }
             }
@@ -300,13 +305,21 @@ let checkoutAccent = Color(red: 0.29, green: 0.32, blue: 1)
                     ).font(.subheadline).foregroundStyle(.secondary)
                 }.buttonStyle(.plain)
                 Spacer()
-                Button(model.canUse(coupon) ? "选择" : "不可用") {
-                    model.chooseCoupon(coupon); showsCoupons = false
+                Button(
+                    presentedSelection == coupon.id
+                        ? "已选择" : (model.couponUnavailableReason(coupon) ?? "选择")
+                ) {
+                    model.toggleCoupon(coupon); showsCoupons = false
                 }.padding(.horizontal, 22).padding(.vertical, 10).foregroundStyle(.white)
                     .background(
                         checkoutAccent.opacity(model.canUse(coupon) ? 1 : 0.4), in: Capsule()
                     )
-                    .disabled(!model.canUse(coupon)).accessibilityIdentifier(
+                    .disabled(
+                        model.loading
+                            || (model.selectedCoupon?.id != coupon.id && !model.canUse(coupon))
+                    )
+                    .accessibilityHint(presentedSelection == coupon.id ? "再次点按取消选择" : "")
+                    .accessibilityIdentifier(
                         "checkout.coupon.\(coupon.id)")
             }.padding(12)
             if expanded.contains(coupon.id) {

@@ -54,7 +54,9 @@ public final class HTTPOrderService: OrdersLoading, CheckoutLoading, Sendable {
                 let defaultAddress: AddressDTO?; let userCoupon: [OwnedCouponDTO]?
             }
             let dto: ContextDTO = try Self.payload(bytes)
-            let coupons = try dto.userCoupon?.map { try $0.value() }
+            let coupons = try dto.userCoupon?.map {
+                try $0.value(availabilityContext: .checkoutCandidate)
+            }
             guard coupons.map({ Set($0.map(\.id)).count == $0.count }) ?? true else {
                 throw PageReadFailure.invalidResponse
             }

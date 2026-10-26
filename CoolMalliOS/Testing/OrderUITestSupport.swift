@@ -69,7 +69,7 @@
             guard accountID == 920001,
                 [
                     "success", "failure", "appendFailure", "empty", "contextFailure", "authFailure",
-                    "createRejected", "createUnknown", "reasonAuthFailure",
+                    "createRejected", "createUnknown", "reasonAuthFailure", "checkoutSparseCoupon",
                 ]
                 .contains(mode)
             else { throw PageReadFailure.invalidConfiguration }
@@ -142,7 +142,15 @@
                         id: 704, title: "额外优惠券", description: "测试规则", amountYuan: 10,
                         minimumSpendYuan: 299, startTime: "2020-01-01T00:00:00Z",
                         endTime: "2030-01-01T00:00:00Z", type: 0, status: 1, useStatus: 0),
-                ])
+                ].map { coupon in
+                    guard mode == "checkoutSparseCoupon" else { return coupon }
+                    return UserCoupon(
+                        id: coupon.id, title: coupon.title,
+                        description: coupon.description, amountYuan: coupon.amountYuan,
+                        minimumSpendYuan: coupon.id == 704 ? 9999 : coupon.minimumSpendYuan,
+                        startTime: nil, endTime: nil, type: nil, status: nil, useStatus: nil,
+                        availabilityContext: .checkoutCandidate)
+                })
         }
         private static func order(_ id: Int64, status: Int) -> OrderSnapshot {
             OrderSnapshot(

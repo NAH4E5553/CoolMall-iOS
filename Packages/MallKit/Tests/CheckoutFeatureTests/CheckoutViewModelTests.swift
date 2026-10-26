@@ -128,7 +128,7 @@ import Testing
         #expect(model.estimate?.totalYuan == 1968)
         let task = Task { await model.submit() }; await wait { creator.gate != nil }
         #expect(await model.submit() == nil); #expect(creator.calls == 1)
-        model.chooseCoupon(nil); #expect(model.selectedCoupon?.id == 1)
+        model.toggleCoupon(Self.coupon(1)); #expect(model.selectedCoupon?.id == 1)
         creator.gate?.resume(returning: 71); #expect(await task.value == 71)
         #expect(!model.canSubmit); #expect(model.writeLocked)
     }
@@ -174,6 +174,59 @@ import Testing
         #expect(await model.submit() == nil); #expect(creator.calls == 1)
         #expect(model.selectedCoupon?.id == 1); #expect(model.writeFailure == nil)
         creator.gate?.resume(returning: 71); #expect(await task.value == 71)
+    }
+
+    @Test func sparseCouponTogglesOffAndDefaultSelectionHasNoDeduction() async throws {
+        let loader = Loader()
+        let coupon = UserCoupon(
+            id: 7, title: "候选", description: "", amountYuan: 30,
+            minimumSpendYuan: 299, startTime: nil, endTime: nil, type: 0, status: 1,
+            useStatus: nil, availabilityContext: .checkoutCandidate)
+        loader.context = CheckoutContext(defaultAddress: Self.address(1), coupons: [coupon])
+        let model = CheckoutViewModel(accountID: 1, intent: try Self.intent(), loader: loader)
+        await model.activate(true)
+        #expect(model.selectedCoupon == nil); #expect(model.estimate?.totalYuan == 1998)
+        #expect(model.couponUnavailableReason(coupon) == nil)
+        model.toggleCoupon(coupon)
+        #expect(model.selectedCoupon?.id == 7); #expect(model.estimate?.totalYuan == 1968)
+        model.toggleCoupon(coupon)
+        #expect(model.selectedCoupon == nil); #expect(model.estimate?.discountYuan == 0)
+        #expect(model.estimate?.totalYuan == 1998); model.stop()
+    }
+    @Test func unavailableCandidatesExplainActualRestriction() throws {
+        let model = CheckoutViewModel(accountID: 1, intent: try Self.intent(), loader: Loader())
+        func coupon(minimum: Decimal? = 9999, used: Int? = nil) -> UserCoupon {
+            UserCoupon(
+                id: 7, title: "候选", description: "", amountYuan: 30,
+                minimumSpendYuan: minimum, startTime: nil, endTime: nil,
+                type: 0, status: 1, useStatus: used, availabilityContext: .checkoutCandidate)
+        }
+        #expect(model.couponUnavailableReason(coupon()) == "未满9999元")
+        #expect(model.couponUnavailableReason(coupon(minimum: nil)) == "门槛待确认")
+        #expect(model.couponUnavailableReason(coupon(used: 1)) == "已使用")
+        #expect(model.couponUnavailableReason(coupon(used: 2)) == "已过期")
+    }
+
+    @Test func refreshingCandidatesRejectsStaleToggleAndClearsChangedChoice() async throws {
+        let loader = Loader()
+        let model = CheckoutViewModel(accountID: 1, intent: try Self.intent(), loader: loader)
+        await model.activate(true); model.chooseCoupon(Self.coupon(1))
+        loader.hold = true
+        let refresh = Task { await model.refresh() }
+        await wait { loader.gate != nil }
+        #expect(model.loading)
+        model.toggleCoupon(Self.coupon(1))
+        #expect(model.selectedCoupon?.id == 1)
+        let changed = UserCoupon(
+            id: 1, title: "new", description: "changed", amountYuan: 50,
+            minimumSpendYuan: 299, startTime: nil, endTime: nil, type: 0, status: 1,
+            useStatus: nil, availabilityContext: .checkoutCandidate)
+        loader.gate?.resume(
+            returning: CheckoutContext(defaultAddress: Self.address(1), coupons: [changed]))
+        await refresh.value
+        #expect(!model.loading); #expect(model.selectedCoupon == nil)
+        #expect(model.estimate?.discountYuan == 0); #expect(model.estimate?.totalYuan == 1998)
+        model.stop()
     }
 
 }

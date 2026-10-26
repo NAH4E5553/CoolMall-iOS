@@ -185,7 +185,7 @@ struct OwnedCouponDTO: Decodable {
             }
         }
     }
-    func value() throws -> UserCoupon {
+    func value(availabilityContext: CouponAvailabilityContext = .owned) throws -> UserCoupon {
         guard id > 0, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             !amount.isNaN, amount >= 0,
             condition.map({ !$0.fullAmount.isNaN && $0.fullAmount >= 0 }) ?? true
@@ -193,7 +193,9 @@ struct OwnedCouponDTO: Decodable {
         return UserCoupon(
             id: id, title: title, description: description, amountYuan: amount,
             minimumSpendYuan: condition?.fullAmount,
-            startTime: startTime, endTime: endTime, type: type, status: status, useStatus: useStatus
+            startTime: startTime, endTime: endTime, type: type, status: status,
+            useStatus: useStatus,
+            availabilityContext: availabilityContext
         )
     }
 }

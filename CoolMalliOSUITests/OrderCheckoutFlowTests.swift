@@ -348,4 +348,39 @@ final class OrderCheckoutFlowTests: XCTestCase {
         capture(app, "cancel-reason-authentication-resumed")
     }
 
+    @MainActor func testSparseCheckoutCouponsAreSelectableAndNoSelectionMeansNoDiscount() {
+        let app = launch("checkoutSparseCoupon"); buy(app, quantity: 1)
+        XCTAssertTrue(app.buttons["checkout.coupons"].waitForExistence(timeout: 5))
+        XCTAssertFalse(node(app, "checkout.discount").exists)
+        let originalTotal = node(app, "checkout.total").label
+        app.buttons["checkout.coupons"].tap()
+        let first = app.buttons["checkout.coupon.701"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["不使用优惠券"].exists)
+        XCTAssertFalse(app.buttons["checkout.coupon.none"].exists)
+        XCTAssertFalse(app.buttons["checkout.submit"].exists)
+        XCTAssertFalse(app.buttons["checkout.address"].exists)
+        for id in [701, 702, 703] {
+            XCTAssertTrue(app.buttons["checkout.coupon.\(id)"].isEnabled)
+        }
+        let list = app.scrollViews["checkout.coupon.list"]; list.swipeUp()
+        let fourth = app.buttons["checkout.coupon.704"]
+        XCTAssertTrue(fourth.isHittable); XCTAssertFalse(fourth.isEnabled)
+        XCTAssertEqual(fourth.label, "未满9999元")
+        capture(app, "coupon-real-threshold-reason")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
+        XCTAssertFalse(node(app, "checkout.discount").exists)
+        XCTAssertEqual(node(app, "checkout.total").label, originalTotal)
+        app.buttons["checkout.coupons"].tap(); first.tap()
+        XCTAssertTrue(node(app, "checkout.discount").exists)
+        XCTAssertTrue(
+            node(app, "checkout.total").label.contains("3,969")
+                || node(app, "checkout.total").label.contains("3969"))
+        app.buttons["checkout.coupons"].tap()
+        XCTAssertEqual(first.label, "已选择"); first.tap()
+        XCTAssertFalse(node(app, "checkout.discount").exists)
+        XCTAssertEqual(node(app, "checkout.total").label, originalTotal)
+        capture(app, "coupon-deselected-no-deduction")
+    }
+
 }

@@ -75,7 +75,7 @@ import Observation
     }
     func retry() { needsRead = true; failure = nil; attempt += 1 }
     func chooseCoupon(_ coupon: UserCoupon?) {
-        guard active, !submitting, !writeLocked else { return }
+        guard active, !loading, !submitting, !writeLocked else { return }
         if let coupon {
             guard coupons?.contains(coupon) == true, canUse(coupon)
             else {
@@ -83,6 +83,9 @@ import Observation
             }
         }
         selectedCoupon = coupon; notice = nil
+    }
+    func toggleCoupon(_ coupon: UserCoupon) {
+        chooseCoupon(selectedCoupon?.id == coupon.id ? nil : coupon)
     }
     func addressSelection() -> @MainActor (ShippingAddress) -> Void {
         selectionGeneration &+= 1; let epoch = selectionGeneration
@@ -105,6 +108,22 @@ import Observation
     func canUse(_ coupon: UserCoupon) -> Bool {
         (try? CheckoutEstimate(subtotalYuan: intent.subtotalYuan, coupon: coupon, now: now()))
             != nil
+    }
+    func couponUnavailableReason(_ coupon: UserCoupon) -> String? {
+        switch coupon.availability(at: now()) {
+        case .used: return "已使用"
+        case .expired: return "已过期"
+        case .disabled: return "已停用"
+        case .upcoming: return "未开始"
+        case .unverified: return "状态待确认"
+        case .available: break
+        }
+        guard let minimum = coupon.minimumSpendYuan else { return "门槛待确认" }
+        guard (try? CartMoney(yuan: minimum)) != nil,
+            (try? CartMoney(yuan: coupon.amountYuan)) != nil
+        else { return "金额待确认" }
+        if intent.subtotalYuan < minimum { return "未满\(minimum)元" }
+        return canUse(coupon) ? nil : "信息待确认"
     }
     func clearWriteFailure() { writeFailure = nil }
     func submit() async -> Int64? {

@@ -133,4 +133,47 @@ struct OrderServiceTests {
         await transport.started(); task.cancel(); await transport.release()
         await #expect(throws: CancellationError.self) { try await task.value }
     }
+    @Test func confirmationProjectionPreservesMissingFieldsWithoutDisablingEveryCandidate()
+        async throws
+    {
+        let rows = (1...3).map { index in
+            "{\"id\":\(index),\"title\":\"coupon\",\"description\":\"rules\",\"amount\":30,\"condition\":{\"fullAmount\":299}}"
+        }.joined(separator: ",")
+        let bytes = Data(("{\"code\":1000,\"data\":{\"userCoupon\":[" + rows + "]}}").utf8)
+        let context = try await service(CouponTransport(data: bytes)).loadCheckout(accountID: 1)
+        let candidates = try #require(context.coupons)
+        #expect(candidates.count == 3)
+        for coupon in candidates {
+            #expect(coupon.availabilityContext == .checkoutCandidate)
+            #expect(coupon.availability() == .available)
+            #expect(coupon.useStatus == nil); #expect(coupon.endTime == nil)
+            #expect(coupon.type == nil); #expect(coupon.status == nil)
+            #expect(coupon.minimumSpendYuan == 299)
+        }
+        let ownedBytes = Data(
+            ("{\"code\":1000,\"data\":{\"list\":[" + rows
+                + "],\"pagination\":{\"page\":1,\"size\":10,\"total\":3}}}").utf8)
+        let owned = try await HTTPUserCouponService(
+            environment: .init(baseURL: base),
+            session: session(), transport: CouponTransport(data: ownedBytes)
+        )
+        .loadCoupons(accountID: 1, page: 1, pageSize: 10)
+        #expect(owned.items.count == 3)
+        #expect(
+            owned.items.allSatisfy {
+                $0.availabilityContext == .owned && $0.availability() == .unverified
+            })
+        // The Android model specifically documents useStatus as owned-page-only.
+        let missingUseStatus = Data(
+            #"{"code":1000,"data":{"userCoupon":[{"id":7,"title":"coupon","description":"rules","amount":30,"condition":{"fullAmount":299},"type":0,"status":1,"startTime":"2020-01-01T00:00:00Z","endTime":"2030-01-01T00:00:00Z"}]}}"#
+                .utf8)
+        let usual = try await service(CouponTransport(data: missingUseStatus)).loadCheckout(
+            accountID: 1)
+        let usualCoupon = try #require(usual.coupons?.first)
+        #expect(usualCoupon.useStatus == nil)
+        #expect(usualCoupon.availability() == .available)
+        #expect(try CheckoutEstimate(subtotalYuan: 299, coupon: usualCoupon).totalYuan == 269)
+
+    }
+
 }

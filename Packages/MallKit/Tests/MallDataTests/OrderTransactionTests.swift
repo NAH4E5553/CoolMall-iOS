@@ -42,6 +42,8 @@ struct OrderTransactionTests {
         let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
         let data = try #require(json["data"] as? [String: Any])
         #expect(data["addressId"] as? Int == 8); #expect(data["remark"] as? String == "请联系")
+        // An untouched coupon selection means no coupon ID is sent.
+        #expect(data["couponId"] == nil)
         let line = try #require((data["goodsList"] as? [[String: Any]])?.first)
         #expect(line["count"] as? Int == 2); #expect(line["specId"] == nil)
         let spec = try #require(line["spec"] as? [String: Any])

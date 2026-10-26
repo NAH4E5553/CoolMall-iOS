@@ -3,6 +3,8 @@ name: iOS Isolation Experiment (A/B)
 # Manual only. Not a required check and not a merge gate.
 on:
   workflow_dispatch:
+  push:
+    branches: [codex/offscreen-diagnosis]
 
 permissions:
   contents: read

@@ -43,7 +43,7 @@ PR_SMOKE = [NAVIGATION + '/' + name + '()' for name in [
     'testColdStartDefaultsToHomeWithFourTabs', 'testCartRouteHidesTabBarAndBackRestoresIt',
 ]] + [HOME + '/' + name + '()' for name in [
     'testValidFixtureShowsLoadedStateAndSectionCounts', 'testRetryFixtureFailsFirstReadThenSucceedsOnUserRetry',
-    'testReTapScrollsToTopAndRefreshesWithNewSnapshot', 'testBannerAutoplayArmsAfterPushedRoutePopsBack',
+    'testReTapScrollsToTopAndRefreshesWithNewSnapshot',
     'testBannerObservationBudgetRetriesConsumeTheOriginalDeadline',
     'testBannerObservationBudgetLocalCapCannotEnlargeOrResetTheBudget',
     'testBannerObservationBudgetCorrectValueReturnedLateStillFails',

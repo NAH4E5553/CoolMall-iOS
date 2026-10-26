@@ -14,8 +14,7 @@
         "CoolMalliOSUITests/HomeLoadTests/testSelectedBannerAndBottomPositionRetainedAcrossTabs()",
         "CoolMalliOSUITests/HomeLoadTests/testBannerFastPageRoundTripsAreBounded()",
         "CoolMalliOSUITests/HomeLoadTests/testBannerSelectedPageSurvivesBusyRetapsAndCancelledRefresh()",
-        "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()",
-        "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayArmsAfterPushedRoutePopsBack()"
+        "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()"
       ]
     }
   }

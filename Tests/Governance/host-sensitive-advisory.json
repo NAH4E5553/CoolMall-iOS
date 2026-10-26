@@ -20,6 +20,17 @@
       "replacement": [
         "CatalogFeatureTests/HomeBannerAutoplayGateTests/dragPausesAndOffscreenBannerPauses()"
       ]
+    },
+    {
+      "method": "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayArmsAfterPushedRoutePopsBack()",
+      "owner": "@NAH4E5553",
+      "expires": "2026-12-31",
+      "reason": "Shared CI host / banner observation expiry; the autoplay arm contract is covered deterministically below the UI.",
+      "replacement": [
+        "CatalogFeatureTests/HomeBannerAutoplayGateTests/manualGateInactiveHomeOrScenePauses()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P02PauseCancelsProductionWaitAndRejectsLateWake()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P04RapidPauseReturnHasOneCurrentTaskAndNoDuplicateCommit()"
+      ]
     }
   ]
 }

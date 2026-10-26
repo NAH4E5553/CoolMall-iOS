@@ -156,7 +156,7 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(scope['mode'], 'selected')
         required = S.resolve(scope, RAW, TARGETS)
         self.assertTrue(set(S.PR_SMOKE) <= set(required['expected']))
-        self.assertIn(S.HOME + '/testBannerAutoplayArmsAfterPushedRoutePopsBack()', required['expected'])
+        self.assertNotIn(S.HOME + '/testBannerAutoplayArmsAfterPushedRoutePopsBack()', required['expected'])
         self.assertNotIn(S.HOME + '/testApprovedHomeDisplayAtAccessibilitySize()', required['expected'])
         self.assertNotIn(S.HOME + '/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()', required['expected'])
         self.assertGreater(sum('HomeBannerProductionTimingTests/' in x for x in required['expected']), 0)

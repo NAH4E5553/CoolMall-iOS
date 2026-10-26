@@ -69,6 +69,7 @@ VERIFICATION_PATHS = {'.github/workflows/ios.yml', '.github/workflows/ios-full-a
         'select-test-scope.py', 'select-simulator.py', 'verification-timing.py',
         'verify-local.sh', 'with-banner-trace.py', 'classify-ci-changes.py',
         'test-duration-summary.py', 'check-test-support.py',
+        'check-test-support-scope.py', 'check-test-support-execution.py',
     ]}
 TEST_SUPPORT_MANIFEST = 'Tests/Governance/test-support-impact.json'
 

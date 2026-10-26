@@ -47,6 +47,9 @@ jobs:
   verify:
     needs: [classify]
     if: ${{ needs.classify.outputs.run_verification == 'true' }}
+    concurrency:
+      group: mall-ui-runner
+      cancel-in-progress: false
     name: F0 verification
     runs-on: xcode-27
     timeout-minutes: 120

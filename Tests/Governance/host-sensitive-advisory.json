@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "method": "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayPausesWhileAwayAndResumesFullInterval()",
+      "owner": "@NAH4E5553",
+      "expires": "2026-12-31",
+      "reason": "Shared CI host app/runner lifecycle and waiter timing; local repeated runs pass but required cannot guarantee a clean process.",
+      "replacement": [
+        "CatalogFeatureTests/HomeBannerAutoplayTests/pauseCancelsAndResumeDoesNotCatchUp()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P02PauseCancelsProductionWaitAndRejectsLateWake()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P04RapidPauseReturnHasOneCurrentTaskAndNoDuplicateCommit()"
+      ]
+    },
+    {
+      "method": "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayPausesWhileBannerIsOffscreen()",
+      "owner": "@NAH4E5553",
+      "expires": "2026-12-31",
+      "reason": "Shared CI host app/runner termination failure; the pause contract is covered deterministically below the UI.",
+      "replacement": [
+        "CatalogFeatureTests/HomeBannerAutoplayGateTests/dragPausesAndOffscreenBannerPauses()"
+      ]
+    }
+  ]
+}

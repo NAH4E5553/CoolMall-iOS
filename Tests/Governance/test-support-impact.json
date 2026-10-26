@@ -15,8 +15,6 @@
         "CoolMalliOSUITests/HomeLoadTests/testBannerFastPageRoundTripsAreBounded()",
         "CoolMalliOSUITests/HomeLoadTests/testBannerSelectedPageSurvivesBusyRetapsAndCancelledRefresh()",
         "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()",
-        "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayPausesWhileAwayAndResumesFullInterval()",
-        "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayPausesWhileBannerIsOffscreen()",
         "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayArmsAfterPushedRoutePopsBack()"
       ]
     }

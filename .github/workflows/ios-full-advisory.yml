@@ -21,6 +21,9 @@ concurrency:
 jobs:
   full:
     name: Full regression (advisory)
+    concurrency:
+      group: mall-ui-runner
+      cancel-in-progress: false
     runs-on: xcode-27
     timeout-minutes: 120
     env:

@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PATH = ROOT / 'Tests/Governance/test-support-impact.json'
+ADVISORY = ROOT / 'Tests/Governance/host-sensitive-advisory.json'
 ID = re.compile(r'[A-Za-z_][A-Za-z_0-9]*(?:/[A-Za-z_][A-Za-z_0-9]*)+/[A-Za-z_][A-Za-z_0-9]*\([A-Za-z_0-9:]*\)')
 
 
@@ -32,7 +33,25 @@ def main():
             if not isinstance(methods, list) or not methods or not all(
                     isinstance(m, str) and ID.fullmatch(m) for m in methods):
                 raise ValueError(f'{path}: methods invalid')
-        print(f'TEST-SUPPORT: {len(files)} file(s), owners/expiry valid')
+        advisory = json.loads(ADVISORY.read_text())
+        entries = advisory.get('entries')
+        if not isinstance(entries, list) or not entries:
+            raise ValueError('advisory entries missing')
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise ValueError('advisory entry must be an object')
+            if not str(entry.get('owner', '')).strip():
+                raise ValueError('advisory owner missing')
+            expires = datetime.date.fromisoformat(entry.get('expires', ''))
+            if expires < datetime.date.today():
+                raise ValueError(f'advisory expired {expires}')
+            if not ID.fullmatch(str(entry.get('method', ''))):
+                raise ValueError('advisory method invalid')
+            replacement = entry.get('replacement')
+            if not isinstance(replacement, list) or not replacement or not all(
+                    isinstance(m, str) and ID.fullmatch(m) for m in replacement):
+                raise ValueError('advisory replacement invalid')
+        print(f'TEST-SUPPORT: {len(files)} file(s), {len(entries)} advisory method(s), owners/expiry valid')
         return 0
     except (ValueError, TypeError, KeyError, json.JSONDecodeError, OSError) as error:
         print(f'TEST-SUPPORT: {error}', file=sys.stderr)

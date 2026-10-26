@@ -30,6 +30,10 @@ python3 Scripts/select-test-scope.py check-source "$RUN/test-scope.json" "$RUN/e
 python3 Scripts/check-test-support-scope.py --scope "$RUN/test-scope.json" \
   --enumeration "$RUN/test-enumeration.json" --tier required
 python3 Scripts/split-test-shards.py --expected "$RUN/expected-tests.txt" --out-dir "$RUN/shards"
+for SPEC in   "cycle:testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag"   "pending:testBannerPendingPageCancellationAndTabRetention"   "reconciliation:testBannerReconciliationInOneRefreshSequence"; do
+  NAME=${SPEC%%:*}; METHOD=${SPEC#*:}
+  printf '%s\n' "CoolMalliOSUITests/HomeLoadTests/$METHOD()" > "$RUN/shards/expected-single-$NAME.txt"
+done
 python3 - "$RUN" <<'PY'
 import copy, json, sys
 from pathlib import Path

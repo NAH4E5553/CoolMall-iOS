@@ -41,7 +41,9 @@ for name in ('all', 'ui', 'nonui'):
     scope['mode'] = 'selected'
     scope['reason'] = 'isolation-experiment-shard'
     scope['expected'] = methods
-    scope['discovered'] = list(methods)
+    # check-test-results validates discovery targets against the full
+    # enumeration; only expected is sharded. Keep the parent discovered list.
+    scope['discovered'] = parent['discovered']
     (run / 'shards' / f'scope-{name}.json').write_text(json.dumps(scope, indent=2) + '\n')
 PY
 find "$RUN" -maxdepth 4 -name '*.xctestrun' -print

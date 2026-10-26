@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "files": {
+    "CoolMalliOSUITests/HomeLoadTests.swift": {
+      "owner": "@NAH4E5553",
+      "expires": "2026-12-31",
+      "reason": "Banner helper/geometry changes affect every test that observes or drives the carousel; full 201 remains in nightly/advisory.",
+      "methods": [
+        "CoolMalliOSUITests/HomeLoadTests/testValidFixtureShowsSixSectionsInPRDOrder()",
+        "CoolMalliOSUITests/HomeLoadTests/testBannerManualPagingBoundariesFailureAndMissing()",
+        "CoolMalliOSUITests/HomeLoadTests/testBannerReconciliationInOneRefreshSequence()",
+        "CoolMalliOSUITests/HomeLoadTests/testBannerRefreshFailurePreservesSelectedPageAndRetry()",
+        "CoolMalliOSUITests/HomeLoadTests/testBannerPendingPageCancellationAndTabRetention()",
+        "CoolMalliOSUITests/HomeLoadTests/testSelectedBannerAndBottomPositionRetainedAcrossTabs()",
+        "CoolMalliOSUITests/HomeLoadTests/testBannerFastPageRoundTripsAreBounded()",
+        "CoolMalliOSUITests/HomeLoadTests/testBannerSelectedPageSurvivesBusyRetapsAndCancelledRefresh()",
+        "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()",
+        "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayPausesWhileAwayAndResumesFullInterval()",
+        "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayPausesWhileBannerIsOffscreen()",
+        "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayArmsAfterPushedRoutePopsBack()"
+      ]
+    }
+  }
+}

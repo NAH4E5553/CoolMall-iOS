@@ -2,6 +2,7 @@
 """Conservative PR scope and Xcode's actual flat JSON inventory; no source parsing."""
 import hashlib
 import importlib.util
+import datetime
 import json
 import os
 from pathlib import Path
@@ -67,14 +68,42 @@ VERIFICATION_PATHS = {'.github/workflows/ios.yml', '.github/workflows/ios-full-a
         'ci-deferred-policy.py', 'finalize-verification.py', 'prepare-ui-test-runner.py',
         'select-test-scope.py', 'select-simulator.py', 'verification-timing.py',
         'verify-local.sh', 'with-banner-trace.py', 'classify-ci-changes.py',
-        'test-duration-summary.py',
+        'test-duration-summary.py', 'check-test-support.py',
     ]}
+TEST_SUPPORT_MANIFEST = 'Tests/Governance/test-support-impact.json'
+
+
+def test_support_methods(root, path):
+    """File-level test-support entry: owner, expiry, and affected methods."""
+    manifest = Path(root) / TEST_SUPPORT_MANIFEST
+    if not manifest.is_file():
+        return None
+    try:
+        data = json.loads(manifest.read_text())
+        entry = data.get('files', {}).get(path)
+        if not entry:
+            return None
+        require(entry.get('owner', '').strip(), 'test-support owner missing')
+        expires = datetime.date.fromisoformat(entry.get('expires', ''))
+        require(expires >= datetime.date.today(), 'test-support entry expired')
+        methods = entry.get('methods') or []
+        require(methods and all(isinstance(m, str) and ID.fullmatch(m) for m in methods),
+                'test-support methods invalid')
+        return set(methods)
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError, OSError):
+        return None
+
+
 PRODUCTION_TIMING = [CATALOG + '/HomeBannerProductionTimingTests/' + name + '()' for name in [
     'P01DeadlineBeforeAndAtAdvanceActualSelection', 'P02PauseCancelsProductionWaitAndRejectsLateWake',
     'P03ReturnArmsNewFullPeriodWithoutCatchup', 'P04RapidPauseReturnHasOneCurrentTaskAndNoDuplicateCommit',
     'P05RealHostRemovalCancelsAutoplayWait', 'P06HiddenFullCycleStillFailsAudit',
 ]]
-MAPPING_HASH = hashlib.sha256(json.dumps([PATH_TARGETS, PR_SMOKE, sorted(VERIFICATION_PATHS), CATEGORY, PRODUCTION_TIMING], sort_keys=True).encode()).hexdigest()
+TEST_SUPPORT_MANIFEST_BYTES = ((ROOT / TEST_SUPPORT_MANIFEST).read_text()
+                                if (ROOT / TEST_SUPPORT_MANIFEST).is_file() else '')
+MAPPING_HASH = hashlib.sha256(json.dumps([PATH_TARGETS, PR_SMOKE, sorted(VERIFICATION_PATHS), CATEGORY,
+                                          PRODUCTION_TIMING, TEST_SUPPORT_MANIFEST_BYTES],
+                                         sort_keys=True).encode()).hexdigest()
 
 ID = re.compile(r'[A-Za-z_][A-Za-z_0-9]*(?:/[A-Za-z_][A-Za-z_0-9]*)+/[A-Za-z_][A-Za-z_0-9]*\([A-Za-z_0-9:]*\)|[A-Za-z_][A-Za-z_0-9]*/[A-Za-z_][A-Za-z_0-9]*\([A-Za-z_0-9:]*\)')
 
@@ -190,6 +219,8 @@ def plan(root, env, history=None):
         result['paths'] = [dict(status=status, path=path) for status, path in changes]
         selected = set(PR_SMOKE)
         method_only = False
+        test_support = False
+        test_support_only = True
         for status, path in changes:
             if CLASSIFY.is_document(path) or path in VERIFICATION_PATHS or path.startswith('Tests/Governance/'):
                 continue
@@ -211,14 +242,24 @@ def plan(root, env, history=None):
                 result.setdefault('testMethods', []).extend(sorted(method_scope))
                 method_only = True
                 continue
+            supported = test_support_methods(root, path) if method_scope is None else None
+            if supported:
+                selected.update(supported)
+                result.setdefault('testSupportMethods', []).extend(sorted(supported))
+                test_support = True
+                continue
+            test_support_only = False
             if re.search(r'\b(public|open|func|struct|class|extension|typealias|import)\b|@(?:Test|Suite)\b', changed):
                 result['reason'] = 'declaration-api-or-test-discovery-change'
                 return result
             selected.update(PATH_TARGETS[path])
             method_only = False
         result.update(mode='selected', targets=sorted(selected))
-        result['reason'] = ('test-method-impact' if method_only and result.get('testMethods')
-                            else 'required-baseline-plus-current-impact')
+        if test_support and test_support_only:
+            result['reason'] = 'test-support-targeted'
+        else:
+            result['reason'] = ('test-method-impact' if method_only and result.get('testMethods')
+                                else 'required-baseline-plus-current-impact')
     except (ValueError, OSError, UnicodeError, subprocess.SubprocessError):
         result['reason'] = 'diff-unavailable-full'
     return result

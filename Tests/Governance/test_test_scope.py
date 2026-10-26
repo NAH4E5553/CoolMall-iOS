@@ -274,6 +274,69 @@ class SelectionTests(unittest.TestCase):
         self.assertIn(S.HOME, result['targets'])
         self.assertNotIn('testMethods', result)
 
+    def test_test_support_helper_selects_manifest_methods_and_smoke(self):
+        path = 'CoolMalliOSUITests/HomeLoadTests.swift'
+        source = (
+            'import XCTest\n'
+            'final class HomeLoadTests: XCTestCase {\n'
+            '    func testA() { _ = helper() }\n'
+            '    func testB() { _ = helper() }\n'
+            '    @MainActor private func helper() -> Int {\n'
+            '        return 1\n'
+            '    }\n'
+            '}\n'
+        )
+        self.write(path, source)
+        self.write('Tests/Governance/test-support-impact.json', json.dumps({
+            'schemaVersion': 1,
+            'files': {
+                path: {
+                    'owner': '@owner',
+                    'expires': '2099-12-31',
+                    'methods': [
+                        'CoolMalliOSUITests/HomeLoadTests/testA()',
+                        'CoolMalliOSUITests/HomeLoadTests/testB()',
+                    ],
+                }
+            },
+        }))
+        base = self.commit()
+        self.write(path, source.replace('return 1', 'return 2'))
+        head = self.commit()
+        result = S.plan(
+            self.root,
+            dict(GITHUB_EVENT_NAME='pull_request', MALL_VERIFICATION_TIER='required',
+                 MALL_DIFF_BASE=base, MALL_DIFF_HEAD=head))
+        self.assertEqual(result['reason'], 'test-support-targeted')
+        self.assertEqual(result['testSupportMethods'],
+                         ['CoolMalliOSUITests/HomeLoadTests/testA()',
+                          'CoolMalliOSUITests/HomeLoadTests/testB()'])
+        self.assertIn(S.PR_SMOKE[0], result['targets'])
+
+    def test_expired_test_support_manifest_does_not_apply(self):
+        path = 'CoolMalliOSUITests/HomeLoadTests.swift'
+        source = (
+            'import XCTest\n'
+            'final class HomeLoadTests: XCTestCase {\n'
+            '    func testA() { _ = helper() }\n'
+            '    func helper() -> Int { return 1 }\n'
+            '}\n'
+        )
+        self.write(path, source)
+        self.write('Tests/Governance/test-support-impact.json', json.dumps({
+            'schemaVersion': 1,
+            'files': {path: {'owner': '@owner', 'expires': '2000-01-01',
+                             'methods': ['CoolMalliOSUITests/HomeLoadTests/testA()']}},
+        }))
+        base = self.commit()
+        self.write(path, source.replace('return 1', 'return 2'))
+        head = self.commit()
+        result = S.plan(
+            self.root,
+            dict(GITHUB_EVENT_NAME='pull_request', MALL_VERIFICATION_TIER='required',
+                 MALL_DIFF_BASE=base, MALL_DIFF_HEAD=head))
+        self.assertNotEqual(result['reason'], 'test-support-targeted')
+
     def test_local_dirty_required_captures_actual_source_and_unknown_falls_back(self):
         env = dict(MALL_VERIFICATION_TIER='required')
         self.write('Scripts/check-test-results.py', '# untracked tooling\n')

@@ -4,15 +4,6 @@ on:
   pull_request:
   push:
     branches: [main]
-  schedule:
-    - cron: '23 3 * * 1'
-  workflow_dispatch:
-    inputs:
-      collect_diagnostics:
-        description: Collect detailed Xcode diagnostics on failure (may take several minutes)
-        type: boolean
-        required: false
-        default: false
 
 permissions:
   contents: read

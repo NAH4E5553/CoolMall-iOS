@@ -212,8 +212,10 @@ def plan(root, env, history=None):
         require(tier == 'full', 'scheduled/manual verification must be full')
     if event == 'push':
         require(tier in {'required', 'full'}, 'unknown push verification tier')
+    blocked = advisory_methods(root) if tier == 'required' else set()
     result = dict(source=identity, mode='full', tier=tier, reason='complete-regression', targets=[],
-                  mappingSHA256=MAPPING_HASH, paths=[], testPlan='CoolMalliOS', configuration='Debug')
+                  mappingSHA256=MAPPING_HASH, paths=[], testPlan='CoolMalliOS', configuration='Debug',
+                  advisoryMethods=sorted(blocked))
     head = env.get('MALL_DIFF_HEAD', identity['head'])
     if event == 'pull_request':
         require(re.fullmatch(r'[0-9a-f]{40}', head or '') and identity['head'] == head
@@ -273,7 +275,6 @@ def plan(root, env, history=None):
             selected.update(PATH_TARGETS[path])
             method_only = False
         if tier == 'required':
-            blocked = advisory_methods(root)
             selected = {item for item in selected if item not in blocked}
             if result.get('testSupportMethods'):
                 result['testSupportMethods'] = [m for m in result['testSupportMethods']
@@ -291,12 +292,17 @@ def plan(root, env, history=None):
 
 def selected_methods(scope, methods):
     if scope['mode'] == 'full':
-        return list(methods)
-    selected = [m for m in methods if m.split('/')[0] != 'CoolMalliOSUITests'
-                or m.startswith(CATEGORY + '/')
-                or any(m == prefix or m.startswith(prefix + '/') for prefix in scope['targets'])]
+        selected = list(methods)
+    else:
+        selected = [m for m in methods if m.split('/')[0] != 'CoolMalliOSUITests'
+                    or m.startswith(CATEGORY + '/')
+                    or any(m == prefix or m.startswith(prefix + '/') for prefix in scope['targets'])]
+    blocked = set(scope.get('advisoryMethods', [])) if scope.get('tier') == 'required' else set()
+    if blocked:
+        selected = [m for m in selected if m not in blocked]
+    targets = [prefix for prefix in scope['targets'] if prefix not in blocked]
     require(all(any(m == prefix or m.startswith(prefix + '/') for m in selected)
-                for prefix in scope['targets']), 'expected target/method missing')
+                for prefix in targets), 'expected target/method missing')
     return selected
 
 

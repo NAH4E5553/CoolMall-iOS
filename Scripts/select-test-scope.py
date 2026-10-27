@@ -92,7 +92,8 @@ def test_support_methods(root, path):
         expires = datetime.date.fromisoformat(entry.get('expires', ''))
         require(expires >= datetime.date.today(), 'test-support entry expired')
         methods = entry.get('methods') or []
-        require(methods and all(isinstance(m, str) and ID.fullmatch(m) for m in methods),
+        require((methods or entry.get('advisoryOnly') is True)
+                and all(isinstance(m, str) and ID.fullmatch(m) for m in methods),
                 'test-support methods invalid')
         return set(methods)
     except (ValueError, KeyError, TypeError, json.JSONDecodeError, OSError):
@@ -248,7 +249,7 @@ def plan(root, env, history=None):
                 method_only = True
                 continue
             supported = test_support_methods(root, path) if method_scope is None else None
-            if supported:
+            if supported is not None:
                 selected.update(supported)
                 result.setdefault('testSupportMethods', []).extend(sorted(supported))
                 test_support = True

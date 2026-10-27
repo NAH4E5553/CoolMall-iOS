@@ -30,8 +30,9 @@ def main():
             if expires < datetime.date.today():
                 raise ValueError(f'{path}: expired {expires}')
             methods = entry.get('methods')
-            if not isinstance(methods, list) or not methods or not all(
-                    isinstance(m, str) and ID.fullmatch(m) for m in methods):
+            if not isinstance(methods, list) or not methods and not entry.get('advisoryOnly'):
+                raise ValueError(f'{path}: methods invalid')
+            if methods and not all(isinstance(m, str) and ID.fullmatch(m) for m in methods):
                 raise ValueError(f'{path}: methods invalid')
         advisory = json.loads(ADVISORY.read_text())
         entries = advisory.get('entries')

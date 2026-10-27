@@ -31,6 +31,123 @@
         "CatalogFeatureTests/HomeBannerProductionTimingTests/P02PauseCancelsProductionWaitAndRejectsLateWake()",
         "CatalogFeatureTests/HomeBannerProductionTimingTests/P04RapidPauseReturnHasOneCurrentTaskAndNoDuplicateCommit()"
       ]
+    },
+    {
+      "method": "CoolMalliOSUITests/HomeLoadTests/testValidFixtureShowsSixSectionsInPRDOrder()",
+      "owner": "@NAH4E5553",
+      "expires": "2026-12-31",
+      "reason": "CI-only 17-UI group execution fails while the same methods pass independently; not reproduced locally. Keep in full/nightly with owner/expiry.",
+      "replacement": [
+        "CatalogFeatureTests/HomeBannerAutoplayGateTests/dragPausesAndOffscreenBannerPauses()",
+        "CatalogFeatureTests/HomeBannerAutoplayTests/pauseCancelsAndResumeDoesNotCatchUp()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P02PauseCancelsProductionWaitAndRejectsLateWake()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P04RapidPauseReturnHasOneCurrentTaskAndNoDuplicateCommit()",
+        "CatalogFeatureTests/HomeViewModelTests/refreshFailureKeepsOldContentHintAndRetryRefreshSucceeds()"
+      ]
+    },
+    {
+      "method": "CoolMalliOSUITests/HomeLoadTests/testBannerManualPagingBoundariesFailureAndMissing()",
+      "owner": "@NAH4E5553",
+      "expires": "2026-12-31",
+      "reason": "CI-only 17-UI group execution fails while the same methods pass independently; not reproduced locally. Keep in full/nightly with owner/expiry.",
+      "replacement": [
+        "CatalogFeatureTests/HomeBannerAutoplayGateTests/dragPausesAndOffscreenBannerPauses()",
+        "CatalogFeatureTests/HomeBannerAutoplayTests/pauseCancelsAndResumeDoesNotCatchUp()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P02PauseCancelsProductionWaitAndRejectsLateWake()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P04RapidPauseReturnHasOneCurrentTaskAndNoDuplicateCommit()",
+        "CatalogFeatureTests/HomeViewModelTests/refreshFailureKeepsOldContentHintAndRetryRefreshSucceeds()"
+      ]
+    },
+    {
+      "method": "CoolMalliOSUITests/HomeLoadTests/testBannerReconciliationInOneRefreshSequence()",
+      "owner": "@NAH4E5553",
+      "expires": "2026-12-31",
+      "reason": "CI-only 17-UI group execution fails while the same methods pass independently; not reproduced locally. Keep in full/nightly with owner/expiry.",
+      "replacement": [
+        "CatalogFeatureTests/HomeBannerAutoplayGateTests/dragPausesAndOffscreenBannerPauses()",
+        "CatalogFeatureTests/HomeBannerAutoplayTests/pauseCancelsAndResumeDoesNotCatchUp()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P02PauseCancelsProductionWaitAndRejectsLateWake()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P04RapidPauseReturnHasOneCurrentTaskAndNoDuplicateCommit()",
+        "CatalogFeatureTests/HomeViewModelTests/refreshFailureKeepsOldContentHintAndRetryRefreshSucceeds()"
+      ]
+    },
+    {
+      "method": "CoolMalliOSUITests/HomeLoadTests/testBannerRefreshFailurePreservesSelectedPageAndRetry()",
+      "owner": "@NAH4E5553",
+      "expires": "2026-12-31",
+      "reason": "CI-only 17-UI group execution fails while the same methods pass independently; not reproduced locally. Keep in full/nightly with owner/expiry.",
+      "replacement": [
+        "CatalogFeatureTests/HomeBannerAutoplayGateTests/dragPausesAndOffscreenBannerPauses()",
+        "CatalogFeatureTests/HomeBannerAutoplayTests/pauseCancelsAndResumeDoesNotCatchUp()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P02PauseCancelsProductionWaitAndRejectsLateWake()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P04RapidPauseReturnHasOneCurrentTaskAndNoDuplicateCommit()",
+        "CatalogFeatureTests/HomeViewModelTests/refreshFailureKeepsOldContentHintAndRetryRefreshSucceeds()"
+      ]
+    },
+    {
+      "method": "CoolMalliOSUITests/HomeLoadTests/testBannerPendingPageCancellationAndTabRetention()",
+      "owner": "@NAH4E5553",
+      "expires": "2026-12-31",
+      "reason": "CI-only 17-UI group execution fails while the same methods pass independently; not reproduced locally. Keep in full/nightly with owner/expiry.",
+      "replacement": [
+        "CatalogFeatureTests/HomeBannerAutoplayGateTests/dragPausesAndOffscreenBannerPauses()",
+        "CatalogFeatureTests/HomeBannerAutoplayTests/pauseCancelsAndResumeDoesNotCatchUp()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P02PauseCancelsProductionWaitAndRejectsLateWake()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P04RapidPauseReturnHasOneCurrentTaskAndNoDuplicateCommit()",
+        "CatalogFeatureTests/HomeViewModelTests/refreshFailureKeepsOldContentHintAndRetryRefreshSucceeds()"
+      ]
+    },
+    {
+      "method": "CoolMalliOSUITests/HomeLoadTests/testSelectedBannerAndBottomPositionRetainedAcrossTabs()",
+      "owner": "@NAH4E5553",
+      "expires": "2026-12-31",
+      "reason": "CI-only 17-UI group execution fails while the same methods pass independently; not reproduced locally. Keep in full/nightly with owner/expiry.",
+      "replacement": [
+        "CatalogFeatureTests/HomeBannerAutoplayGateTests/dragPausesAndOffscreenBannerPauses()",
+        "CatalogFeatureTests/HomeBannerAutoplayTests/pauseCancelsAndResumeDoesNotCatchUp()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P02PauseCancelsProductionWaitAndRejectsLateWake()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P04RapidPauseReturnHasOneCurrentTaskAndNoDuplicateCommit()",
+        "CatalogFeatureTests/HomeViewModelTests/refreshFailureKeepsOldContentHintAndRetryRefreshSucceeds()"
+      ]
+    },
+    {
+      "method": "CoolMalliOSUITests/HomeLoadTests/testBannerFastPageRoundTripsAreBounded()",
+      "owner": "@NAH4E5553",
+      "expires": "2026-12-31",
+      "reason": "CI-only 17-UI group execution fails while the same methods pass independently; not reproduced locally. Keep in full/nightly with owner/expiry.",
+      "replacement": [
+        "CatalogFeatureTests/HomeBannerAutoplayGateTests/dragPausesAndOffscreenBannerPauses()",
+        "CatalogFeatureTests/HomeBannerAutoplayTests/pauseCancelsAndResumeDoesNotCatchUp()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P02PauseCancelsProductionWaitAndRejectsLateWake()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P04RapidPauseReturnHasOneCurrentTaskAndNoDuplicateCommit()",
+        "CatalogFeatureTests/HomeViewModelTests/refreshFailureKeepsOldContentHintAndRetryRefreshSucceeds()"
+      ]
+    },
+    {
+      "method": "CoolMalliOSUITests/HomeLoadTests/testBannerSelectedPageSurvivesBusyRetapsAndCancelledRefresh()",
+      "owner": "@NAH4E5553",
+      "expires": "2026-12-31",
+      "reason": "CI-only 17-UI group execution fails while the same methods pass independently; not reproduced locally. Keep in full/nightly with owner/expiry.",
+      "replacement": [
+        "CatalogFeatureTests/HomeBannerAutoplayGateTests/dragPausesAndOffscreenBannerPauses()",
+        "CatalogFeatureTests/HomeBannerAutoplayTests/pauseCancelsAndResumeDoesNotCatchUp()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P02PauseCancelsProductionWaitAndRejectsLateWake()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P04RapidPauseReturnHasOneCurrentTaskAndNoDuplicateCommit()",
+        "CatalogFeatureTests/HomeViewModelTests/refreshFailureKeepsOldContentHintAndRetryRefreshSucceeds()"
+      ]
+    },
+    {
+      "method": "CoolMalliOSUITests/HomeLoadTests/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()",
+      "owner": "@NAH4E5553",
+      "expires": "2026-12-31",
+      "reason": "CI-only 17-UI group execution fails while the same methods pass independently; not reproduced locally. Keep in full/nightly with owner/expiry.",
+      "replacement": [
+        "CatalogFeatureTests/HomeBannerAutoplayGateTests/dragPausesAndOffscreenBannerPauses()",
+        "CatalogFeatureTests/HomeBannerAutoplayTests/pauseCancelsAndResumeDoesNotCatchUp()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P02PauseCancelsProductionWaitAndRejectsLateWake()",
+        "CatalogFeatureTests/HomeBannerProductionTimingTests/P04RapidPauseReturnHasOneCurrentTaskAndNoDuplicateCommit()",
+        "CatalogFeatureTests/HomeViewModelTests/refreshFailureKeepsOldContentHintAndRetryRefreshSucceeds()"
+      ]
     }
   ]
 }

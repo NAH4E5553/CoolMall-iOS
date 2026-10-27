@@ -276,6 +276,20 @@ class SelectionTests(unittest.TestCase):
         self.assertIn(S.HOME, result['targets'])
         self.assertNotIn('testMethods', result)
 
+    def test_final_expansion_filters_advisory_for_home_and_full_fallback(self):
+        blocked = S.advisory_methods(ROOT)
+        self.assertTrue(blocked)
+        for scope in [
+            {'mode': 'selected', 'tier': 'required', 'targets': [S.HOME],
+             'advisoryMethods': sorted(blocked)},
+            {'mode': 'full', 'tier': 'required', 'targets': [],
+             'advisoryMethods': sorted(blocked)},
+        ]:
+            selected = S.selected_methods(scope, S.inventory(RAW, TARGETS))
+            self.assertFalse(set(selected) & blocked)
+            if scope['mode'] == 'selected':
+                self.assertTrue(any(m.startswith(S.HOME + '/') for m in selected))
+
     def test_test_support_helper_selects_manifest_methods_and_smoke(self):
         path = 'CoolMalliOSUITests/HomeLoadTests.swift'
         source = (

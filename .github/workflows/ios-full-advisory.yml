@@ -19,11 +19,8 @@ concurrency:
 jobs:
   full:
     name: Full regression (advisory)
-    # Nightly/manual only: required must never queue behind a 45-minute
-    # advisory run on the same runner label.
-    concurrency:
-      group: ios-full-advisory-${{ github.ref }}
-      cancel-in-progress: false
+    # Nightly/manual only; workflow-level concurrency already isolates it
+    # from required. Do not repeat the same group at job level.
     runs-on: xcode-27
     timeout-minutes: 120
     env:

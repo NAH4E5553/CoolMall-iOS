@@ -267,6 +267,57 @@ import Testing
         await Task.yield()
         #expect(await store.writes == 0); #expect(model.confirmation == nil); #expect(!model.busy)
     }
+    @Test func checkoutCapturesOnlySelectedFreshRowsAndRepeatedTapPreparesOnce() async throws {
+        let first = try quote(), second = try quote(2, price: 200)
+        let store = TestCart([.init(quote: first, quantity: 2), .init(quote: second, quantity: 1)])
+        let verifier = TestVerifier([first, second]),
+            model = CartViewModel(store: store, verifier: verifier)
+        let observe = Task { await model.observe() }; defer { model.stop(); observe.cancel() }
+        await waitUntil { model.checks[1] != nil }
+        model.toggle(first.id); model.toggle(second.id)
+        await verifier.replace([try quote(price: 120), second]); await verifier.suspend()
+        var results: [CheckoutIntent] = []
+        model.checkout { results.append($0) }; model.checkout { results.append($0) }
+        await waitUntil { await verifier.gate != nil }
+        #expect(model.checkingOut); model.toggle(first.id)
+        #expect(model.selection.count == 2)
+        await verifier.release(); await waitUntil { !results.isEmpty }
+        #expect(results.count == 1); #expect(results[0].lines.map(\.specificationID) == [1, 2])
+        #expect(results[0].subtotalYuan == 440); #expect(results[0].pricesChanged)
+        #expect(results[0].source == .cart(scope: store.scope, revision: 0))
+        #expect(await store.writes == 0); #expect(model.snapshot?.lines[0].unitPrice.yuan == 100)
+    }
+    @Test func checkoutRejectsCartChangesAndLateResponseAfterLeaving() async throws {
+        for leaving in [false, true] {
+            let q = try quote(), store = TestCart([.init(quote: try quote(), quantity: 1)])
+            let verifier = TestVerifier([q]),
+                model = CartViewModel(store: store, verifier: verifier)
+            let observe = Task { await model.observe() }
+            await waitUntil { model.checks[1] != nil }; model.toggle(q.id)
+            await verifier.suspend(); var results = 0
+            model.checkout { _ in results += 1 }; await waitUntil { await verifier.gate != nil }
+            if leaving {
+                model.stop(); observe.cancel()
+            } else {
+                await store.publish([.init(quote: q, quantity: 2)])
+            }
+            await verifier.release(); await waitUntil { !model.busy }
+            #expect(results == 0); #expect(await store.writes == 0)
+            model.stop(); observe.cancel()
+        }
+    }
+    @Test func checkoutReadFailureKeepsCartAndRetryIsExplicit() async throws {
+        let q = try quote(), store = TestCart([.init(quote: try quote(), quantity: 1)])
+        let verifier = TestVerifier([q]), model = CartViewModel(store: store, verifier: verifier)
+        let observe = Task { await model.observe() }; defer { model.stop(); observe.cancel() }
+        await waitUntil { model.checks[1] != nil }; model.toggle(q.id); await verifier.fail()
+        var results: [CheckoutIntent] = []
+        model.checkout { results.append($0) }; await waitUntil { !model.busy }
+        #expect(results.isEmpty); #expect(model.message != nil); #expect(await store.writes == 0)
+        await verifier.replace([q]); model.checkout { results.append($0) }
+        await waitUntil { results.count == 1 }; #expect(results[0].subtotalYuan == 100)
+    }
+
 }
 private actor TestCart: ShoppingCart {
     nonisolated let scope = CartScope(environment: "test", accountID: nil)
@@ -345,10 +396,24 @@ private actor TestVerifier: CartProductChecking {
     var gateValue: CartProductCheck?
     var released = false
     init(_ quotes: [CartQuote]) {
-        checkValue = .init(productID: 1, isAvailable: true, quotes: quotes)
+        checkValue = Self.rich(quotes, available: true)
+    }
+    private static func rich(_ quotes: [CartQuote], available: Bool) -> CartProductCheck {
+        .init(
+            productID: 1, isAvailable: available, quotes: quotes,
+            product: ProductDetailSnapshot(
+                id: 1, title: "手机", subtitle: nil,
+                priceYuan: quotes.first?.price.yuan ?? 0, sold: 0, isAvailable: available,
+                imageURLs: [], contentImageURLs: []),
+            specifications: quotes.map {
+                ProductSpecification(
+                    id: $0.specificationID,
+                    productID: $0.productID, name: $0.specification, priceYuan: $0.price.yuan,
+                    stock: $0.stock, imageURLs: [])
+            })
     }
     func replace(_ quotes: [CartQuote], available: Bool = true) {
-        checkValue = .init(productID: 1, isAvailable: available, quotes: quotes); failure = false
+        checkValue = Self.rich(quotes, available: available); failure = false
     }
     func fail() { failure = true }
     func suspend() { shouldWait = true }

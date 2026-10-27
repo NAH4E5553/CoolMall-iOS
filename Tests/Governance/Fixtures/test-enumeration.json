@@ -582,6 +582,12 @@
         },
         {
           "identifier": "MallImagesTests/ImagePipelineTests/thumbnailDecodesLargeSourceAtTargetPixels()"
+        },
+        {
+          "identifier": "OrdersFeatureTests/OrderViewModelTests/filterSwitchRejectsLateResultAndStartsAtFirstPage()"
+        },
+        {
+          "identifier": "CheckoutFeatureTests/CheckoutViewModelTests/subtotalStaysUnchangedWhenCouponSelectedAndRefreshPreservesAddress()"
         }
       ],
       "testPlan": "CoolMalliOS"

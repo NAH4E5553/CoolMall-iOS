@@ -81,7 +81,7 @@ Android 与 iOS 复用的是设计思想和业务合同；具体 API、任务取
 
 ### 2.1 模块职责与依赖组装
 
-**决定：第一条商品→购物车链路就建立 Feature Target 隔离，取消原方案的单一 MallUI Target。** 一个本地 Swift Package `MallKit`，首期五个生产库 Target；IMAGE-01按批准新增第六库MallImages，ACCOUNT-LOGIN-01按批准新增第七库AccountFeature，加一个 App Target。不是每个页面一个 Package，也不提前建立空的账号、订单和支付模块。决策依据、代价和后续拆分触发器见第 3 章。
+**决定：第一条商品→购物车链路就建立 Feature Target 隔离，取消原方案的单一 MallUI Target。** 一个本地 Swift Package `MallKit`，首期五个生产库 Target；IMAGE-01按批准新增第六库MallImages，ACCOUNT-LOGIN-01按批准新增第七库AccountFeature；ORDER-V1按用户批准新增OrdersFeature/CheckoutFeature及对应测试，加一个 App Target。不是每个页面一个 Package，也不提前建立空的账号、订单和支付模块。决策依据、代价和后续拆分触发器见第 3 章。
 
 | 模块 | 拥有内容 | 允许的直接项目依赖 | 不允许承担 |
 | --- | --- | --- | --- |
@@ -91,8 +91,10 @@ Android 与 iOS 复用的是设计思想和业务合同；具体 API、任务取
 | `CatalogFeature` | 首页商品入口、分类/搜索、商品列表与详情；页面模型和专用组件 | MallCore、MallDesignSystem、MallImages | CartFeature 内部模型、MallData、HTTP/数据库/凭据 API |
 | `CartFeature` | 购物车页面、编辑交互、只读快照投影 | MallCore、MallDesignSystem | 自建第二个购物车事实源、CatalogFeature、MallData |
 | `AccountFeature` | 我的静态展示、登录表单、只读个人中心与退出意图 | MallCore、MallDesignSystem、MallImages | Keychain/通知/网络副作用、其他 Feature、第二会话事实源 |
+| `OrdersFeature` | 订单列表/详情、待付款取消意图及页面状态 | MallCore、MallDesignSystem、MallImages | 自行HTTP/裁决状态、支付、会话事实、其他Feature/数据层 |
+| `CheckoutFeature` | 确认草稿、地址/券/备注/创建意图及只读收银台 | MallCore、MallDesignSystem、MallImages | 自行HTTP/支付、最终金额裁决、存储副本、其他Feature/数据层 |
 | `MallImages` | 图片管线、缓存与RemoteImage薄包装（IMAGE-01） | 精确Nuke/NukeUI13.2.0 | 业务HTTP/会话/商城凭据、商品事实源 |
-| `CoolMalliOS` App | 依赖创建与生命周期、Scene 根导航、跨功能路由、系统回调、根 UI 投影 | 上述七个库 | 业务规则、逐页实现、自己执行数据库事务 |
+| `CoolMalliOS` App | 依赖创建与生命周期、Scene 根导航、跨功能路由、系统回调、根 UI 投影 | 上述九个库 | 业务规则、逐页实现、自己执行数据库事务 |
 
 ```mermaid
 flowchart TD
@@ -393,6 +395,16 @@ let package = Package(
       "MallCore",
       "MallDesignSystem",
       "MallImages"
+    ],
+    "OrdersFeature": [
+      "MallCore",
+      "MallDesignSystem",
+      "MallImages"
+    ],
+    "CheckoutFeature": [
+      "MallCore",
+      "MallDesignSystem",
+      "MallImages"
     ]
   },
   "tests": {
@@ -417,6 +429,14 @@ let package = Package(
     ],
     "AccountFeatureTests": [
       "AccountFeature",
+      "MallCore"
+    ],
+    "OrdersFeatureTests": [
+      "OrdersFeature",
+      "MallCore"
+    ],
+    "CheckoutFeatureTests": [
+      "CheckoutFeature",
       "MallCore"
     ]
   },
@@ -535,6 +555,28 @@ F0 系统模块允许列表如下；项目模块依赖仍只读取上方精确�
       "CoreGraphics"
     ],
     "AccountFeatureTests": [
+      "Swift",
+      "Foundation",
+      "Testing"
+    ],
+    "OrdersFeature": [
+      "Swift",
+      "SwiftUI",
+      "Observation",
+      "Foundation"
+    ],
+    "OrdersFeatureTests": [
+      "Swift",
+      "Foundation",
+      "Testing"
+    ],
+    "CheckoutFeature": [
+      "Swift",
+      "SwiftUI",
+      "Observation",
+      "Foundation"
+    ],
+    "CheckoutFeatureTests": [
       "Swift",
       "Foundation",
       "Testing"
@@ -1157,6 +1199,12 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 
 ### 7.5 例外与规则变更
 
+2026-10-27 ORDER-BADGES-PAGING-01 / CHANGE-02、REVIEW-02：用户明确我的订单角标、列表左右分页、详情购物车角标三项，按三个可独立构建提交。Core新增UserOrderCounts/OrderCountsLoading只读值与能力，Data复用HTTPOrderService的GET order/info/userCount与现有鉴权；App同实例注入Me入口，Account私有VM拥有账号页面投影。Orders各filter持原分页协调器、原生page与header同步。Catalog入口仅新增App原CartBadge同scope件数值，不新建存储或投影owner。两个Feature的纯视觉CountBadge共享于DesignSystem，不泄漏Core/业务状态。三Feature分别对应用户三项必要消费者，无互相依赖；不新Target/SDK/schema/CI/预算。状态/取消/接口/验证合同唯一见本地Evidence/iOS/2026-10-27-ORDER-BADGES-PAGING/scope.md。
+
+2026-10-26 ORDER-TRANSACTIONS-02：用户7张截图及明确提交/取消订单请求覆盖ORDER-V1只读范围。既有Checkout/Orders分别增加创建确认/收银台展示和待付款取消意图，Data通过新窄Core协议执行已证create/cancel，服务端仍为订单状态/金额事实；无支付SDK/新Target/存储副本/CI变化。App使用CashierEntryView与既有详情回调，Feature VM不公开。纯视觉固定高度弹框由DesignSystem供两个新场景使用，旧Account动态领券高度/请求/登录合同不改；不复制业务卡模型，不跨Feature import。创建/取消未确认不重放、账号/旧回调失效、字段/金额和来源导航合同见本地Evidence/iOS/2026-10-26-ORDER-TRANSACTIONS/scope.txt；用户已确认来源返回规则。该条为用户明确业务范围所需最小公开合同/写入能力登记，不放宽依赖或检查器。
+
+2026-10-26 ORDER-V1：用户明确批准新增OrdersFeature/CheckoutFeature两个业务Target及对应测试，覆盖原任务“不新增Target”限制，沿SPLIT-01登记既有机器矩阵，不变CI政策。App唯一组装/路由，两个Feature仅依赖Core/DesignSystem/Images，不互相导入。最小公开入口OrderListEntryView、OrderDetailEntryView、CheckoutEntryView；Core只读订单/确认页能力及一次性购买意图；不开放Feature VM/DTO。仅order/info/page、order/info/info、page/confirmOrder读取；不调用名字含confirm的确认收货写接口。无创建/支付/订单修改或存储副本。金额/取消/账号切换及验收合同见本地Evidence/iOS/2026-10-26-ORDER-V1/scope.txt及PRODUCT_SPEC本卡。
+
 2026-10-25 ADDRESS-01：用户地址截图及iOS风格/不新增按钮授权既有AccountFeature内地址管理；精确新增AddressEntryView、AddressEditorEntryView两个入口，Core地址值/输入/读写失败/能力与地区只读合同，Data HTTPAddressService供App组装；不新增Target/SDK/系统import/禁止依赖/存储副本。SourceBoundaries同步精确入口正反例，无CI政策更改。状态、取消、未知写与待定地区来源见Evidence/iOS/2026-10-25-ADDRESS/scope.md；默认唯一/自动默认无证据，不自行实现。
 
 2026-10-25 COUPON-FEEDBACK-03：用户明确移除领券卡片状态/查看我的券，采用稳定立即领取按钮与toast，并支持仅顶部下滑关闭。必要移除现有CouponReceiveEntryView.init的onShowCoupons参数及App无用路由闭包；无新public类型/Target/SDK/依赖/存储或规则例外。状态/失败/取消与实际接口取证范围见本轮scope.md，不因toast擅改成功合同或自动重放。 最新用户指定toast读取接口message，覆盖先前500精确ack候选：现有CouponReceiving返回String?成功message，既有CouponClaimFailure增加rejectedMessage(code,String)保留拒绝文案；所有非1000仍拒绝，不据message改判成功。1000原非空String data合同、会话/取消校验不变，缺失/空/错型message兜底；仅同步既有适配/替身/测试，无新增public类型。
@@ -1193,6 +1241,8 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 | DEC-001 | 2026-10-07 | 从单一 MallUI 改为 Core/Data/DesignSystem/CatalogFeature/CartFeature；当前无迁移成本，需要隐藏业务内部模型；细节见 3.1 | F0 创建工程即遵循 |
 | DEC-002 | 2026-10-07 | 购物车/会话由数据服务持有事实源，Feature/App 只持 UI 投影；消除跨 Feature 共享具体 Model 的依赖 | 首个对应状态实现前 |
 | DEC-003 | 2026-10-07 | 用户确认按功能模块化 + 页面按需 MVVM + UI 组件组合复用 + 协议注入；页面协调对象统一 ViewModel 命名，原泛称 Model 按职责澄清；见 1.3、2.5 | 从工程创建和首个页面起生效 |
+
+2026-10-26 CART-CHECKOUT-01：用户要求购物车结算复用确认订单，沿既有Cart/Checkout Targets与Core导航合同，新增只读CheckoutIntent聚合真实SKU行及cart来源scope/revision，CartEntryView.onCheckout输出此输入；现有BuyNowIntent保持单行消费者兼容。CartProductCheck仅携带新鲜catalog只读事实，购物车schema/owner不变。App按原scope注入同一store，不合并游客/账号。Checkout仅在创建已确认且原revision未变时调用既有remove命令；失败/未知或并发变化保留并提示。无新依赖/Target/SDK/支付/CI规则，消费者与验证见本轮scope.md。
 
 ## 8. 实施计划与当前状态
 
@@ -1422,3 +1472,13 @@ APPROVAL-IMAGE01-I02-20261013 approves MallImages with Nuke/NukeUI exact13.2.0, 
 Historical development note, superseded by8.3: 2026-10-25 COUPON-01 v0.1 in development. User screenshot request authorizes My Coupons read/browse and GoUse price-filter product page; receiving/settlement remain deferred pending scope response. Existing AccountFeature adds exact public CouponEntryView; existing CatalogFeature adds exact public CouponProductsEntryView. Core owns numbered-page coordinator and coupon/value/read contracts; Data uses existing APIClient transport plus SessionCoordinator-internal generation/account/environment-bound authorization. No public token, Target, SDK, dependency, persistent coupon copy or CI policy change. Source boundary exact entries plus positive/negative governance cases updated. Scope and eventual acceptance status: Evidence/iOS/2026-10-25-COUPON/state.json.
 
 2026-10-25 COUPON-01 v0.2: user explicitly expanded scope to home/detail receiving. Adds exact AccountFeature.CouponReceiveEntryView, Core id/title intent and narrow CouponReceiving/write errors; shared Data HTTPCouponReceiver actor is injected once by App, protects account/coupon in-flight ownership and uses existing SessionCoordinator-internal environment/generation authorization plus existing APIClient. Home/Detail only send intent, no Feature cross-import or invented offer fields. Native Account sheet owns confirmation/Login/VM request, never auto-submits after login, uncertain writes never auto-replay or claim rollback. Busy offers Stop Waiting; result unknown routes authoritative owned-coupon read. Existing Me account-change path reset remains (guest Me-footprint-detail source returns Me root after login); Home/category/cart source stacks stay. No Target/SDK/storage/CI-policy changes; exact boundary registration tests included. Independent early review receive-early-review.md and receive-implementation-review.md; final acceptance pending.
+
+2026-10-26 ORDER-V1：从account checkpoint d6bad40创建codex/order-v1，用户已批准两个Feature Target与受限金额方案；只读订单及立即购买确认草稿已完成本地独立验收。开发最终104单元/12新UI/11既有回归通过，Astra同冻结258源配置资源/12构建独立34/0/0及实际深色1/0/0，验前后身份一致；格式/边界/212治理与Debug/Release实际exit0。526仅发现不称全套通过，开发失败及checkpoint旧5条UI失败、frame告警保留。仅三读、SKU商品小计与意向券，无订单创建/支付/修改、最终报价、存储副本或CI政策变更；真实账号后端/写入/iOS17/硬件/fullVO/remoteCI未验。证据Evidence/iOS/2026-10-26-ORDER-V1/state.json及astra-review/review.md；待普通提交推送并建base account的stacked draft，PR30不改、不merge/retarget main。
+
+2026-10-26 ORDER-TRANSACTIONS-02 v0.1：确认页选券估算/备注/默认标识、创建→只读收银台→真实订单详情、待付款原因字典/取消后权威重读、横滑历史商品与来源栈已实现。Sol自检128单元、17订单UI及3地址券回归通过；尾部提交锁定回归与完整链、取消等待分类、HTTP401/403与原因登录恢复已定向补验，新增登录UI1条通过（分阶段复验/复用边界见Evidence，不冒称单次全量）。格式/边界/213治理及最终Debug/Release exit0；556仅发现，不全套。Astra同冻结265源/13构建独立49/0/0，另真实深色大字号1/0/0，native/exact均0且验前后身份一致；本轮限定范围本地验收通过，无真实账号写验、支付/iOS17/真机/fullVO/远程CI通过结论。初轮编译/边界/4条UI失败保留。唯一状态Evidence/iOS/2026-10-26-ORDER-TRANSACTIONS/state.json；保持PR31 stacked draft base account，不merge/retarget main。
+
+2026-10-26 CHECKOUT-COUPON-FEEDBACK-01 v0.1：删除确认页不使用入口，默认nil/再次点已选取消；按endpoint区分确认候选与MyCoupon严格状态，缺字段不伪造，明确失效/未知枚举/门槛仍拦截并说明原因。关闭时按钮展示用本次presentation快照，实际选择/金额仍归VM；刷新禁止旧券操作并结束弹框。Sol最终50单元+4UI、格式/边界及Debug/Release exit0，563仅发现；213治理exit0限定复用本轮未变策略。初轮两条UI失败及无效触摸/布局/AX试验保留并已撤回，原断言/60/120预算不变。Astra同冻结265源/13构建独立54/0/0、native/exact均0且验前后身份一致，本轮限定范围本地验收通过；无真实响应/后端资格或写入验证。唯一状态Evidence/iOS/2026-10-26-CHECKOUT-COUPON-FEEDBACK/state.json；保持PR31 stacked draft base account，不merge/retarget main。
+
+2026-10-26 CART-CHECKOUT-01 v0.1：Cart结算已接共用确认订单与原写入/收银台链；仅选中行新鲜核验/多商品精确合计，guest登录续接不合并，创建确认后按原scope/revision条件清选中行，同步失败保留并提示。自检110模型及12条UI分批完成（初轮系统保存密码遮挡与大字号首屏定位失败保留，驱动返修后对应场景通过），最终格式/边界/Debug/Release exit0，governance213/0；自检完成，独立验收结果以本轮state.json为准；无真实账号/后端写入/iOS17/真机/fullVO/远程CI通过声明。唯一状态Evidence/iOS/2026-10-26-CART-CHECKOUT/state.json。
+
+2026-10-27 ORDER-BADGES-PAGING-01 v0.1：我的订单五类正计数角标接GET userCount六字段，缺失/失败不伪造0；列表原生横向分页、独立筛选快照/分页/滚动位置与写后/重登全缓存失效；详情购物车复用App同scope总件数投影。Sol自检94模型+15UI分组通过（新9条实际深色/大字号，回归6条浅色），格式/边界/213治理与Debug/Release exit0，599仅发现不全套；首轮格式/编译/4条UI失败及修正保留。通用Debug构建与之前自检App哈希不同，最终构建复核/同包独立结果以本轮state.json和astra-review/review.md为准；自检完成，待独立验收，不冒称远程CI/真实账号或后端写验/iOS17/真机/fullVO通过。唯一状态Evidence/iOS/2026-10-27-ORDER-BADGES-PAGING/state.json。

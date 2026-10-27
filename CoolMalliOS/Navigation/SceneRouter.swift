@@ -1,3 +1,4 @@
+import MallCore
 import Foundation
 import Observation
 
@@ -12,6 +13,10 @@ final class SceneRouter {
     enum Tab: Hashable { case home; case category; case cart; case me }
     enum Route: Hashable {
         case cart
+        case orders(filter: OrderFilter)
+        case orderDetail(id: Int64)
+        case cashier(orderID: Int64)
+        case checkout(intent: CheckoutIntent, accountID: Int64?)
         case login
         case profile
         case footprints
@@ -60,6 +65,86 @@ final class SceneRouter {
         }
     #endif
 
+    /// Account-bound routes cannot survive logout or an account replacement.
+    func updateOrderAccount(old: Int64?, new: Int64?) {
+        func reconcile(_ path: [Route]) -> [Route] {
+            if old == nil, let new {
+                return path.map { route in
+                    if case .checkout(let intent, nil) = route {
+                        return .checkout(intent: intent, accountID: new)
+                    }
+                    return route
+                }
+            }
+            guard old != new else { return path }
+            if let index = path.firstIndex(where: { route in
+                switch route {
+                case .orders, .orderDetail, .checkout, .cashier: true;
+                default: false
+                }
+            }) {
+                return Array(path.prefix(index))
+            }
+            return path
+        }
+        homePath = reconcile(homePath); categoryPath = reconcile(categoryPath)
+        cartPath = reconcile(cartPath); mePath = reconcile(mePath)
+    }
+    var hasMeOrderIntent: Bool {
+        mePath.contains { route in
+            switch route {
+            case .orders, .orderDetail, .checkout, .cashier: true;
+            default: false
+            }
+        }
+    }
+    func path(on tab: Tab) -> [Route] {
+        switch tab {
+        case .home: homePath;
+        case .category: categoryPath;
+        case .cart: cartPath;
+        case .me: mePath
+        }
+    }
+    private(set) var orderRevision: UInt64 = 0
+    func orderChanged() { orderRevision &+= 1 }
+    func orderCreated(_ id: Int64, from route: Route, on tab: Tab) {
+        guard id > 0, path(on: tab).last == route, case .checkout = route else { return }
+        var path = path(on: tab); path.removeLast(); path.append(.cashier(orderID: id))
+        assign(path, on: tab); orderChanged()
+    }
+    func cashierBack(on tab: Tab) {
+        guard case .cashier(let id) = path(on: tab).last else { return }
+        var path = path(on: tab); path.removeLast()
+        if path.last != .orderDetail(id: id) { path.append(.orderDetail(id: id)) }
+        assign(path, on: tab)
+    }
+    /// Native pop has the same semantics as the explicit cashier Back action.
+    func setPath(_ value: [Route], on tab: Tab) {
+        let old = path(on: tab)
+        if case .cashier = old.last, value == Array(old.dropLast()) {
+            cashierBack(on: tab)
+        } else {
+            assign(value, on: tab)
+        }
+    }
+    private func assign(_ value: [Route], on tab: Tab) {
+        switch tab {
+        case .home: homePath = value
+        case .category: categoryPath = value
+        case .cart: cartPath = value
+        case .me: mePath = value
+        }
+    }
+    func beginPurchase(_ intent: BuyNowIntent, accountID: Int64?, on tab: Tab) {
+        guard case .productDetail = path(on: tab).last else { return }
+        append(.checkout(intent: CheckoutIntent(buyNow: intent), accountID: accountID), on: tab)
+    }
+    func beginCartPurchase(_ intent: CheckoutIntent, accountID: Int64?, on tab: Tab) {
+        let source = path(on: tab)
+        guard (tab == .cart && source.isEmpty) || source.last == .cart else { return }
+        append(.checkout(intent: intent, accountID: accountID), on: tab)
+    }
     func openCart() { homePath.append(.cart) }
     /// Appends a route onto the owning tab's stack, so a destination pushed
     /// from that stack (e.g. the independent cart from a detail page) returns

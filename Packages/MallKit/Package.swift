@@ -13,10 +13,16 @@ let package = Package(
         .library(name: "CartFeature", targets: ["CartFeature"]),
         .library(name: "AccountFeature", targets: ["AccountFeature"]),
         .library(name: "MallImages", targets: ["MallImages"]),
+        .library(name: "OrdersFeature", targets: ["OrdersFeature"]),
+        .library(name: "CheckoutFeature", targets: ["CheckoutFeature"]),
     ],
     dependencies: [.package(url: "https://github.com/kean/Nuke.git", exact: "13.2.0")],
     targets: [
         .target(name: "MallCore"),
+        .target(
+            name: "OrdersFeature", dependencies: ["MallCore", "MallDesignSystem", "MallImages"]),
+        .target(
+            name: "CheckoutFeature", dependencies: ["MallCore", "MallDesignSystem", "MallImages"]),
         .target(name: "MallData", dependencies: ["MallCore"], resources: [.process("Resources")]),
         .target(name: "MallDesignSystem"),
         .target(
@@ -35,6 +41,8 @@ let package = Package(
             dependencies: ["MallImages", .product(name: "Nuke", package: "Nuke")],
             resources: [.process("Resources")]),
         .testTarget(name: "MallCoreTests", dependencies: ["MallCore"]),
+        .testTarget(name: "OrdersFeatureTests", dependencies: ["OrdersFeature", "MallCore"]),
+        .testTarget(name: "CheckoutFeatureTests", dependencies: ["CheckoutFeature", "MallCore"]),
         .testTarget(
             name: "MallDataTests", dependencies: ["MallData", "MallCore"],
             resources: [.process("Resources")]),

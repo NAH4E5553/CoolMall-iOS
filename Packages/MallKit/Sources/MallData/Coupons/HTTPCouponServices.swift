@@ -166,7 +166,7 @@ enum CouponPageDecoder {
             items: items, page: requestedPage, size: size, total: body.pagination.total)
     }
 }
-private struct OwnedCouponDTO: Decodable {
+struct OwnedCouponDTO: Decodable {
     let id: Int64; let title: String; let description: String; let amount: Decimal
     let type: Int?; let status: Int?; let useStatus: Int?; let startTime: String?;
     let endTime: String?
@@ -185,7 +185,7 @@ private struct OwnedCouponDTO: Decodable {
             }
         }
     }
-    func value() throws -> UserCoupon {
+    func value(availabilityContext: CouponAvailabilityContext = .owned) throws -> UserCoupon {
         guard id > 0, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             !amount.isNaN, amount >= 0,
             condition.map({ !$0.fullAmount.isNaN && $0.fullAmount >= 0 }) ?? true
@@ -193,7 +193,9 @@ private struct OwnedCouponDTO: Decodable {
         return UserCoupon(
             id: id, title: title, description: description, amountYuan: amount,
             minimumSpendYuan: condition?.fullAmount,
-            startTime: startTime, endTime: endTime, type: type, status: status, useStatus: useStatus
+            startTime: startTime, endTime: endTime, type: type, status: status,
+            useStatus: useStatus,
+            availabilityContext: availabilityContext
         )
     }
 }

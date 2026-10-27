@@ -34,6 +34,7 @@ final class ShoppingCartFlowTests: XCTestCase {
     @MainActor func testDetailAddIndependentCartReturnsToOriginalDetail() {
         let app = app(UUID().uuidString)
         enterDetail(app)
+        expectCartCount(app.buttons["detail.openCart"], "0件商品")
         app.buttons["detail.addCart"].tap()
         XCTAssertTrue(app.buttons["detail.spec.1"].waitForExistence(timeout: 5))
         app.buttons["detail.spec.1"].tap()
@@ -41,6 +42,7 @@ final class ShoppingCartFlowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["detail.cart.message"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["detail.cart.message"].label, "已加入购物车")
         XCTAssertFalse(app.staticTexts["detail.spec.title"].exists)
+        expectCartCount(app.buttons["detail.openCart"], "1件商品")
         app.buttons["detail.openCart"].tap()
         XCTAssertTrue(app.staticTexts["cart.quantity.830001.1"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["cart.quantity.830001.1"].label, "1")
@@ -58,11 +60,13 @@ final class ShoppingCartFlowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["cart.quantity.830001.1"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["cart.quantity.830001.1"].label, "2")
         app.navigationBars.buttons.firstMatch.tap()
+        expectCartCount(app.buttons["detail.openCart"], "2件商品")
         app.buttons["detail.back"].tap()
         app.tabBars.buttons["购物车"].tap()
         XCTAssertTrue(app.staticTexts["cart.quantity.830001.1"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["cart.quantity.830001.1"].label, "2")
         XCTAssertTrue(app.tabBars.buttons["首页"].exists)
+        expectCartCount(app.tabBars.buttons["购物车"], "2项")
     }
     @MainActor func testPriceReturnsToOriginalStillPresentsSecondConfirmation() {
         let app = app(UUID().uuidString, detailMode: "cart-price-return")
@@ -319,4 +323,48 @@ final class ShoppingCartFlowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["detail.loaded"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.tabBars.buttons["购物车"].exists)
     }
+    @MainActor private func expectCartCount(_ element: XCUIElement, _ value: String) {
+        XCTAssertEqual(
+            XCTWaiter.wait(
+                for: [
+                    XCTNSPredicateExpectation(
+                        predicate: NSPredicate(format: "value == %@", value), object: element)
+                ], timeout: 5), .completed)
+    }
+    @MainActor func testDetailBadgeTracksIndependentQuantityAndDeletion() {
+        let app = app(UUID().uuidString, seed: true); enterDetail(app)
+        expectCartCount(app.buttons["detail.openCart"], "2件商品")
+        app.buttons["detail.openCart"].tap()
+        let plus = app.buttons["cart.plus.830001.1"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 5)); plus.tap()
+        XCTAssertEqual(
+            XCTWaiter.wait(
+                for: [
+                    XCTNSPredicateExpectation(
+                        predicate:
+                            NSPredicate(format: "label == '2'"),
+                        object: app.staticTexts["cart.quantity.830001.1"])
+                ], timeout: 5), .completed)
+        app.navigationBars.buttons.firstMatch.tap()
+        expectCartCount(app.buttons["detail.openCart"], "3件商品")
+        capture(app, "detail-badge-three-total-units")
+        app.buttons["detail.openCart"].tap(); app.buttons["cart.minus.830001.1"].tap()
+        XCTAssertEqual(
+            XCTWaiter.wait(
+                for: [
+                    XCTNSPredicateExpectation(
+                        predicate:
+                            NSPredicate(format: "label == '1'"),
+                        object: app.staticTexts["cart.quantity.830001.1"])
+                ], timeout: 5), .completed)
+        app.navigationBars.buttons.firstMatch.tap()
+        expectCartCount(app.buttons["detail.openCart"], "2件商品")
+        app.buttons["detail.openCart"].tap(); app.buttons["cart.edit"].tap()
+        app.buttons["cart.selectAll"].tap(); app.buttons["cart.delete"].tap()
+        XCTAssertTrue(app.staticTexts["cart.empty"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.firstMatch.tap()
+        expectCartCount(app.buttons["detail.openCart"], "0件商品")
+        capture(app, "detail-zero-badge-hidden")
+    }
+
 }

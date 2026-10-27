@@ -69,6 +69,8 @@ class SelectionTests(unittest.TestCase):
             self.write(path, 'existingBody\n')
         self.write('README.md','docs\n')
         self.write('.github/workflows/ios.yml','name: legacy\n')
+        self.write('Tests/Governance/host-sensitive-advisory.json',
+                   (S.ROOT / 'Tests/Governance/host-sensitive-advisory.json').read_text())
         self.base = self.commit()
 
     def git(self, *args):
@@ -91,7 +93,7 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(result['targets'], sorted([S.HOME,S.NAVIGATION,*S.PR_SMOKE]))
         self.assertEqual(len(result['paths']), 2)
         self.write('Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeBannerCarouselView.swift','changedBody\n'); self.commit()
-        self.assertEqual(self.plan()['targets'], sorted([S.CATALOG,S.HOME,S.NAVIGATION,*S.PR_SMOKE,*set(S.LIFECYCLE)-set(S.PR_SMOKE)]))
+        self.assertEqual(self.plan()['targets'], sorted([S.CATALOG,S.HOME,S.NAVIGATION,*S.PR_SMOKE]))
 
     def test_unknown_api_structural_full_but_history_is_irrelevant(self):
         self.write('CoolMalliOSUITests/HomeLoadTests.swift','changedBody\n'); self.commit()
@@ -109,7 +111,7 @@ class SelectionTests(unittest.TestCase):
         self.write(hosted, 'changedBody\n'); self.commit()
         self.assertEqual(self.plan()['targets'], sorted([S.CATALOG,*S.PR_SMOKE]))
         self.write(timing, 'changedBody\n'); self.commit()
-        self.assertEqual(self.plan()['targets'], sorted(set([S.CATALOG,*S.PR_SMOKE,*S.LIFECYCLE])))
+        self.assertEqual(self.plan()['targets'], sorted(set([S.CATALOG,*S.PR_SMOKE])))
 
     def test_new_mapped_timing_files_and_declarations_still_require_full(self):
         paths = [

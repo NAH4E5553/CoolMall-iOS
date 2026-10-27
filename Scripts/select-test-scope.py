@@ -78,6 +78,18 @@ VERIFICATION_PATHS = {'.github/workflows/ios.yml', '.github/workflows/ios-full-a
 TEST_SUPPORT_MANIFEST = 'Tests/Governance/test-support-impact.json'
 
 
+def advisory_methods(root):
+    manifest = Path(root) / 'Tests/Governance/host-sensitive-advisory.json'
+    if not manifest.is_file():
+        return set()
+    try:
+        data = json.loads(manifest.read_text())
+        return {entry['method'] for entry in data.get('entries', [])
+                if isinstance(entry, dict) and isinstance(entry.get('method'), str)}
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError, OSError):
+        return set()
+
+
 def test_support_methods(root, path):
     """File-level test-support entry: owner, expiry, and affected methods."""
     manifest = Path(root) / TEST_SUPPORT_MANIFEST
@@ -260,6 +272,12 @@ def plan(root, env, history=None):
                 return result
             selected.update(PATH_TARGETS[path])
             method_only = False
+        if tier == 'required':
+            blocked = advisory_methods(root)
+            selected = {item for item in selected if item not in blocked}
+            if result.get('testSupportMethods'):
+                result['testSupportMethods'] = [m for m in result['testSupportMethods']
+                                                if m not in blocked]
         result.update(mode='selected', targets=sorted(selected))
         if test_support and test_support_only:
             result['reason'] = 'test-support-targeted'

@@ -42,3 +42,12 @@ Use `Scripts/split-test-shards.py --expected expected.txt --out-dir shards`:
 | red | red | Isolation does not explain; investigate App/XCTest/query/environment |
 
 No merge based on this experiment; PR29 stays draft.
+
+## Results (2026-10-27)
+
+- C (17 UI, no trace): FAIL; `testBannerRefreshFailurePreservesSelectedPageAndRetry` hit 60s. selectedPageBusy 82.6s passed.
+- D (cycle / pending / reconciliation as single CI jobs): all passed (51.9 / 51.1 / 57.4s).
+- Local 17 UI: 3/3 pass without trace; 3/3 pass with trace.
+- C's failing method is not one of D's three, so this does not establish a same-method group/single contrast.
+- Trace removal did not remove the CI failure; trace is not proven irrelevant to individual-operation cost.
+- Decision: 9 test-support methods from this group + the earlier 3 (away/offscreen/arms) are explicit advisory (12 total, owner @NAH4E5553, expiry 2026-12-31); required keeps 135 non-UI + 8 UI smoke. UI remains in full 201/nightly. This is a temporary isolation risk, not root-cause closure.

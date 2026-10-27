@@ -72,6 +72,11 @@
                 throw PageReadFailure.networkUnavailable
             }
             if mode == "countsPending" { try await Task.sleep(for: .seconds(100)) }
+            if mode == "countsLarge" {
+                return try UserOrderCounts(
+                    unpaid: 101, unshipped: 2, unreceived: 3,
+                    unevaluated: 4, refunding: 5, refunded: 6)
+            }
             if mode == "empty" {
                 return try UserOrderCounts(
                     unpaid: 0, unshipped: 0,
@@ -92,7 +97,7 @@
                 [
                     "success", "failure", "appendFailure", "empty", "contextFailure", "authFailure",
                     "createRejected", "createUnknown", "reasonAuthFailure", "checkoutSparseCoupon",
-                    "countsFailure", "countsPending",
+                    "countsFailure", "countsPending", "countsLarge",
                 ]
                 .contains(mode)
             else { throw PageReadFailure.invalidConfiguration }

@@ -1,4 +1,5 @@
 import Foundation
+import MallDesignSystem
 import SwiftUI
 
 /// Android detail roles, scoped to this page. Sizes scale with the user's text setting.
@@ -131,6 +132,7 @@ struct ProductDetailBottomBar: View {
     var onAdd: () -> Void = {}
     var onBuy: () -> Void = {}
     var onOpenCart: () -> Void = {}
+    var cartItemCount: Int64?
     var isAdding = false
     var canAdd = true
     @Environment(\.colorScheme) private var scheme
@@ -167,12 +169,19 @@ struct ProductDetailBottomBar: View {
         Button(action: action) {
             VStack(spacing: 2) {
                 Image(icon, bundle: .module).resizable().frame(width: 20, height: 20)
+                    .overlay(alignment: .topTrailing) {
+                        if text == "购物车", let cartItemCount, cartItemCount > 0 {
+                            CountBadge(count: cartItemCount).offset(x: 14, y: -8)
+                                .accessibilityHidden(true)
+                        }
+                    }
                 Text(text).font(.caption2)
             }
             .frame(minWidth: 32, minHeight: 44)
         }
         .buttonStyle(.plain).foregroundStyle(ProductDetailStyle.onSurface(scheme))
         .accessibilityIdentifier(text == "购物车" ? "detail.openCart" : "detail.service")
+        .accessibilityValue(text == "购物车" ? cartItemCount.map { "\($0)件商品" } ?? "数量暂不可用" : "")
         .accessibilityHint(text == "购物车" ? "打开独立购物车" : "功能暂未实现")
     }
 }

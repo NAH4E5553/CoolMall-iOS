@@ -1481,4 +1481,4 @@ Historical development note, superseded by8.3: 2026-10-25 COUPON-01 v0.1 in deve
 
 2026-10-26 CART-CHECKOUT-01 v0.1：Cart结算已接共用确认订单与原写入/收银台链；仅选中行新鲜核验/多商品精确合计，guest登录续接不合并，创建确认后按原scope/revision条件清选中行，同步失败保留并提示。自检110模型及12条UI分批完成（初轮系统保存密码遮挡与大字号首屏定位失败保留，驱动返修后对应场景通过），最终格式/边界/Debug/Release exit0，governance213/0；自检完成，独立验收结果以本轮state.json为准；无真实账号/后端写入/iOS17/真机/fullVO/远程CI通过声明。唯一状态Evidence/iOS/2026-10-26-CART-CHECKOUT/state.json。
 
-2026-10-27 ORDER-BADGES-PAGING-01 v0.1开发中，未自检/独立验收；唯一状态Evidence/iOS/2026-10-27-ORDER-BADGES-PAGING/state.json。
+2026-10-27 ORDER-BADGES-PAGING-01 v0.1：我的订单五类正计数角标接GET userCount六字段，缺失/失败不伪造0；列表原生横向分页、独立筛选快照/分页/滚动位置与写后/重登全缓存失效；详情购物车复用App同scope总件数投影。Sol自检94模型+15UI分组通过（新9条实际深色/大字号，回归6条浅色），格式/边界/213治理与Debug/Release exit0，599仅发现不全套；首轮格式/编译/4条UI失败及修正保留。通用Debug构建与之前自检App哈希不同，最终构建复核/同包独立结果以本轮state.json和astra-review/review.md为准；自检完成，待独立验收，不冒称远程CI/真实账号或后端写验/iOS17/真机/fullVO通过。唯一状态Evidence/iOS/2026-10-27-ORDER-BADGES-PAGING/state.json。

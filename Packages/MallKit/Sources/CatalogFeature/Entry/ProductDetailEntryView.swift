@@ -15,6 +15,7 @@ public struct ProductDetailEntryView: View {
     private let shoppingCart: (any ShoppingCart)?
     private let cartVerifier: (any CartProductChecking)?
     private let onReceiveCoupon: (CouponClaimOffer) -> Void
+    private let cartItemCount: Int64?
     private let onOpenCart: () -> Void
     private let onBuyNow: (BuyNowIntent) -> Void
 
@@ -24,7 +25,7 @@ public struct ProductDetailEntryView: View {
         onShowAllReviews: @escaping (Int64) -> Void = { _ in },
         footprintRecorder: (any FootprintRecording)? = nil,
         shoppingCart: (any ShoppingCart)? = nil, cartVerifier: (any CartProductChecking)? = nil,
-        onOpenCart: @escaping () -> Void = {},
+        cartItemCount: Int64? = nil, onOpenCart: @escaping () -> Void = {},
         onReceiveCoupon: @escaping (CouponClaimOffer) -> Void = { _ in },
         onBuyNow: @escaping (BuyNowIntent) -> Void = { _ in }
     ) {
@@ -35,7 +36,7 @@ public struct ProductDetailEntryView: View {
         self.onShowAllReviews = onShowAllReviews
         self.footprintRecorder = footprintRecorder
         self.shoppingCart = shoppingCart; self.cartVerifier = cartVerifier;
-        self.onOpenCart = onOpenCart
+        self.cartItemCount = cartItemCount; self.onOpenCart = onOpenCart
         self.onReceiveCoupon = onReceiveCoupon; self.onBuyNow = onBuyNow
     }
 
@@ -44,7 +45,8 @@ public struct ProductDetailEntryView: View {
             productID: productID, loader: loader,
             pipeline: imagePipeline, isActive: isActive, onShowAllReviews: onShowAllReviews,
             footprintRecorder: footprintRecorder, shoppingCart: shoppingCart,
-            cartVerifier: cartVerifier, onOpenCart: onOpenCart, onReceiveCoupon: onReceiveCoupon,
+            cartVerifier: cartVerifier, cartItemCount: cartItemCount, onOpenCart: onOpenCart,
+            onReceiveCoupon: onReceiveCoupon,
             onBuyNow: onBuyNow
         )
         .tint(ProductDetailStyle.accent)
@@ -68,6 +70,7 @@ private struct ProductDetailScreen: View {
     let pipeline: MallImagePipeline?
     let isActive: Bool
     let onShowAllReviews: (Int64) -> Void
+    let cartItemCount: Int64?
     let onOpenCart: () -> Void
     let onReceiveCoupon: (CouponClaimOffer) -> Void
     let onBuyNow: (BuyNowIntent) -> Void
@@ -81,7 +84,7 @@ private struct ProductDetailScreen: View {
         productID: Int64, loader: any ProductDetailLoading,
         pipeline: MallImagePipeline?, isActive: Bool, onShowAllReviews: @escaping (Int64) -> Void,
         footprintRecorder: (any FootprintRecording)?, shoppingCart: (any ShoppingCart)?,
-        cartVerifier: (any CartProductChecking)?,
+        cartVerifier: (any CartProductChecking)?, cartItemCount: Int64?,
         onOpenCart: @escaping () -> Void, onReceiveCoupon: @escaping (CouponClaimOffer) -> Void,
         onBuyNow: @escaping (BuyNowIntent) -> Void
     ) {
@@ -92,7 +95,8 @@ private struct ProductDetailScreen: View {
         self.onBuyNow = onBuyNow; self.shoppingCart = shoppingCart; self.cartVerifier = cartVerifier
         self.footprintRecorder = footprintRecorder;
         _boundCartScope = State(initialValue: shoppingCart?.scope)
-        self.onOpenCart = onOpenCart; self.onReceiveCoupon = onReceiveCoupon
+        self.cartItemCount = cartItemCount; self.onOpenCart = onOpenCart;
+        self.onReceiveCoupon = onReceiveCoupon
         _cartModel = State(
             initialValue: shoppingCart.flatMap { store in
                 cartVerifier.map { ProductCartViewModel(store: store, verifier: $0) }
@@ -153,7 +157,8 @@ private struct ProductDetailScreen: View {
                         } else {
                             showsSpecifications = true
                         }
-                    }, onBuy: buyNow, onOpenCart: onOpenCart, isAdding: cartModel?.busy == true,
+                    }, onBuy: buyNow, onOpenCart: onOpenCart, cartItemCount: cartItemCount,
+                    isAdding: cartModel?.busy == true,
                     canAdd: model.selected == nil || model.canAddToCart
                 )
                 .accessibilityHidden(showsCoupons || showsSpecifications)

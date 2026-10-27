@@ -162,10 +162,17 @@ import SwiftUI
                 onOpenOrders(.all)
             } label: {
                 HStack {
-                    Label("我的订单", systemImage: "list.bullet.rectangle.fill"); Spacer();
-                    Label("查看全部", systemImage: "chevron.right").font(.subheadline).foregroundStyle(
-                        .secondary)
-                }.font(.headline).frame(minHeight: 44)
+                    Label {
+                        Text("我的订单").foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: "list.bullet.rectangle.fill").foregroundStyle(.blue)
+                    }
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Text("查看全部"); Image(systemName: "chevron.right")
+                    }
+                    .font(.subheadline).foregroundStyle(.secondary)
+                }.font(.headline).frame(minHeight: 44).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityIdentifier("me.orders.all")
             LazyVGrid(
                 columns: [
@@ -203,8 +210,10 @@ import SwiftUI
                         }
                         .frame(maxWidth: .infinity, minHeight: 62)
                     }.buttonStyle(.plain).accessibilityValue(
-                        count(label).map { "\($0)个订单" } ?? "数量暂不可用"
-                    ).accessibilityIdentifier("me.orders.\(label)")
+                        count(label).map { "\($0)个订单" }
+                            ?? (model.failure == nil ? "数量暂不可用" : "数量读取失败")
+                    ).accessibilityHint(model.failure == nil ? "查看\(label)订单" : "数量读取失败，重新进入页面重试")
+                        .accessibilityIdentifier("me.orders.\(label)")
                 }
             }
         }.padding(16).background(.background, in: RoundedRectangle(cornerRadius: 18))

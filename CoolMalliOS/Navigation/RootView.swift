@@ -472,6 +472,8 @@ struct RootView: View {
             footprintRecorder: dependencies.footprints,
             shoppingCart: dependencies.shoppingCart,
             cartVerifier: dependencies.cartVerifier,
+            cartItemCount: cartBadge.scope == dependencies.shoppingCart.scope
+                ? cartBadge.count : nil,
             onOpenCart: { router.append(.cart, on: tab) }, onReceiveCoupon: beginClaim,
             onBuyNow: {
                 router.beginPurchase($0, accountID: dependencies.accountState.profile?.id, on: tab)

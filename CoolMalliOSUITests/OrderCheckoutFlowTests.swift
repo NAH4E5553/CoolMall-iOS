@@ -463,4 +463,122 @@ final class OrderCheckoutFlowTests: XCTestCase {
         capture(app, "coupon-deselected-no-deduction")
     }
 
+    @MainActor private func expectValue(_ element: XCUIElement, _ value: String) {
+        XCTAssertTrue(element.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            XCTWaiter.wait(
+                for: [
+                    XCTNSPredicateExpectation(
+                        predicate: NSPredicate(format: "value == %@", value), object: element)
+                ], timeout: 5), .completed)
+    }
+    @MainActor func testMyOrderCountsAndShortcutUseServerCounts() {
+        let app = launch(); app.tabBars.buttons["我的"].tap()
+        for label in ["待付款", "待发货", "待收货", "待评价"] {
+            expectValue(app.buttons["me.orders.\(label)"], "4个订单")
+        }
+        expectValue(app.buttons["me.orders.退款/售后"], "8个订单")
+        capture(app, "my-order-counts")
+        app.buttons["me.orders.待发货"].tap()
+        XCTAssertTrue(app.buttons["orders.item.910002"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["orders.filter.unshipped"].isSelected)
+    }
+    @MainActor func testMyOrderCountsFailureRecoversOnReturn() {
+        let app = launch("countsFailure"); app.tabBars.buttons["我的"].tap()
+        expectValue(app.buttons["me.orders.待付款"], "数量读取失败")
+        app.tabBars.buttons["首页"].tap(); app.tabBars.buttons["我的"].tap()
+        expectValue(app.buttons["me.orders.待付款"], "4个订单")
+        capture(app, "my-order-counts-recovered")
+    }
+    @MainActor func testZeroAndGuestCountsNeverInventOrderBadges() {
+        let app = launch("empty"); app.tabBars.buttons["我的"].tap()
+        expectValue(app.buttons["me.orders.待付款"], "0个订单")
+        capture(app, "zero-order-counts"); app.terminate()
+        let guest = launch(guest: true); guest.tabBars.buttons["我的"].tap()
+        expectValue(guest.buttons["me.orders.待付款"], "数量暂不可用")
+        guest.buttons["me.orders.待付款"].tap()
+        XCTAssertTrue(guest.buttons["login.choosePassword"].waitForExistence(timeout: 5))
+        guest.navigationBars.buttons.firstMatch.tap()
+        expectValue(guest.buttons["me.orders.待付款"], "数量暂不可用")
+    }
+    @MainActor func testOrderCancellationRefreshesMyCountsAndUnpaidPage() {
+        let app = launch(); app.tabBars.buttons["我的"].tap()
+        expectValue(app.buttons["me.orders.待付款"], "4个订单")
+        app.buttons["me.orders.待付款"].tap()
+        let first = app.buttons["orders.item.910001"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5)); first.tap()
+        let cancel = app.buttons["order.cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5)); cancel.tap()
+        XCTAssertTrue(app.buttons["order.cancel.confirm"].waitForExistence(timeout: 5))
+        app.buttons["order.cancel.confirm"].tap()
+        XCTAssertEqual(
+            XCTWaiter.wait(
+                for: [
+                    XCTNSPredicateExpectation(
+                        predicate:
+                            NSPredicate(format: "label == '已关闭'"),
+                        object: app.staticTexts["order.status"])
+                ], timeout: 5), .completed)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.buttons["orders.item.910009"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["orders.item.910001"].exists)
+        app.navigationBars.buttons.firstMatch.tap()
+        expectValue(app.buttons["me.orders.待付款"], "3个订单")
+        capture(app, "counts-after-confirmed-cancellation")
+    }
+    @MainActor func testOrderBodySwipesEveryFilterAndKeepsHeaderInSync() {
+        let app = launch(); orders(app)
+        let filters = [
+            "all", "unpaid", "unshipped", "unreceived", "afterSale", "unevaluated", "completed",
+        ]
+        let firstIDs = [910001, 910001, 910002, 910003, 910006, 910004, 910005]
+        for (index, filter) in filters.enumerated() {
+            if index > 0 { app.scrollViews["orders.list"].swipeLeft() }
+            XCTAssertTrue(
+                app.buttons["orders.item.\(firstIDs[index])"].waitForExistence(timeout: 5))
+            let chip = app.buttons["orders.filter.\(filter)"]
+            XCTAssertTrue(chip.isSelected); XCTAssertTrue(chip.isHittable)
+        }
+        capture(app, "orders-swiped-completed")
+        app.scrollViews["orders.list"].swipeRight()
+        let order = app.buttons["orders.item.910004"]
+        XCTAssertTrue(order.waitForExistence(timeout: 5)); order.tap()
+        XCTAssertTrue(app.staticTexts["order.status"].waitForExistence(timeout: 5))
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.buttons["orders.filter.unevaluated"].isSelected)
+        XCTAssertTrue(order.isHittable)
+    }
+    @MainActor func testVerticalScrollAndFilterPositionsRemainIndependent() throws {
+        let app = launch(); orders(app)
+        let list = app.scrollViews["orders.list"]
+        XCTAssertTrue(app.buttons["orders.item.910001"].waitForExistence(timeout: 5))
+        list.swipeUp()
+        XCTAssertTrue(app.buttons["orders.filter.all"].isSelected)
+        let visible = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'orders.item.'")
+        )
+        .allElementsBoundByIndex.first { $0.isHittable }
+        let anchor = try XCTUnwrap(visible?.identifier)
+        list.swipeLeft()
+        XCTAssertTrue(app.buttons["orders.filter.unpaid"].isSelected)
+        XCTAssertTrue(app.buttons["orders.item.910001"].waitForExistence(timeout: 5))
+        list.swipeRight()
+        XCTAssertTrue(app.buttons["orders.filter.all"].isSelected)
+        XCTAssertTrue(app.buttons[anchor].isHittable)
+        capture(app, "orders-restored-scroll-position")
+    }
+    @MainActor func testLargeTextOrderBadgesRemainReadableAndPagerWorks() {
+        let app = launch("countsLarge", large: true); app.tabBars.buttons["我的"].tap()
+        expectValue(app.buttons["me.orders.待付款"], "101个订单")
+        for _ in 0..<5 { if app.buttons["me.orders.退款/售后"].isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(app.buttons["me.orders.退款/售后"].isHittable)
+        capture(app, "large-my-order-badges-99-plus")
+        app.buttons["me.orders.all"].tap()
+        XCTAssertTrue(app.buttons["orders.item.910001"].waitForExistence(timeout: 5))
+        app.scrollViews["orders.list"].swipeLeft()
+        XCTAssertTrue(app.buttons["orders.filter.unpaid"].isSelected)
+        XCTAssertTrue(app.buttons["orders.item.910001"].isHittable)
+        capture(app, "large-order-paging")
+    }
+
 }

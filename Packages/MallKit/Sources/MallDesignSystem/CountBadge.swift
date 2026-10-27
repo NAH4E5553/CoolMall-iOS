@@ -8,7 +8,7 @@ public struct CountBadge: View {
         if count > 0 {
             Text(count > 99 ? "99+" : String(count)).font(.caption2.bold())
                 .foregroundStyle(.white).padding(.horizontal, 5).padding(.vertical, 2)
-                .frame(minWidth: 18, minHeight: 18).background(.red, in: Capsule())
+                .frame(minWidth: 18, minHeight: 18).background(.red, in: Capsule()).fixedSize()
                 .accessibilityLabel(String(count))
         }
     }

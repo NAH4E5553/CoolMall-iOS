@@ -222,6 +222,7 @@ struct RootView: View {
                 onOpenCoupons: { router.mePath.append(.coupons) },
                 onOpenAddresses: { router.mePath.append(.addresses) },
                 onOpenOrders: { router.mePath.append(.orders(filter: $0)) },
+                orderCounts: dependencies.orderCounts, orderRefreshRevision: router.orderRevision,
                 onOpenProduct: { router.mePath.append(.productDetail(goodsID: $0)) }
             ) {
                 if case .guest = dependencies.accountState {

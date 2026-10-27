@@ -3,7 +3,9 @@
     import MallCore
 
     /// Explicit offline reads. No fake order is used by a normal Debug or Release launch.
-    actor OrderUITestSupport: OrdersLoading, CheckoutLoading, OrderCreating, OrderCancelling {
+    actor OrderUITestSupport: OrdersLoading, CheckoutLoading, OrderCreating, OrderCancelling,
+        OrderCountsLoading
+    {
         private var created: [Int64: OrderSnapshot] = [:]
         private var createdIntents: [UUID: Int64] = [:]
         private var closed: Set<Int64> = []
@@ -63,6 +65,26 @@
                 mode: arguments.indices.contains(i + 1) ? arguments[i + 1] : "invalid")
         }
         init(mode: String) { self.mode = mode }
+        func loadOrderCounts(accountID: Int64) async throws -> UserOrderCounts {
+            guard accountID == 920001 else { throw PageReadFailure.authenticationRequired }
+            attempts["counts", default: 0] += 1
+            if mode == "countsFailure", attempts["counts"] == 1 {
+                throw PageReadFailure.networkUnavailable
+            }
+            if mode == "countsPending" { try await Task.sleep(for: .seconds(100)) }
+            if mode == "empty" {
+                return try UserOrderCounts(
+                    unpaid: 0, unshipped: 0,
+                    unreceived: 0, unevaluated: 0, refunding: 0, refunded: 0)
+            }
+            let statuses =
+                (1...32).map { i in closed.contains(Int64(910000 + i)) ? 7 : (i - 1) % 8 }
+                + created.values.map { closed.contains($0.id) ? 7 : $0.status }
+            func count(_ status: Int) -> Int64 { Int64(statuses.filter { $0 == status }.count) }
+            return try UserOrderCounts(
+                unpaid: count(0), unshipped: count(1), unreceived: count(2),
+                unevaluated: count(3), refunding: count(5), refunded: count(6))
+        }
         func loadOrders(accountID: Int64, filter: OrderFilter, page: Int, pageSize: Int)
             async throws -> NumberedPage<OrderSnapshot>
         {
@@ -70,6 +92,7 @@
                 [
                     "success", "failure", "appendFailure", "empty", "contextFailure", "authFailure",
                     "createRejected", "createUnknown", "reasonAuthFailure", "checkoutSparseCoupon",
+                    "countsFailure", "countsPending",
                 ]
                 .contains(mode)
             else { throw PageReadFailure.invalidConfiguration }

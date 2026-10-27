@@ -1199,6 +1199,8 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 
 ### 7.5 例外与规则变更
 
+2026-10-27 ORDER-BADGES-PAGING-01 / CHANGE-02、REVIEW-02：用户明确我的订单角标、列表左右分页、详情购物车角标三项，按三个可独立构建提交。Core新增UserOrderCounts/OrderCountsLoading只读值与能力，Data复用HTTPOrderService的GET order/info/userCount与现有鉴权；App同实例注入Me入口，Account私有VM拥有账号页面投影。Orders各filter持原分页协调器、原生page与header同步。Catalog入口仅新增App原CartBadge同scope件数值，不新建存储或投影owner。两个Feature的纯视觉CountBadge共享于DesignSystem，不泄漏Core/业务状态。三Feature分别对应用户三项必要消费者，无互相依赖；不新Target/SDK/schema/CI/预算。状态/取消/接口/验证合同唯一见本地Evidence/iOS/2026-10-27-ORDER-BADGES-PAGING/scope.md。
+
 2026-10-26 ORDER-TRANSACTIONS-02：用户7张截图及明确提交/取消订单请求覆盖ORDER-V1只读范围。既有Checkout/Orders分别增加创建确认/收银台展示和待付款取消意图，Data通过新窄Core协议执行已证create/cancel，服务端仍为订单状态/金额事实；无支付SDK/新Target/存储副本/CI变化。App使用CashierEntryView与既有详情回调，Feature VM不公开。纯视觉固定高度弹框由DesignSystem供两个新场景使用，旧Account动态领券高度/请求/登录合同不改；不复制业务卡模型，不跨Feature import。创建/取消未确认不重放、账号/旧回调失效、字段/金额和来源导航合同见本地Evidence/iOS/2026-10-26-ORDER-TRANSACTIONS/scope.txt；用户已确认来源返回规则。该条为用户明确业务范围所需最小公开合同/写入能力登记，不放宽依赖或检查器。
 
 2026-10-26 ORDER-V1：用户明确批准新增OrdersFeature/CheckoutFeature两个业务Target及对应测试，覆盖原任务“不新增Target”限制，沿SPLIT-01登记既有机器矩阵，不变CI政策。App唯一组装/路由，两个Feature仅依赖Core/DesignSystem/Images，不互相导入。最小公开入口OrderListEntryView、OrderDetailEntryView、CheckoutEntryView；Core只读订单/确认页能力及一次性购买意图；不开放Feature VM/DTO。仅order/info/page、order/info/info、page/confirmOrder读取；不调用名字含confirm的确认收货写接口。无创建/支付/订单修改或存储副本。金额/取消/账号切换及验收合同见本地Evidence/iOS/2026-10-26-ORDER-V1/scope.txt及PRODUCT_SPEC本卡。
@@ -1478,3 +1480,5 @@ Historical development note, superseded by8.3: 2026-10-25 COUPON-01 v0.1 in deve
 2026-10-26 CHECKOUT-COUPON-FEEDBACK-01 v0.1：删除确认页不使用入口，默认nil/再次点已选取消；按endpoint区分确认候选与MyCoupon严格状态，缺字段不伪造，明确失效/未知枚举/门槛仍拦截并说明原因。关闭时按钮展示用本次presentation快照，实际选择/金额仍归VM；刷新禁止旧券操作并结束弹框。Sol最终50单元+4UI、格式/边界及Debug/Release exit0，563仅发现；213治理exit0限定复用本轮未变策略。初轮两条UI失败及无效触摸/布局/AX试验保留并已撤回，原断言/60/120预算不变。Astra同冻结265源/13构建独立54/0/0、native/exact均0且验前后身份一致，本轮限定范围本地验收通过；无真实响应/后端资格或写入验证。唯一状态Evidence/iOS/2026-10-26-CHECKOUT-COUPON-FEEDBACK/state.json；保持PR31 stacked draft base account，不merge/retarget main。
 
 2026-10-26 CART-CHECKOUT-01 v0.1：Cart结算已接共用确认订单与原写入/收银台链；仅选中行新鲜核验/多商品精确合计，guest登录续接不合并，创建确认后按原scope/revision条件清选中行，同步失败保留并提示。自检110模型及12条UI分批完成（初轮系统保存密码遮挡与大字号首屏定位失败保留，驱动返修后对应场景通过），最终格式/边界/Debug/Release exit0，governance213/0；自检完成，独立验收结果以本轮state.json为准；无真实账号/后端写入/iOS17/真机/fullVO/远程CI通过声明。唯一状态Evidence/iOS/2026-10-26-CART-CHECKOUT/state.json。
+
+2026-10-27 ORDER-BADGES-PAGING-01 v0.1开发中，未自检/独立验收；唯一状态Evidence/iOS/2026-10-27-ORDER-BADGES-PAGING/state.json。

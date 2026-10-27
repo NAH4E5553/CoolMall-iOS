@@ -176,4 +176,68 @@ struct OrderServiceTests {
 
     }
 
+    @Test func countReadUsesExactEndpointAuthorizationAndChineseKeys() async throws {
+        let transport = CouponTransport(
+            data: Data(
+                #"{"code":1000,"data":{"待付款":101,"待发货":0,"待收货":3,"待评价":4,"退款中":5,"已退款":6}}"#.utf8))
+        let counts = try await service(transport).loadOrderCounts(accountID: 1)
+        #expect(counts.unpaid == 101); #expect(counts.unshipped == 0)
+        #expect(counts.unreceived == 3); #expect(counts.unevaluated == 4)
+        #expect(counts.afterSale == 11)
+        let request = try #require(await transport.requests.first)
+        #expect(request.httpMethod == "GET"); #expect(request.httpBody == nil)
+        #expect(request.url?.path == "/app/order/info/userCount");
+        #expect(request.url?.query == nil)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "synthetic-session")
+        let partial = try await service(
+            CouponTransport(data: Data(#"{"code":1000,"data":{"待付款":0,"退款中":3}}"#.utf8))
+        ).loadOrderCounts(accountID: 1)
+        #expect(partial.unpaid == 0); #expect(partial.unshipped == nil);
+        #expect(partial.afterSale == nil)
+    }
+    @Test func countReadRejectsMalformedNegativeBusinessAndUnauthenticatedResponses() async {
+        for body in [
+            #"{"code":1000,"data":{"待付款":-1}}"#,
+            #"{"code":1000,"data":{"待付款":"3"}}"#,
+            #"{"code":1000,"data":{"退款中":9223372036854775807,"已退款":1}}"#,
+            #"{"code":1000,"data":null}"#,
+        ] {
+            await #expect(throws: PageReadFailure.invalidResponse) {
+                try await service(CouponTransport(data: Data(body.utf8))).loadOrderCounts(
+                    accountID: 1)
+            }
+        }
+        let transport = CouponTransport(data: Data()); let reader = service(transport)
+        for id: Int64 in [0, 2] {
+            await #expect(throws: PageReadFailure.authenticationRequired) {
+                try await reader.loadOrderCounts(accountID: id)
+            }
+        }
+        #expect(await transport.requests.isEmpty)
+        await #expect(throws: PageReadFailure.businessCode(500)) {
+            try await service(CouponTransport(data: Data(#"{"code":500,"message":"拒绝"}"#.utf8)))
+                .loadOrderCounts(accountID: 1)
+        }
+        await #expect(throws: PageReadFailure.authenticationRequired) {
+            try await service(CouponTransport(data: Data(), status: 401)).loadOrderCounts(
+                accountID: 1)
+        }
+    }
+    @Test func countReadLogoutAndCancellationRejectLateReplies() async throws {
+        for fail in [false, true] {
+            let session = session()
+            let transport = CouponTransport(
+                data: Data(#"{"code":1000,"data":{"待付款":3}}"#.utf8), hold: true, fail: fail)
+            let reader = service(transport, session: session)
+            let task = Task { try await reader.loadOrderCounts(accountID: 1) }
+            await transport.started(); try await session.logout(); await transport.release()
+            await #expect(throws: CancellationError.self) { try await task.value }
+        }
+        let transport = CouponTransport(data: Data(#"{"code":1000,"data":{}}"#.utf8), hold: true)
+        let reader = service(transport);
+        let task = Task { try await reader.loadOrderCounts(accountID: 1) }
+        await transport.started(); task.cancel(); await transport.release()
+        await #expect(throws: CancellationError.self) { try await task.value }
+    }
+
 }

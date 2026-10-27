@@ -27,6 +27,7 @@ final class AppDependencies {
     let productReviews: any ProductReviewsLoading
     let productDetails: any ProductDetailLoading
     let category: any CategoryLoading
+    let orderCounts: any OrderCountsLoading
     let orders: any OrdersLoading
     let checkout: any CheckoutLoading
     let orderCreator: any OrderCreating
@@ -192,20 +193,21 @@ final class AppDependencies {
         #endif
         #if DEBUG
             if let fixture = OrderUITestSupport.make(arguments: ProcessInfo.processInfo.arguments) {
-                orders = fixture; checkout = fixture
+                orders = fixture; checkout = fixture; orderCounts = fixture
                 orderCreator = fixture; orderCanceller = fixture
             } else if let session = accountSession as? SessionCoordinator {
                 let service = HTTPOrderService(environment: environment, session: session)
-                orders = service; checkout = service
+                orders = service; checkout = service; orderCounts = service
                 let transactions = HTTPOrderTransactions(environment: environment, session: session)
                 orderCreator = transactions; orderCanceller = transactions
             } else {
-                orders = UnavailableOrderReads(); checkout = UnavailableOrderReads()
+                orders = UnavailableOrderReads(); checkout = UnavailableOrderReads();
+                orderCounts = UnavailableOrderReads()
                 orderCreator = UnavailableOrderReads(); orderCanceller = UnavailableOrderReads()
             }
         #else
             let orderService = HTTPOrderService(environment: environment, session: session)
-            orders = orderService; checkout = orderService
+            orders = orderService; checkout = orderService; orderCounts = orderService
             let transactions = HTTPOrderTransactions(environment: environment, session: session)
             orderCreator = transactions; orderCanceller = transactions
         #endif
@@ -360,8 +362,12 @@ final class AppDependencies {
 
 #if DEBUG
     private struct UnavailableOrderReads: OrdersLoading, CheckoutLoading, OrderCreating,
+        OrderCountsLoading,
         OrderCancelling
     {
+        func loadOrderCounts(accountID: Int64) async throws -> UserOrderCounts {
+            throw PageReadFailure.invalidConfiguration
+        }
         func createOrder(accountID: Int64, input: OrderCreation) async throws -> Int64 {
             throw OrderWriteFailure.unavailable
         }

@@ -1,8 +1,8 @@
 import Foundation
 import MallCore
 
-/// Three explicitly allowed reads. GET order/info/confirm is a write and is never called here.
-public final class HTTPOrderService: OrdersLoading, CheckoutLoading, Sendable {
+/// Explicitly allowed order/context/count reads. GET order/info/confirm is a write and is never called here.
+public final class HTTPOrderService: OrdersLoading, CheckoutLoading, OrderCountsLoading, Sendable {
     private let environment: APIEnvironment
     private let session: any AccountReadAuthorizing
     private let transport: any ProductDetailTransport
@@ -46,6 +46,23 @@ public final class HTTPOrderService: OrdersLoading, CheckoutLoading, Sendable {
             let dto: OrderDTO = try Self.payload(bytes)
             guard dto.id == orderID else { throw PageReadFailure.invalidResponse }
             return try dto.value(accountID: accountID)
+        }
+    }
+    public func loadOrderCounts(accountID: Int64) async throws -> UserOrderCounts {
+        try await read(accountID: accountID, path: "order/info/userCount", body: nil) { bytes in
+            struct CountsDTO: Decodable {
+                let unpaid: Int64?; let unshipped: Int64?; let unreceived: Int64?
+                let unevaluated: Int64?; let refunding: Int64?; let refunded: Int64?
+                enum CodingKeys: String, CodingKey {
+                    case unpaid = "待付款", unshipped = "待发货", unreceived = "待收货"
+                    case unevaluated = "待评价", refunding = "退款中", refunded = "已退款"
+                }
+            }
+            let dto: CountsDTO = try Self.payload(bytes)
+            return try UserOrderCounts(
+                unpaid: dto.unpaid, unshipped: dto.unshipped,
+                unreceived: dto.unreceived, unevaluated: dto.unevaluated,
+                refunding: dto.refunding, refunded: dto.refunded)
         }
     }
     public func loadCheckout(accountID: Int64) async throws -> CheckoutContext {

@@ -33,6 +33,7 @@ import SwiftUI
 @MainActor private struct OrderListScreen: View {
     let refreshRevision: UInt64
     @State private var seenRevision: UInt64
+    @State private var anchors: [OrderFilter: Int64] = [:]
     @State private var model: OrderListViewModel
     @Environment(\.scenePhase) private var scenePhase
     let isActive: Bool
@@ -57,34 +58,67 @@ import SwiftUI
     private var active: Bool { isActive && scenePhase == .active }
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView(.horizontal) {
-                HStack {
-                    ForEach(OrderFilter.allCases, id: \.self) { filter in
-                        Button(filter.label) { model.select(filter) }
-                            .padding(.horizontal, 12).frame(minHeight: 44)
-                            .foregroundStyle(model.filter == filter ? Color.white : Color.primary)
-                            .background(
-                                model.filter == filter ? orderAccent : Color.primary.opacity(0.05),
-                                in: Capsule()
-                            )
-                            .accessibilityAddTraits(model.filter == filter ? .isSelected : [])
-                            .accessibilityIdentifier("orders.filter.\(filter.rawValue)")
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal) {
+                    HStack {
+                        ForEach(OrderFilter.allCases, id: \.self) { filter in
+                            Button(filter.label) { withAnimation { model.select(filter) } }
+                                .padding(.horizontal, 12).frame(minHeight: 44)
+                                .foregroundStyle(
+                                    model.filter == filter ? Color.white : Color.primary
+                                )
+                                .background(
+                                    model.filter == filter
+                                        ? orderAccent : Color.primary.opacity(0.05),
+                                    in: Capsule()
+                                )
+                                .accessibilityAddTraits(model.filter == filter ? .isSelected : [])
+                                .accessibilityIdentifier("orders.filter.\(filter.rawValue)").id(
+                                    filter)
+                        }
+                    }.padding(12)
+                }.scrollIndicators(.hidden).accessibilityIdentifier("orders.filters")
+                    .onChange(of: model.filter, initial: true) { _, filter in
+                        withAnimation { proxy.scrollTo(filter, anchor: .center) }
                     }
-                }.padding(12)
-            }.scrollIndicators(.hidden).accessibilityIdentifier("orders.filters")
+            }
+            TabView(selection: Binding(get: { model.filter }, set: { model.select($0) })) {
+                ForEach(OrderFilter.allCases, id: \.self) { filter in
+                    page(filter).tag(filter).accessibilityHidden(filter != model.filter)
+                }
+            }.tabViewStyle(.page(indexDisplayMode: .never))
+                .accessibilityIdentifier("orders.pages")
+        }
+        .background(Color.primary.opacity(0.035)).navigationTitle("我的订单")
+        .navigationBarTitleDisplayMode(.inline).tint(orderAccent)
+        .task(id: ReadKey(active: active, filter: model.filter, revision: refreshRevision)) {
+            guard !Task.isCancelled else { return }
+            if seenRevision != refreshRevision {
+                seenRevision = refreshRevision; anchors = [:]; model.invalidateAll()
+            }
+            await model.activate(active)
+        }
+        .onDisappear { model.stop() }
+    }
+    private func page(_ filter: OrderFilter) -> some View {
+        let state = model.snapshot(for: filter)
+        return
             ScrollView {
                 LazyVStack(spacing: 16) {
-                    if model.state.operation == .initial { ProgressView("正在读取订单") }
-                    if let error = model.state.failure {
-                        orderError(error, retry: model.retry, login: requestLogin)
-                            .accessibilityElement(children: .contain).accessibilityIdentifier(
-                                "orders.error")
+                    if state.operation == .initial { ProgressView("正在读取订单") }
+                    if let error = state.failure {
+                        orderError(
+                            error, retry: { if model.filter == filter { model.retry() } },
+                            login: requestLogin
+                        )
+                        .accessibilityElement(children: .contain).accessibilityIdentifier(
+                            "orders.error")
                     }
-                    if model.state.hasLoaded && model.state.items.isEmpty {
+                    if state.hasLoaded && state.items.isEmpty {
                         ContentUnavailableView("暂无订单", systemImage: "list.bullet.rectangle")
                             .accessibilityIdentifier("orders.empty")
                     }
-                    ForEach(model.state.items) { order in
+                    ForEach(state.items) { order in
                         Button {
                             onOpenOrder(order.id)
                         } label: {
@@ -97,7 +131,8 @@ import SwiftUI
                                 if let lines = order.lines {
                                     ForEach(lines) { line in
                                         OrderLineView(
-                                            line: line, pipeline: pipeline, isActive: active)
+                                            line: line, pipeline: pipeline,
+                                            isActive: active && filter == model.filter)
                                     }
                                 } else {
                                     Text("商品信息暂不可用").foregroundStyle(.secondary)
@@ -111,28 +146,23 @@ import SwiftUI
                             .contentShape(Rectangle())
                         }.buttonStyle(.plain).accessibilityIdentifier("orders.item.\(order.id)")
                     }
-                    if let error = model.state.appendFailure {
-                        orderError(error, retry: { model.more() }, login: requestLogin)
+                    if let error = state.appendFailure {
+                        orderError(error, retry: { model.more(for: filter) }, login: requestLogin)
                             .accessibilityElement(children: .contain).accessibilityIdentifier(
                                 "orders.moreError")
-                    } else if model.state.nextPage != nil {
-                        ProgressView().frame(height: 44).onAppear { model.more(automatic: true) }
-                            .onDisappear { model.tailExited() }
-                    } else if model.state.hasLoaded && !model.state.items.isEmpty {
+                    } else if state.nextPage != nil {
+                        ProgressView().frame(height: 44).onAppear {
+                            model.more(automatic: true, for: filter)
+                        }
+                        .onDisappear { model.tailExited(for: filter) }
+                    } else if state.hasLoaded && !state.items.isEmpty {
                         Text("没有更多了").font(.footnote).foregroundStyle(.secondary)
                     }
-                }.padding(16)
-            }.accessibilityIdentifier("orders.list").refreshable { await model.refresh() }
-        }
-        .background(Color.primary.opacity(0.035)).navigationTitle("我的订单")
-        .navigationBarTitleDisplayMode(.inline).tint(orderAccent)
-        .task(id: ReadKey(active: active, filter: model.filter, revision: refreshRevision)) {
-            await model.activate(active)
-            if active, seenRevision != refreshRevision {
-                seenRevision = refreshRevision; await model.refresh()
+                }.scrollTargetLayout().padding(16)
             }
-        }
-        .onDisappear { model.stop() }
+            .scrollPosition(id: Binding(get: { anchors[filter] }, set: { anchors[filter] = $0 }))
+            .accessibilityIdentifier("orders.list").refreshable { await model.refresh(for: filter) }
+
     }
 }
 let orderAccent = Color(red: 0.29, green: 0.32, blue: 1)

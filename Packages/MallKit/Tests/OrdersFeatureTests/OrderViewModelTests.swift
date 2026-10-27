@@ -71,6 +71,52 @@ import Testing
         #expect(model.state.items.count == 11); #expect(model.state.failure == .networkUnavailable)
         model.stop()
     }
+    @Test func returningToFilterRetainsRowsPaginationAndFailureWithoutRefetch() async {
+        let loader = Loader();
+        let model = OrderListViewModel(accountID: 1, filter: .all, loader: loader)
+        await model.activate(true); model.more(); await wait { model.state.items.count == 11 }
+        model.select(.unpaid); await model.activate(true)
+        loader.failAppend = true; model.more(); await wait { model.state.appendFailure != nil }
+        model.select(.all); await model.activate(true)
+        #expect(model.state.items.count == 11); #expect(model.state.nextPage == nil)
+        model.select(.unpaid); await model.activate(true)
+        #expect(model.state.items.count == 10); #expect(model.state.appendFailure == .timeout)
+        #expect(loader.calls.map { $0.0 } == [.all, .all, .unpaid, .unpaid])
+        model.more(); await wait { model.state.items.count == 11 }; model.stop()
+    }
+    @Test func offscreenCallbacksNeverReadAndInvalidationClearsEveryFilter() async {
+        let loader = Loader();
+        let model = OrderListViewModel(accountID: 1, filter: .all, loader: loader)
+        await model.activate(true); model.select(.unpaid); await model.activate(true)
+        model.more(for: .all); await model.refresh(for: .all); model.tailExited(for: .all)
+        #expect(loader.calls.count == 2)
+        model.invalidateAll()
+        #expect(OrderFilter.allCases.allSatisfy { !model.snapshot(for: $0).hasLoaded })
+        await model.activate(true); model.select(.all); await model.activate(true)
+        #expect(loader.calls.map { $0.0 } == [.all, .unpaid, .unpaid, .all])
+        model.prepareLogin()
+        #expect(OrderFilter.allCases.allSatisfy { model.snapshot(for: $0).items.isEmpty })
+        model.stop(); model.more(); await model.refresh(); #expect(loader.calls.count == 4)
+    }
+    @Test func invalidationRejectsLateAppendAndOldAuthenticationFailure() async {
+        for fail in [false, true] {
+            let loader = Loader();
+            let model = OrderListViewModel(accountID: 1, filter: .all, loader: loader)
+            await model.activate(true); loader.holdList = true; model.more()
+            await wait { loader.listGate != nil }
+            model.prepareLogin(); await model.activate(true)
+            if fail {
+                loader.listGate?.resume(throwing: PageReadFailure.authenticationRequired)
+            } else {
+                loader.listGate?.resume(
+                    returning: NumberedPage(items: [Self.order(99)], page: 2, size: 10, total: 11))
+            }
+            for _ in 0..<20 { await Task.yield() }
+            #expect(model.state.items.count == 10); #expect(model.state.nextPage == 2)
+            #expect(model.state.failure == nil); #expect(model.state.appendFailure == nil)
+            model.stop()
+        }
+    }
     @Test func detailRejectsWrongIdentityAndCanRetry() async {
         let loader = Loader(); loader.wrongDetail = true
         let model = OrderDetailViewModel(accountID: 1, orderID: 7, loader: loader)

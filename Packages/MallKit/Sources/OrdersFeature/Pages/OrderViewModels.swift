@@ -5,44 +5,58 @@ import Observation
 @MainActor @Observable final class OrderListViewModel {
     private let accountID: Int64
     private let loader: any OrdersLoading
-    private var pages: NumberedPageCoordinator<OrderSnapshot>
+    private var coordinators: [OrderFilter: NumberedPageCoordinator<OrderSnapshot>] = [:]
+    private var snapshots: [OrderFilter: NumberedPageSnapshot<OrderSnapshot>] = [:]
     private(set) var filter: OrderFilter
-    private(set) var state: NumberedPageSnapshot<OrderSnapshot>
+    var state: NumberedPageSnapshot<OrderSnapshot> { snapshot(for: filter) }
     init(accountID: Int64, filter: OrderFilter, loader: any OrdersLoading) {
         self.accountID = accountID; self.filter = filter; self.loader = loader
-        let pages = Self.makePages(accountID: accountID, filter: filter, loader: loader)
-        self.pages = pages; state = pages.snapshot
-        pages.onChange = { [weak self] in self?.state = $0 }
+        rebuildPages()
     }
-    private static func makePages(accountID: Int64, filter: OrderFilter, loader: any OrdersLoading)
-        -> NumberedPageCoordinator<OrderSnapshot>
-    {
-        NumberedPageCoordinator(pageSize: 10) { page, size in
-            try await loader.loadOrders(
-                accountID: accountID, filter: filter, page: page, pageSize: size)
+    private func rebuildPages() {
+        for page in coordinators.values { page.setActive(false); page.onChange = nil }
+        coordinators = [:]; snapshots = [:]
+        for filter in OrderFilter.allCases {
+            let accountID = accountID; let loader = loader
+            let page = NumberedPageCoordinator<OrderSnapshot>(pageSize: 10) { number, size in
+                try await loader.loadOrders(
+                    accountID: accountID, filter: filter, page: number, pageSize: size)
+            }
+            coordinators[filter] = page; snapshots[filter] = page.snapshot
+            page.onChange = { [weak self] in self?.snapshots[filter] = $0 }
         }
+    }
+    func snapshot(for filter: OrderFilter) -> NumberedPageSnapshot<OrderSnapshot> {
+        // All seven fixed filters are installed together, never inferred from loaded orders.
+        snapshots[filter]!
     }
     func select(_ filter: OrderFilter) {
         guard filter != self.filter else { return }
-        pages.setActive(false); pages.onChange = nil
-        self.filter = filter
-        pages = Self.makePages(accountID: accountID, filter: filter, loader: loader)
-        state = pages.snapshot; pages.onChange = { [weak self] in self?.state = $0 }
+        coordinators[self.filter]?.setActive(false); self.filter = filter
     }
-    func prepareLogin() {
-        pages.setActive(false); pages.onChange = nil
-        pages = Self.makePages(accountID: accountID, filter: filter, loader: loader)
-        state = pages.snapshot; pages.onChange = { [weak self] in self?.state = $0 }
-    }
+    /// Writes and reauthentication invalidate every filter, including offscreen cached pages.
+    func invalidateAll() { rebuildPages() }
+    func prepareLogin() { invalidateAll() }
     func activate(_ active: Bool) async {
-        pages.setActive(active)
-        if active { await pages.loadInitial() }
+        guard !Task.isCancelled else { return }
+        let page = coordinators[filter]!
+        page.setActive(active)
+        if active { await page.loadInitial() }
     }
-    func stop() { pages.setActive(false) }
-    func refresh() async { await pages.refresh() }
-    func retry() { pages.retry() }
-    func more(automatic: Bool = false) { pages.loadMore(automatic: automatic) }
-    func tailExited() { pages.tailExited() }
+    func stop() { for page in coordinators.values { page.setActive(false) } }
+    func refresh(for expected: OrderFilter? = nil) async {
+        guard expected == nil || expected == filter else { return }
+        await coordinators[filter]?.refresh()
+    }
+    func retry() { coordinators[filter]?.retry() }
+    func more(automatic: Bool = false, for expected: OrderFilter? = nil) {
+        guard expected == nil || expected == filter else { return }
+        coordinators[filter]?.loadMore(automatic: automatic)
+    }
+    func tailExited(for expected: OrderFilter? = nil) {
+        guard expected == nil || expected == filter else { return }
+        coordinators[filter]?.tailExited()
+    }
 }
 
 @MainActor @Observable final class OrderDetailViewModel {

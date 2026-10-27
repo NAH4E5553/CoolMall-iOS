@@ -4,8 +4,6 @@ name: iOS Full Regression (Advisory)
 # complete regression separately and is intentionally advisory: its failure is
 # visible but is not part of required-checks and does not block merges.
 on:
-  push:
-    branches: [main]
   schedule:
     - cron: '0 18 * * *'
   workflow_dispatch:
@@ -21,8 +19,10 @@ concurrency:
 jobs:
   full:
     name: Full regression (advisory)
+    # Nightly/manual only: required must never queue behind a 45-minute
+    # advisory run on the same runner label.
     concurrency:
-      group: mall-ui-runner
+      group: ios-full-advisory-${{ github.ref }}
       cancel-in-progress: false
     runs-on: xcode-27
     timeout-minutes: 120

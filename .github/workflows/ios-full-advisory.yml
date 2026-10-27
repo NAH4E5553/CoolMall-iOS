@@ -6,6 +6,8 @@ name: iOS Full Regression (Advisory)
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: '0 18 * * *'
   workflow_dispatch:
 
 permissions:
@@ -19,6 +21,9 @@ concurrency:
 jobs:
   full:
     name: Full regression (advisory)
+    concurrency:
+      group: mall-ui-runner
+      cancel-in-progress: false
     runs-on: xcode-27
     timeout-minutes: 120
     env:
@@ -35,6 +40,8 @@ jobs:
           persist-credentials: false
           ref: ${{ github.sha }}
           fetch-depth: 0
+      - name: Check test-support manifest
+        run: python3 Scripts/check-test-support.py
       - name: Record environment and select exact runtime
         shell: bash
         run: |

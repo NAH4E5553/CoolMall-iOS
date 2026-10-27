@@ -69,6 +69,8 @@ class SelectionTests(unittest.TestCase):
             self.write(path, 'existingBody\n')
         self.write('README.md','docs\n')
         self.write('.github/workflows/ios.yml','name: legacy\n')
+        self.write('Tests/Governance/host-sensitive-advisory.json',
+                   (S.ROOT / 'Tests/Governance/host-sensitive-advisory.json').read_text())
         self.base = self.commit()
 
     def git(self, *args):
@@ -91,7 +93,7 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(result['targets'], sorted([S.HOME,S.NAVIGATION,*S.PR_SMOKE]))
         self.assertEqual(len(result['paths']), 2)
         self.write('Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeBannerCarouselView.swift','changedBody\n'); self.commit()
-        self.assertEqual(self.plan()['targets'], sorted([S.CATALOG,S.HOME,S.NAVIGATION,*S.PR_SMOKE,*set(S.LIFECYCLE)-set(S.PR_SMOKE)]))
+        self.assertEqual(self.plan()['targets'], sorted([S.CATALOG,S.HOME,S.NAVIGATION,*S.PR_SMOKE]))
 
     def test_unknown_api_structural_full_but_history_is_irrelevant(self):
         self.write('CoolMalliOSUITests/HomeLoadTests.swift','changedBody\n'); self.commit()
@@ -109,7 +111,7 @@ class SelectionTests(unittest.TestCase):
         self.write(hosted, 'changedBody\n'); self.commit()
         self.assertEqual(self.plan()['targets'], sorted([S.CATALOG,*S.PR_SMOKE]))
         self.write(timing, 'changedBody\n'); self.commit()
-        self.assertEqual(self.plan()['targets'], sorted(set([S.CATALOG,*S.PR_SMOKE,*S.LIFECYCLE])))
+        self.assertEqual(self.plan()['targets'], sorted(set([S.CATALOG,*S.PR_SMOKE])))
 
     def test_new_mapped_timing_files_and_declarations_still_require_full(self):
         paths = [
@@ -156,7 +158,7 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(scope['mode'], 'selected')
         required = S.resolve(scope, RAW, TARGETS)
         self.assertTrue(set(S.PR_SMOKE) <= set(required['expected']))
-        self.assertIn(S.HOME + '/testBannerAutoplayArmsAfterPushedRoutePopsBack()', required['expected'])
+        self.assertNotIn(S.HOME + '/testBannerAutoplayArmsAfterPushedRoutePopsBack()', required['expected'])
         self.assertNotIn(S.HOME + '/testApprovedHomeDisplayAtAccessibilitySize()', required['expected'])
         self.assertNotIn(S.HOME + '/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()', required['expected'])
         self.assertGreater(sum('HomeBannerProductionTimingTests/' in x for x in required['expected']), 0)
@@ -230,7 +232,7 @@ class SelectionTests(unittest.TestCase):
         source = (
             'import XCTest\n'
             'final class HomeLoadTests: XCTestCase {\n'
-            '    func helper() -> Int {\n'
+            '    @MainActor private func helper() -> Int {\n'
             '        return 1\n'
             '    }\n'
             '    func testA() {\n'
@@ -249,6 +251,93 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(result['reason'], 'required-baseline-plus-current-impact')
         self.assertIn(S.HOME, result['targets'])
         self.assertNotIn('testMethods', result)
+
+    def test_changed_comment_above_helper_falls_back_to_whole_target(self):
+        path = 'CoolMalliOSUITests/HomeLoadTests.swift'
+        source = (
+            'import XCTest\n'
+            'final class HomeLoadTests: XCTestCase {\n'
+            '    func testA() {\n'
+            '    }\n'
+            '    // helper documentation\n'
+            '    @MainActor private func helper() {\n'
+            '    }\n'
+            '}\n'
+        )
+        self.write(path, source)
+        base = self.commit()
+        self.write(path, source.replace('// helper documentation', '// helper documentation changed'))
+        head = self.commit()
+        result = S.plan(
+            self.root,
+            dict(GITHUB_EVENT_NAME='pull_request', MALL_VERIFICATION_TIER='required',
+                 MALL_DIFF_BASE=base, MALL_DIFF_HEAD=head))
+        self.assertEqual(result['reason'], 'required-baseline-plus-current-impact')
+        self.assertIn(S.HOME, result['targets'])
+        self.assertNotIn('testMethods', result)
+
+    def test_test_support_helper_selects_manifest_methods_and_smoke(self):
+        path = 'CoolMalliOSUITests/HomeLoadTests.swift'
+        source = (
+            'import XCTest\n'
+            'final class HomeLoadTests: XCTestCase {\n'
+            '    func testA() { _ = helper() }\n'
+            '    func testB() { _ = helper() }\n'
+            '    @MainActor private func helper() -> Int {\n'
+            '        return 1\n'
+            '    }\n'
+            '}\n'
+        )
+        self.write(path, source)
+        self.write('Tests/Governance/test-support-impact.json', json.dumps({
+            'schemaVersion': 1,
+            'files': {
+                path: {
+                    'owner': '@owner',
+                    'expires': '2099-12-31',
+                    'methods': [
+                        'CoolMalliOSUITests/HomeLoadTests/testA()',
+                        'CoolMalliOSUITests/HomeLoadTests/testB()',
+                    ],
+                }
+            },
+        }))
+        base = self.commit()
+        self.write(path, source.replace('return 1', 'return 2'))
+        head = self.commit()
+        result = S.plan(
+            self.root,
+            dict(GITHUB_EVENT_NAME='pull_request', MALL_VERIFICATION_TIER='required',
+                 MALL_DIFF_BASE=base, MALL_DIFF_HEAD=head))
+        self.assertEqual(result['reason'], 'test-support-targeted')
+        self.assertEqual(result['testSupportMethods'],
+                         ['CoolMalliOSUITests/HomeLoadTests/testA()',
+                          'CoolMalliOSUITests/HomeLoadTests/testB()'])
+        self.assertIn(S.PR_SMOKE[0], result['targets'])
+
+    def test_expired_test_support_manifest_does_not_apply(self):
+        path = 'CoolMalliOSUITests/HomeLoadTests.swift'
+        source = (
+            'import XCTest\n'
+            'final class HomeLoadTests: XCTestCase {\n'
+            '    func testA() { _ = helper() }\n'
+            '    func helper() -> Int { return 1 }\n'
+            '}\n'
+        )
+        self.write(path, source)
+        self.write('Tests/Governance/test-support-impact.json', json.dumps({
+            'schemaVersion': 1,
+            'files': {path: {'owner': '@owner', 'expires': '2000-01-01',
+                             'methods': ['CoolMalliOSUITests/HomeLoadTests/testA()']}},
+        }))
+        base = self.commit()
+        self.write(path, source.replace('return 1', 'return 2'))
+        head = self.commit()
+        result = S.plan(
+            self.root,
+            dict(GITHUB_EVENT_NAME='pull_request', MALL_VERIFICATION_TIER='required',
+                 MALL_DIFF_BASE=base, MALL_DIFF_HEAD=head))
+        self.assertNotEqual(result['reason'], 'test-support-targeted')
 
     def test_local_dirty_required_captures_actual_source_and_unknown_falls_back(self):
         env = dict(MALL_VERIFICATION_TIER='required')

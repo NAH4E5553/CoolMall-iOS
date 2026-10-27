@@ -2,6 +2,7 @@
 """Conservative PR scope and Xcode's actual flat JSON inventory; no source parsing."""
 import hashlib
 import importlib.util
+import datetime
 import json
 import os
 from pathlib import Path
@@ -42,7 +43,7 @@ PR_SMOKE = [NAVIGATION + '/' + name + '()' for name in [
     'testColdStartDefaultsToHomeWithFourTabs', 'testCartRouteHidesTabBarAndBackRestoresIt',
 ]] + [HOME + '/' + name + '()' for name in [
     'testValidFixtureShowsLoadedStateAndSectionCounts', 'testRetryFixtureFailsFirstReadThenSucceedsOnUserRetry',
-    'testReTapScrollsToTopAndRefreshesWithNewSnapshot', 'testBannerAutoplayArmsAfterPushedRoutePopsBack',
+    'testReTapScrollsToTopAndRefreshesWithNewSnapshot',
     'testBannerObservationBudgetRetriesConsumeTheOriginalDeadline',
     'testBannerObservationBudgetLocalCapCannotEnlargeOrResetTheBudget',
     'testBannerObservationBudgetCorrectValueReturnedLateStillFails',
@@ -58,7 +59,9 @@ for path in list(PATH_TARGETS):
         PATH_TARGETS[path] = [CATALOG, *LIFECYCLE]
 # CI-only changes are verified by the complete governance suite and PR baseline;
 # changing product/test discovery/shared code still triggers conservative coverage.
-VERIFICATION_PATHS = {'.github/workflows/ios.yml', '.github/workflows/ios-full-advisory.yml', 'ENGINEERING.md', 'AGENTS.md'} | {
+VERIFICATION_PATHS = {'.github/workflows/ios.yml', '.github/workflows/ios-full-advisory.yml',
+                         '.github/workflows/ios-isolation-experiment.yml',
+                         'ENGINEERING.md', 'AGENTS.md'} | {
     'Scripts/' + name for name in [
         'SourceBoundaries.swift', 'check-boundaries.py', 'check-boundary-negative.sh',
         'check-source-boundaries.sh', 'check-compiler-boundary.py', 'check-project-boundaries.py',
@@ -67,14 +70,58 @@ VERIFICATION_PATHS = {'.github/workflows/ios.yml', '.github/workflows/ios-full-a
         'ci-deferred-policy.py', 'finalize-verification.py', 'prepare-ui-test-runner.py',
         'select-test-scope.py', 'select-simulator.py', 'verification-timing.py',
         'verify-local.sh', 'with-banner-trace.py', 'classify-ci-changes.py',
-        'test-duration-summary.py',
+        'test-duration-summary.py', 'check-test-support.py',
+        'check-test-support-scope.py', 'check-test-support-execution.py',
+        'split-test-shards.py', 'prepare-isolation-experiment.sh',
+        'run-isolation-shard.sh', 'report-isolation-experiment.py',
     ]}
+TEST_SUPPORT_MANIFEST = 'Tests/Governance/test-support-impact.json'
+
+
+def advisory_methods(root):
+    manifest = Path(root) / 'Tests/Governance/host-sensitive-advisory.json'
+    if not manifest.is_file():
+        return set()
+    try:
+        data = json.loads(manifest.read_text())
+        return {entry['method'] for entry in data.get('entries', [])
+                if isinstance(entry, dict) and isinstance(entry.get('method'), str)}
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError, OSError):
+        return set()
+
+
+def test_support_methods(root, path):
+    """File-level test-support entry: owner, expiry, and affected methods."""
+    manifest = Path(root) / TEST_SUPPORT_MANIFEST
+    if not manifest.is_file():
+        return None
+    try:
+        data = json.loads(manifest.read_text())
+        entry = data.get('files', {}).get(path)
+        if not entry:
+            return None
+        require(entry.get('owner', '').strip(), 'test-support owner missing')
+        expires = datetime.date.fromisoformat(entry.get('expires', ''))
+        require(expires >= datetime.date.today(), 'test-support entry expired')
+        methods = entry.get('methods') or []
+        require((methods or entry.get('advisoryOnly') is True)
+                and all(isinstance(m, str) and ID.fullmatch(m) for m in methods),
+                'test-support methods invalid')
+        return set(methods)
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError, OSError):
+        return None
+
+
 PRODUCTION_TIMING = [CATALOG + '/HomeBannerProductionTimingTests/' + name + '()' for name in [
     'P01DeadlineBeforeAndAtAdvanceActualSelection', 'P02PauseCancelsProductionWaitAndRejectsLateWake',
     'P03ReturnArmsNewFullPeriodWithoutCatchup', 'P04RapidPauseReturnHasOneCurrentTaskAndNoDuplicateCommit',
     'P05RealHostRemovalCancelsAutoplayWait', 'P06HiddenFullCycleStillFailsAudit',
 ]]
-MAPPING_HASH = hashlib.sha256(json.dumps([PATH_TARGETS, PR_SMOKE, sorted(VERIFICATION_PATHS), CATEGORY, PRODUCTION_TIMING], sort_keys=True).encode()).hexdigest()
+TEST_SUPPORT_MANIFEST_BYTES = ((ROOT / TEST_SUPPORT_MANIFEST).read_text()
+                                if (ROOT / TEST_SUPPORT_MANIFEST).is_file() else '')
+MAPPING_HASH = hashlib.sha256(json.dumps([PATH_TARGETS, PR_SMOKE, sorted(VERIFICATION_PATHS), CATEGORY,
+                                          PRODUCTION_TIMING, TEST_SUPPORT_MANIFEST_BYTES],
+                                         sort_keys=True).encode()).hexdigest()
 
 ID = re.compile(r'[A-Za-z_][A-Za-z_0-9]*(?:/[A-Za-z_][A-Za-z_0-9]*)+/[A-Za-z_][A-Za-z_0-9]*\([A-Za-z_0-9:]*\)|[A-Za-z_][A-Za-z_0-9]*/[A-Za-z_][A-Za-z_0-9]*\([A-Za-z_0-9:]*\)')
 
@@ -106,6 +153,12 @@ def source(root):
             'dirty': bool(dirty), 'worktreeSHA256': digest.hexdigest()}
 
 
+FUNC_ATTRIBUTES = r'(?:@\w+(?:\([^)]*\))?\s+)*'
+FUNC_MODIFIERS = r'(?:(?:public|private|fileprivate|internal|open|static|class|final|override|mutating|nonisolated|convenience|required)\s+)*'
+FUNC_DECL = re.compile(r'^\s*' + FUNC_ATTRIBUTES + FUNC_MODIFIERS + r'func\s+')
+TEST_FUNC = re.compile(r'^\s*' + FUNC_ATTRIBUTES + FUNC_MODIFIERS + r'func\s+(test[A-Za-z0-9_]+)\s*\(\s*\)')
+
+
 def _ui_test_methods(root, path, patch):
     """Return the exact changed UI test methods, or None for shared/helper edits."""
     if not (path.startswith('CoolMalliOSUITests/') and path.endswith('.swift')):
@@ -126,14 +179,24 @@ def _ui_test_methods(root, path, patch):
         method = None
         for index in range(min(line, len(source)) - 1, -1, -1):
             text = source[index]
-            test = re.match(r'^\s*(?:@MainActor\s+)?func\s+(test[A-Za-z0-9_]+)\s*\(\s*\)', text)
+            test = TEST_FUNC.match(text)
             if test:
                 method = test.group(1)
                 break
-            if re.match(r'^\s*(?:@MainActor\s+)?func\s+', text):
+            if FUNC_DECL.match(text):
                 return None
         if method is None:
             return None
+        # A changed comment/blank immediately above a helper would otherwise
+        # be attributed to the previous test method. If the next code line is
+        # a func declaration, this is not a test-method body change.
+        for index in range(line, len(source)):
+            text = source[index].strip()
+            if not text or text.startswith(('//', '/*', '*')):
+                continue
+            if FUNC_DECL.match(text):
+                return None
+            break
         methods.add(method)
     stem = Path(path).stem
     return {f'CoolMalliOSUITests/{stem}/{method}()' for method in sorted(methods)}
@@ -174,6 +237,8 @@ def plan(root, env, history=None):
         result['paths'] = [dict(status=status, path=path) for status, path in changes]
         selected = set(PR_SMOKE)
         method_only = False
+        test_support = False
+        test_support_only = True
         for status, path in changes:
             if CLASSIFY.is_document(path) or path in VERIFICATION_PATHS or path.startswith('Tests/Governance/'):
                 continue
@@ -195,14 +260,30 @@ def plan(root, env, history=None):
                 result.setdefault('testMethods', []).extend(sorted(method_scope))
                 method_only = True
                 continue
+            supported = test_support_methods(root, path) if method_scope is None else None
+            if supported is not None:
+                selected.update(supported)
+                result.setdefault('testSupportMethods', []).extend(sorted(supported))
+                test_support = True
+                continue
+            test_support_only = False
             if re.search(r'\b(public|open|func|struct|class|extension|typealias|import)\b|@(?:Test|Suite)\b', changed):
                 result['reason'] = 'declaration-api-or-test-discovery-change'
                 return result
             selected.update(PATH_TARGETS[path])
             method_only = False
+        if tier == 'required':
+            blocked = advisory_methods(root)
+            selected = {item for item in selected if item not in blocked}
+            if result.get('testSupportMethods'):
+                result['testSupportMethods'] = [m for m in result['testSupportMethods']
+                                                if m not in blocked]
         result.update(mode='selected', targets=sorted(selected))
-        result['reason'] = ('test-method-impact' if method_only and result.get('testMethods')
-                            else 'required-baseline-plus-current-impact')
+        if test_support and test_support_only:
+            result['reason'] = 'test-support-targeted'
+        else:
+            result['reason'] = ('test-method-impact' if method_only and result.get('testMethods')
+                                else 'required-baseline-plus-current-impact')
     except (ValueError, OSError, UnicodeError, subprocess.SubprocessError):
         result['reason'] = 'diff-unavailable-full'
     return result

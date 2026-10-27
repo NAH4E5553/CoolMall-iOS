@@ -5,12 +5,17 @@ import Observation
 @MainActor @Observable final class OrderListViewModel {
     private let accountID: Int64
     private let loader: any OrdersLoading
+    private let empty: NumberedPageSnapshot<OrderSnapshot>
     private var coordinators: [OrderFilter: NumberedPageCoordinator<OrderSnapshot>] = [:]
     private var snapshots: [OrderFilter: NumberedPageSnapshot<OrderSnapshot>] = [:]
     private(set) var filter: OrderFilter
     var state: NumberedPageSnapshot<OrderSnapshot> { snapshot(for: filter) }
     init(accountID: Int64, filter: OrderFilter, loader: any OrdersLoading) {
         self.accountID = accountID; self.filter = filter; self.loader = loader
+        empty =
+            NumberedPageCoordinator<OrderSnapshot>(pageSize: 10) { _, _ in
+                throw PageReadFailure.invalidConfiguration
+            }.snapshot
         rebuildPages()
     }
     private func rebuildPages() {
@@ -28,7 +33,7 @@ import Observation
     }
     func snapshot(for filter: OrderFilter) -> NumberedPageSnapshot<OrderSnapshot> {
         // All seven fixed filters are installed together, never inferred from loaded orders.
-        snapshots[filter]!
+        snapshots[filter] ?? empty
     }
     func select(_ filter: OrderFilter) {
         guard filter != self.filter else { return }
@@ -39,7 +44,7 @@ import Observation
     func prepareLogin() { invalidateAll() }
     func activate(_ active: Bool) async {
         guard !Task.isCancelled else { return }
-        let page = coordinators[filter]!
+        guard let page = coordinators[filter] else { return }
         page.setActive(active)
         if active { await page.loadInitial() }
     }

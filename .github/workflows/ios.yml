@@ -84,6 +84,29 @@ jobs:
         id: gates
         shell: bash
         run: Scripts/verify-local.sh
+      - name: Capture failure diagnostics without overwriting the original result
+        if: ${{ failure() }}
+        timeout-minutes: 8
+        shell: bash
+        run: |
+          set -uo pipefail
+          DIR=.build/verification/failure-capture
+          mkdir -p "$DIR"
+          {
+            date -u +%FT%TZ
+            git rev-parse HEAD
+            printf 'MALL_SIMULATOR_ID=%s\n' "${MALL_SIMULATOR_ID:-unset}"
+            xcrun simctl list devices
+            xcrun simctl list runtimes
+          } > "$DIR/environment.txt" 2>&1 || true
+          if [ -n "${MALL_SIMULATOR_ID:-}" ]; then
+            xcrun simctl listapps "$MALL_SIMULATOR_ID" > "$DIR/listapps.txt" 2>&1 || true
+            xcrun simctl io "$MALL_SIMULATOR_ID" screenshot "$DIR/simulator.png" > "$DIR/screenshot.log" 2>&1 || true
+            xcrun simctl diagnose --udid "$MALL_SIMULATOR_ID" --output "$DIR/simulator-diagnose" --timeout=120 -b               > "$DIR/diagnose.log" 2>&1 || true
+          fi
+          # The verdict, tests.log and xcresult stay untouched; this directory is
+          # additional evidence only. A diagnosis failure must not replace the
+          # original test failure.
       - name: Summarize executed verification stages
         if: ${{ always() }}
         shell: bash
@@ -118,6 +141,7 @@ jobs:
             .build/verification/*/Tests.*.json
             .build/verification/*/test-scope.json
             .build/verification/*/test-enumeration.json
+            .build/verification/failure-capture/**
             .build/verification/*/expected-tests.txt
             .build/verification/*/banner-audit.json
             .build/verification/*/native-results.json

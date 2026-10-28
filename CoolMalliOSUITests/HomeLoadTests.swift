@@ -45,7 +45,7 @@ final class HomeLoadTests: XCTestCase {
             "search follows the existing source marker without a navigation row")
         keepFeedbackScreenshot(app, name: "HOME-top-row-removed-after-back")
         app.buttons["navctl.select.category"].tap()
-        XCTAssertTrue(app.staticTexts["category.pending"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["分类"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.navigationBars.firstMatch.exists)
         app.buttons["navctl.select.home"].tap()
         XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 5))
@@ -211,7 +211,7 @@ extension HomeLoadTests {
     /// nonempty/empty section condition. Source-specific leaf IDs stay visible.
     @MainActor private func sectionContent(_ app: XCUIApplication, key: String) -> XCUIElement {
         if key == "banner" {
-            return app.descendants(matching: .any).matching(
+            return app.buttons.matching(
                 NSPredicate(format: "identifier BEGINSWITH %@", "home.banner.current.")
             ).firstMatch
         }
@@ -582,14 +582,11 @@ extension HomeLoadTests {
 
 extension HomeLoadTests {
     @MainActor private func imageElement(_ app: XCUIApplication, _ state: String) -> XCUIElement {
-        switch state {
-        case "success", "failure", "missing", "placeholder":
-            // The actionable banner is a Button; decorative product images
-            // are Other elements and may carry the adapter's same state IDs.
-            return app.buttons["home.image.\(state)"].firstMatch
-        default:
-            return app.descendants(matching: .any)["home.image.\(state)"].firstMatch
-        }
+        // Every banner image state is exposed on the actionable Button;
+        // decorative product thumbnails are Other elements and may carry the
+        // adapter's same state IDs. The button scope is exact and avoids a
+        // whole-tree Any query on every observation.
+        app.buttons["home.image.\(state)"].firstMatch
     }
 
     @MainActor private func imageMetrics(_ app: XCUIApplication, _ expected: String) {
@@ -1015,11 +1012,11 @@ extension HomeLoadTests {
         app.tabBars.buttons["首页"].tap()
         imageMetrics(app, "图片请求：2；取消：0；首页读取：2")
         bannerPage(app, 2)
-        XCTAssertTrue(app.descendants(matching: .any)["home.banner.current.910002"].exists)
+        XCTAssertTrue(app.buttons["home.banner.current.910002"].exists)
         app.tabBars.buttons["首页"].tap()
         imageMetrics(app, "图片请求：3；取消：0；首页读取：3")
         bannerPage(app, 1, count: 2)
-        XCTAssertTrue(app.descendants(matching: .any)["home.banner.current.910003"].exists)
+        XCTAssertTrue(app.buttons["home.banner.current.910003"].exists)
         app.tabBars.buttons["首页"].tap()
         imageMetrics(app, "图片请求：3；取消：0；首页读取：4")
         XCTAssertFalse(app.staticTexts["home.section.banner.title"].exists)
@@ -1030,7 +1027,7 @@ extension HomeLoadTests {
         imageMetrics(app, "图片请求：3；取消：0；首页读取：5")
         XCTAssertFalse(app.staticTexts["home.section.banner.title"].exists)
         XCTAssertFalse(app.staticTexts["home.banner.page"].exists)
-        XCTAssertTrue(app.descendants(matching: .any)["home.banner.current.910001"].exists)
+        XCTAssertTrue(app.buttons["home.banner.current.910001"].exists)
         XCTAssertFalse(bannerIndicators(app).exists, "refilled single banner has no dots")
     }
 
@@ -2021,7 +2018,7 @@ extension HomeLoadTests {
         stableBannerDrag(hold: 0.1)
         bannerAuditMarker(app, event: "tab-leave-begin")
         categoryTab.tap()
-        let categoryLoaded = app.staticTexts["category.pending"]
+        let categoryLoaded = app.navigationBars["分类"]
         XCTAssertTrue(categoryLoaded.exists || categoryLoaded.waitForExistence(timeout: 5))
         bannerAuditMarker(app, event: "tab-leave-end")
         // The pause baseline is the ACTUAL inactive input and commit ledger,

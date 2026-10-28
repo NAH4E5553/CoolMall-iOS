@@ -22,12 +22,14 @@ public struct HomeEntryView: View {
     private let imagePipeline: MallImagePipeline?
     private let showsReadVerification: Bool
     private let onUnavailableAction: () -> Void
+    private let onOpenProduct: ((Int64) -> Void)?
 
     public init(
         home: any HomeLoading, isActive: Bool, refreshRequest: UInt64 = 0,
         imagePipeline: MallImagePipeline? = nil,
         allowsBannerAutoplay: Bool = true,
-        showsReadVerification: Bool = false, onUnavailableAction: @escaping () -> Void = {}
+        showsReadVerification: Bool = false, onUnavailableAction: @escaping () -> Void = {},
+        onOpenProduct: ((Int64) -> Void)? = nil
     ) {
         self.home = home
         self.isActive = isActive
@@ -36,6 +38,7 @@ public struct HomeEntryView: View {
         self.imagePipeline = imagePipeline
         self.showsReadVerification = showsReadVerification
         self.onUnavailableAction = onUnavailableAction
+        self.onOpenProduct = onOpenProduct
     }
 
     public var body: some View {
@@ -66,7 +69,8 @@ public struct HomeEntryView: View {
                                 snapshot: snapshot, imagePipeline: imagePipeline,
                                 isActive: isActive, allowsBannerAutoplay: allowsBannerAutoplay,
                                 bannerViewport: bannerViewport, isUserDragging: isPullDragging,
-                                onUnavailableAction: onUnavailableAction
+                                onUnavailableAction: onUnavailableAction,
+                                onOpenProduct: onOpenProduct
                             )
 
                             // The H0 seven counts stay observable inside an

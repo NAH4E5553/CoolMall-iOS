@@ -198,6 +198,9 @@
 				<string>22B49464A1727A89AEDEFEA3</string>
 				<string>F63E74DFE3180F17FE9D83A2</string>
 				<string>A10000000000000000000003</string>
+				<string>1612A33B2F30484E89F356D4</string>
+				<string>E22A9DA5233930C0C8183821</string>
+				<string>A10000000000000000000011</string>
 			</array>
 			<key>name</key>
 			<string>CoolMalliOS</string>
@@ -218,6 +221,9 @@
 				<string>9EDD97C6A12732C87B234FCD</string>
 				<string>8DA6D32F4AE4C57469515AF5</string>
 				<string>A10000000000000000000004</string>
+				<string>7D43A4BC7DAB8C8D6CC1F4A0</string>
+				<string>3842E4AEBC602B9DEC660129</string>
+				<string>A10000000000000000000012</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>
@@ -445,6 +451,10 @@
 			<key>children</key>
 			<array>
 				<string>41730A52CE7F2281B47E9286</string>
+				<string>2C31C124F3A5716D51212D09</string>
+				<string>B41B0A33E5AD433C38A82134</string>
+				<string>A10000000000000000000013</string>
+				<string>653A738F306AADEBBCDA0EA4</string>
 			</array>
 			<key>name</key>
 			<string>CoolMalliOSUITests</string>
@@ -461,6 +471,10 @@
 			<array>
 				<string>EE8B96540EBBB61C6D2214DC</string>
 				<string>6BC735BB94E0414B8E59E58E</string>
+				<string>C51E69760AB17FEEF6E73789</string>
+				<string>811A41F60C14E499FE3A2EBA</string>
+				<string>A10000000000000000000014</string>
+				<string>2B85BBB9E22258A61CDE76A8</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>
@@ -808,6 +822,132 @@
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>A10000000000000000000003</string>
+		</dict>
+		<key>1612A33B2F30484E89F356D4</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOS/Testing/ProductDetailUITestSupport.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>7D43A4BC7DAB8C8D6CC1F4A0</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>1612A33B2F30484E89F356D4</string>
+		</dict>
+		<key>2C31C124F3A5716D51212D09</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOSUITests/ProductDetailLoadTests.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>C51E69760AB17FEEF6E73789</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>2C31C124F3A5716D51212D09</string>
+		</dict>
+		<key>E22A9DA5233930C0C8183821</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOS/Testing/ProductReviewsUITestSupport.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>3842E4AEBC602B9DEC660129</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E22A9DA5233930C0C8183821</string>
+		</dict>
+		<key>B41B0A33E5AD433C38A82134</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOSUITests/ProductReviewsLoadTests.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>811A41F60C14E499FE3A2EBA</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>B41B0A33E5AD433C38A82134</string>
+		</dict>
+		<key>A10000000000000000000011</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOS/Testing/CategoryUITestSupport.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>A10000000000000000000012</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>A10000000000000000000011</string>
+		</dict>
+		<key>A10000000000000000000013</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOSUITests/CategoryLoadTests.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>A10000000000000000000014</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>A10000000000000000000013</string>
+		</dict>
+		<key>653A738F306AADEBBCDA0EA4</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOSUITests/CatalogIntegrationTests.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>2B85BBB9E22258A61CDE76A8</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>653A738F306AADEBBCDA0EA4</string>
 		</dict>
 	</dict>
 	<key>rootObject</key>

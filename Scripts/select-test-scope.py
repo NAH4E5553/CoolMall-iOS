@@ -29,9 +29,9 @@ PATH_TARGETS = {
     'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeBannerCarouselView.swift': [CATALOG, HOME],
     'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeBannerTiming.swift': [CATALOG, HOME],
     'Packages/MallKit/Sources/CatalogFeature/Pages/Home/HomeViewModel.swift': [CATALOG, HOME, NAVIGATION],
-    'Packages/MallKit/Sources/CatalogFeature/Entry/HomeEntryView.swift': [CATALOG, NAVIGATION],
-    'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeContentView.swift': [CATALOG, NAVIGATION],
-    'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeProductSectionsView.swift': [CATALOG],
+    'Packages/MallKit/Sources/CatalogFeature/Entry/HomeEntryView.swift': [CATALOG, HOME, NAVIGATION],
+    'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeContentView.swift': [CATALOG, HOME, NAVIGATION],
+    'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeProductSectionsView.swift': [CATALOG, HOME],
     'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeProductCardView.swift': [CATALOG, HOME],
     'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeSectionView.swift': [CATALOG, HOME],
     'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeCategorySectionView.swift': [CATALOG, HOME],
@@ -98,13 +98,13 @@ PREFIX_TARGETS = {
         CATALOG, NAVIGATION, CATEGORY, PRODUCT_DETAIL_UI, PRODUCT_REVIEWS_UI],
     'Packages/MallKit/Package.swift': [
         CATALOG, CATEGORY, PRODUCT_DETAIL_UI, PRODUCT_REVIEWS_UI],
-    'Packages/MallKit/Sources/MallImages/RemoteImage.swift': [CATALOG],
+    'Packages/MallKit/Sources/MallImages/RemoteImage.swift': [CATALOG, HOME],
     'Packages/MallKit/Tests/MallImagesTests/RemoteImageLayoutTests.swift': [CATALOG],
-    'Packages/MallKit/Sources/CatalogFeature/Entry/HomeEntryView.swift': [CATALOG, NAVIGATION],
+    'Packages/MallKit/Sources/CatalogFeature/Entry/HomeEntryView.swift': [CATALOG, HOME, NAVIGATION],
     'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeContentView.swift': [
-        CATALOG, NAVIGATION],
+        CATALOG, HOME, NAVIGATION],
     'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeProductSectionsView.swift': [
-        CATALOG, NAVIGATION],
+        CATALOG, HOME],
 }
 
 
@@ -297,6 +297,11 @@ def _ui_test_methods(root, path, patch):
                 method = test.group(1)
                 break
             if FUNC_DECL.match(text):
+                # A local function inside a test method is not a shared helper.
+                # Keep scanning to the enclosing class-level test declaration.
+                indent = len(text) - len(text.lstrip())
+                if indent > 4:
+                    continue
                 return None
         if method is None:
             return None
@@ -376,9 +381,7 @@ def plan(root, env, history=None):
             patch = git(root, 'diff', '--unified=0', *refs, '--', path)
             changed = '\n'.join(line[1:] for line in patch.splitlines() if line[:1] in ('+', '-') and not line.startswith(('+++', '---')))
             method_scope = _ui_test_methods(root, path, patch)
-            if method_scope and not re.search(
-                r'\b(public|open|func|struct|class|extension|typealias|import)\b|@(?:Test|Suite)\b', changed
-            ):
+            if method_scope:
                 selected.update(method_scope)
                 result.setdefault('testMethods', []).extend(sorted(method_scope))
                 method_only = True

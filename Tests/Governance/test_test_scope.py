@@ -128,6 +128,15 @@ class SelectionTests(unittest.TestCase):
                 self.assertEqual(self.plan()['mode'], 'full')
                 self.assertEqual(self.plan()['reason'], 'declaration-api-or-test-discovery-change')
 
+    def test_added_catalog_file_selects_scoped_targets(self):
+        self.write('Packages/MallKit/Sources/CatalogFeature/Pages/Category/NewView.swift',
+                   'struct NewView {}\n'); self.commit()
+        result = self.plan()
+        self.assertEqual(result['mode'], 'selected')
+        self.assertIn(S.CATEGORY, result['targets'])
+        self.assertIn(S.CATALOG, result['targets'])
+        self.assertNotIn(S.HOME, result['targets'])
+
     def test_new_file_delete_and_non_pr_full(self):
         (self.root/'CoolMalliOSUITests/HomeLoadTests.swift').unlink(); self.commit()
         self.assertEqual(self.plan()['mode'], 'full')

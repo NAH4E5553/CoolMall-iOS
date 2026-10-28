@@ -38,7 +38,95 @@ PATH_TARGETS = {
     'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeCouponSectionView.swift': [CATALOG, HOME],
 }
 CATEGORY = 'CoolMalliOSUITests/CategoryLoadTests'
-PATH_TARGETS['CoolMalliOSUITests/CategoryLoadTests.swift'] = [CATEGORY]
+PRODUCT_DETAIL_UI = 'CoolMalliOSUITests/ProductDetailLoadTests'
+PRODUCT_REVIEWS_UI = 'CoolMalliOSUITests/ProductReviewsLoadTests'
+CATALOG_INTEGRATION = 'CoolMalliOSUITests/CatalogIntegrationTests'
+PATH_TARGETS['CoolMalliOSUITests/CategoryLoadTests.swift'] = [CATEGORY, CATALOG]
+PATH_TARGETS['CoolMalliOSUITests/ProductDetailLoadTests.swift'] = [PRODUCT_DETAIL_UI, CATALOG]
+PATH_TARGETS['CoolMalliOSUITests/ProductReviewsLoadTests.swift'] = [PRODUCT_REVIEWS_UI, CATALOG]
+PATH_TARGETS['CoolMalliOSUITests/CatalogIntegrationTests.swift'] = [
+    CATALOG_INTEGRATION, CATEGORY, PRODUCT_DETAIL_UI, PRODUCT_REVIEWS_UI]
+# Exact prefixes for the catalog integration. Added files are accepted only
+# when they hit one of these entries; an unmapped added file still falls back
+# to the complete regression.
+PREFIX_TARGETS = {
+    'Packages/MallKit/Sources/CatalogFeature/Entry/CategoryEntryView.swift': [CATALOG, CATEGORY],
+    'Packages/MallKit/Sources/CatalogFeature/Pages/Category/': [CATALOG, CATEGORY],
+    'Packages/MallKit/Sources/CatalogFeature/Entry/ProductDetailEntryView.swift': [
+        CATALOG, PRODUCT_DETAIL_UI],
+    'Packages/MallKit/Sources/CatalogFeature/Pages/ProductDetail/': [CATALOG, PRODUCT_DETAIL_UI],
+    'Packages/MallKit/Sources/CatalogFeature/Entry/ProductReviewsEntryView.swift': [
+        CATALOG, PRODUCT_REVIEWS_UI],
+    'Packages/MallKit/Sources/CatalogFeature/Pages/ProductReviews/': [CATALOG, PRODUCT_REVIEWS_UI],
+    'Packages/MallKit/Sources/MallCore/Category/': [CATALOG, CATEGORY],
+    'Packages/MallKit/Sources/MallData/Category/': [CATALOG, CATEGORY],
+    'Packages/MallKit/Sources/MallCore/ProductDetail/': [CATALOG, PRODUCT_DETAIL_UI],
+    'Packages/MallKit/Sources/MallCore/ProductReview': [CATALOG, PRODUCT_REVIEWS_UI],
+    'Packages/MallKit/Sources/MallData/ProductDetail/': [CATALOG, PRODUCT_DETAIL_UI],
+    'Packages/MallKit/Sources/MallData/ProductReviews/': [CATALOG, PRODUCT_REVIEWS_UI],
+    'Packages/MallKit/Tests/CatalogFeatureTests/Category/': [CATALOG],
+    'Packages/MallKit/Tests/CatalogFeatureTests/ProductDetail/': [CATALOG],
+    'Packages/MallKit/Tests/CatalogFeatureTests/ProductReviews/': [CATALOG],
+    'Packages/MallKit/Tests/MallDataTests/Category/': [CATALOG],
+    'Packages/MallKit/Tests/MallDataTests/ProductDetail/': [CATALOG],
+    'Packages/MallKit/Tests/MallDataTests/ProductReviews/': [CATALOG],
+    'CoolMalliOS/Testing/CategoryUITestSupport.swift': [CATEGORY],
+    'CoolMalliOS/Testing/ProductDetailUITestSupport.swift': [PRODUCT_DETAIL_UI],
+    'CoolMalliOS/Testing/ProductReviewsUITestSupport.swift': [PRODUCT_REVIEWS_UI],
+    'CoolMalliOS/Navigation/SceneRouter.swift': [
+        CATALOG, NAVIGATION, CATEGORY, PRODUCT_DETAIL_UI, PRODUCT_REVIEWS_UI],
+    'CoolMalliOS/Navigation/RootView.swift': [
+        CATALOG, NAVIGATION, CATEGORY, PRODUCT_DETAIL_UI, PRODUCT_REVIEWS_UI],
+    'CoolMalliOS/AppDependencies.swift': [
+        CATALOG, NAVIGATION, CATEGORY, PRODUCT_DETAIL_UI, PRODUCT_REVIEWS_UI],
+    'CoolMalliOS.xcodeproj/project.pbxproj': [
+        CATALOG, NAVIGATION, CATEGORY, PRODUCT_DETAIL_UI, PRODUCT_REVIEWS_UI],
+    'Packages/MallKit/Package.swift': [
+        CATALOG, CATEGORY, PRODUCT_DETAIL_UI, PRODUCT_REVIEWS_UI],
+    'Packages/MallKit/Sources/MallImages/RemoteImage.swift': [CATALOG],
+    'Packages/MallKit/Tests/MallImagesTests/RemoteImageLayoutTests.swift': [CATALOG],
+    'Packages/MallKit/Sources/CatalogFeature/Entry/HomeEntryView.swift': [CATALOG, NAVIGATION],
+    'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeContentView.swift': [
+        CATALOG, NAVIGATION],
+    'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeProductSectionsView.swift': [
+        CATALOG, NAVIGATION],
+}
+
+
+ADDED_FILE_PREFIXES = (
+    'Packages/MallKit/Sources/CatalogFeature/Pages/Category/',
+    'Packages/MallKit/Sources/CatalogFeature/Pages/ProductDetail/',
+    'Packages/MallKit/Sources/CatalogFeature/Pages/ProductReviews/',
+    'Packages/MallKit/Sources/MallCore/Category/',
+    'Packages/MallKit/Sources/MallCore/ProductDetail/',
+    'Packages/MallKit/Sources/MallData/Category/',
+    'Packages/MallKit/Sources/MallData/ProductDetail/',
+    'Packages/MallKit/Sources/MallData/ProductReviews/',
+    'Packages/MallKit/Tests/CatalogFeatureTests/Category/',
+    'Packages/MallKit/Tests/CatalogFeatureTests/ProductDetail/',
+    'Packages/MallKit/Tests/CatalogFeatureTests/ProductReviews/',
+    'Packages/MallKit/Tests/MallDataTests/Category/',
+    'Packages/MallKit/Tests/MallDataTests/ProductDetail/',
+    'Packages/MallKit/Tests/MallDataTests/ProductReviews/',
+    'Packages/MallKit/Sources/CatalogFeature/Entry/ProductDetailEntryView.swift',
+    'Packages/MallKit/Sources/CatalogFeature/Entry/ProductReviewsEntryView.swift',
+    'CoolMalliOS/Testing/CategoryUITestSupport.swift',
+    'CoolMalliOS/Testing/ProductDetailUITestSupport.swift',
+    'CoolMalliOS/Testing/ProductReviewsUITestSupport.swift',
+    'CoolMalliOS/Navigation/SceneRouter.swift',
+    'CoolMalliOSUITests/ProductDetailLoadTests.swift',
+    'CoolMalliOSUITests/ProductReviewsLoadTests.swift',
+    'CoolMalliOSUITests/CatalogIntegrationTests.swift',
+)
+
+
+def path_targets(path):
+    if path in PATH_TARGETS:
+        return PATH_TARGETS[path]
+    for prefix, targets in PREFIX_TARGETS.items():
+        if path.startswith(prefix):
+            return targets
+    return None
 PR_SMOKE = [NAVIGATION + '/' + name + '()' for name in [
     'testColdStartDefaultsToHomeWithFourTabs', 'testCartRouteHidesTabBarAndBackRestoresIt',
 ]] + [HOME + '/' + name + '()' for name in [
@@ -119,7 +207,7 @@ PRODUCTION_TIMING = [CATALOG + '/HomeBannerProductionTimingTests/' + name + '()'
 ]]
 TEST_SUPPORT_MANIFEST_BYTES = ((ROOT / TEST_SUPPORT_MANIFEST).read_text()
                                 if (ROOT / TEST_SUPPORT_MANIFEST).is_file() else '')
-MAPPING_HASH = hashlib.sha256(json.dumps([PATH_TARGETS, PR_SMOKE, sorted(VERIFICATION_PATHS), CATEGORY,
+MAPPING_HASH = hashlib.sha256(json.dumps([PATH_TARGETS, PREFIX_TARGETS, PR_SMOKE, sorted(VERIFICATION_PATHS), CATEGORY,
                                           PRODUCTION_TIMING, TEST_SUPPORT_MANIFEST_BYTES],
                                          sort_keys=True).encode()).hexdigest()
 
@@ -244,9 +332,17 @@ def plan(root, env, history=None):
         for status, path in changes:
             if CLASSIFY.is_document(path) or path in VERIFICATION_PATHS or path.startswith('Tests/Governance/'):
                 continue
-            if path not in PATH_TARGETS or status != 'M':
+            targets = path_targets(path)
+            if targets is None or status not in ('M', 'A'):
                 result['reason'] = 'unknown-shared-or-structural-impact'
                 return result
+            if status == 'A':
+                if not any(path.startswith(prefix) for prefix in ADDED_FILE_PREFIXES):
+                    result['reason'] = 'unknown-shared-or-structural-impact'
+                    return result
+                selected.update(targets)
+                method_only = False
+                continue
             before_mode, _ = CLASSIFY.snapshot(root, base, path)
             after_mode = CLASSIFY.snapshot(root, head, path)[0] if event == 'pull_request' else ('100755' if (root/path).stat().st_mode & 0o111 else '100644')
             if before_mode != '100644' or after_mode != '100644':
@@ -272,7 +368,7 @@ def plan(root, env, history=None):
             if re.search(r'\b(public|open|func|struct|class|extension|typealias|import)\b|@(?:Test|Suite)\b', changed):
                 result['reason'] = 'declaration-api-or-test-discovery-change'
                 return result
-            selected.update(PATH_TARGETS[path])
+            selected.update(targets)
             method_only = False
         if tier == 'required':
             selected = {item for item in selected if item not in blocked}

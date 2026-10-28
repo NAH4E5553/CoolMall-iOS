@@ -70,6 +70,21 @@ PREFIX_TARGETS = {
     'Packages/MallKit/Tests/MallDataTests/Category/': [CATALOG],
     'Packages/MallKit/Tests/MallDataTests/ProductDetail/': [CATALOG],
     'Packages/MallKit/Tests/MallDataTests/ProductReviews/': [CATALOG],
+    'Packages/MallKit/Sources/MallCore/Catalog/ProductDetailContracts.swift': [
+        CATALOG, PRODUCT_DETAIL_UI],
+    'Packages/MallKit/Sources/MallCore/Catalog/ProductReviewContracts.swift': [
+        CATALOG, PRODUCT_REVIEWS_UI],
+    'Packages/MallKit/Sources/MallData/Catalog/ProductDetail/': [CATALOG, PRODUCT_DETAIL_UI],
+    'Packages/MallKit/Sources/MallData/Catalog/ProductReviews/': [CATALOG, PRODUCT_REVIEWS_UI],
+    'Packages/MallKit/Sources/MallData/Networking/URLSessionTransport.swift': [
+        CATALOG, PRODUCT_DETAIL_UI, PRODUCT_REVIEWS_UI],
+    'Packages/MallKit/Sources/CatalogFeature/Resources/DetailIcons.xcassets/': [
+        CATALOG, PRODUCT_DETAIL_UI],
+    'Packages/MallKit/Tests/MallDataTests/Resources/category.json': [CATALOG, CATEGORY],
+    'Packages/MallKit/Tests/MallDataTests/Resources/product-detail-valid.json': [
+        CATALOG, PRODUCT_DETAIL_UI],
+    'Packages/MallKit/Tests/MallDataTests/Resources/product-specifications-valid.json': [
+        CATALOG, PRODUCT_DETAIL_UI],
     'CoolMalliOS/Testing/CategoryUITestSupport.swift': [CATEGORY],
     'CoolMalliOS/Testing/ProductDetailUITestSupport.swift': [PRODUCT_DETAIL_UI],
     'CoolMalliOS/Testing/ProductReviewsUITestSupport.swift': [PRODUCT_REVIEWS_UI],
@@ -102,6 +117,13 @@ ADDED_FILE_PREFIXES = (
     'Packages/MallKit/Sources/MallData/Category/',
     'Packages/MallKit/Sources/MallData/ProductDetail/',
     'Packages/MallKit/Sources/MallData/ProductReviews/',
+    'Packages/MallKit/Sources/MallCore/Catalog/ProductDetailContracts.swift',
+    'Packages/MallKit/Sources/MallCore/Catalog/ProductReviewContracts.swift',
+    'Packages/MallKit/Sources/MallData/Catalog/ProductDetail/',
+    'Packages/MallKit/Sources/MallData/Catalog/ProductReviews/',
+    'Packages/MallKit/Sources/MallData/Networking/URLSessionTransport.swift',
+    'Packages/MallKit/Sources/CatalogFeature/Resources/DetailIcons.xcassets/',
+    'Packages/MallKit/Tests/MallDataTests/Resources/',
     'Packages/MallKit/Tests/CatalogFeatureTests/Category/',
     'Packages/MallKit/Tests/CatalogFeatureTests/ProductDetail/',
     'Packages/MallKit/Tests/CatalogFeatureTests/ProductReviews/',

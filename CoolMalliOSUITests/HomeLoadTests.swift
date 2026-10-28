@@ -211,7 +211,7 @@ extension HomeLoadTests {
     /// nonempty/empty section condition. Source-specific leaf IDs stay visible.
     @MainActor private func sectionContent(_ app: XCUIApplication, key: String) -> XCUIElement {
         if key == "banner" {
-            return app.buttons.matching(
+            return app.descendants(matching: .any).matching(
                 NSPredicate(format: "identifier BEGINSWITH %@", "home.banner.current.")
             ).firstMatch
         }
@@ -582,11 +582,14 @@ extension HomeLoadTests {
 
 extension HomeLoadTests {
     @MainActor private func imageElement(_ app: XCUIApplication, _ state: String) -> XCUIElement {
-        // Every banner image state is exposed on the actionable Button;
-        // decorative product thumbnails are Other elements and may carry the
-        // adapter's same state IDs. The button scope is exact and avoids a
-        // whole-tree Any query on every observation.
-        app.buttons["home.image.\(state)"].firstMatch
+        switch state {
+        case "success", "failure", "missing", "placeholder":
+            // The actionable banner is a Button; decorative product images
+            // are Other elements and may carry the adapter's same state IDs.
+            return app.buttons["home.image.\(state)"].firstMatch
+        default:
+            return app.descendants(matching: .any)["home.image.\(state)"].firstMatch
+        }
     }
 
     @MainActor private func imageMetrics(_ app: XCUIApplication, _ expected: String) {
@@ -1012,11 +1015,11 @@ extension HomeLoadTests {
         app.tabBars.buttons["首页"].tap()
         imageMetrics(app, "图片请求：2；取消：0；首页读取：2")
         bannerPage(app, 2)
-        XCTAssertTrue(app.buttons["home.banner.current.910002"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["home.banner.current.910002"].exists)
         app.tabBars.buttons["首页"].tap()
         imageMetrics(app, "图片请求：3；取消：0；首页读取：3")
         bannerPage(app, 1, count: 2)
-        XCTAssertTrue(app.buttons["home.banner.current.910003"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["home.banner.current.910003"].exists)
         app.tabBars.buttons["首页"].tap()
         imageMetrics(app, "图片请求：3；取消：0；首页读取：4")
         XCTAssertFalse(app.staticTexts["home.section.banner.title"].exists)
@@ -1027,7 +1030,7 @@ extension HomeLoadTests {
         imageMetrics(app, "图片请求：3；取消：0；首页读取：5")
         XCTAssertFalse(app.staticTexts["home.section.banner.title"].exists)
         XCTAssertFalse(app.staticTexts["home.banner.page"].exists)
-        XCTAssertTrue(app.buttons["home.banner.current.910001"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["home.banner.current.910001"].exists)
         XCTAssertFalse(bannerIndicators(app).exists, "refilled single banner has no dots")
     }
 

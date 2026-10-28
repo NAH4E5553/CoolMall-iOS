@@ -294,30 +294,30 @@ final class CategoryLoadTests: XCTestCase {
         attach(app, name: "category-many-previous-selected")
     }
 
-    @MainActor func testEmptyErrorRetryAndLoadingStates() {
-        let emptyApp = launch(categoryFixture: "empty")
-        openCategory(emptyApp)
-        XCTAssertTrue(emptyApp.staticTexts["category.empty"].waitForExistence(timeout: 15))
-        XCTAssertFalse(emptyApp.buttons["category.retry"].exists)
-        emptyApp.terminate()
+    @MainActor func testEmptyState() {
+        let app = launch(categoryFixture: "empty")
+        openCategory(app)
+        XCTAssertTrue(app.staticTexts["category.empty"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["category.retry"].exists)
+    }
 
-        let retryApp = launch(categoryFixture: "retry")
-        openCategory(retryApp)
-        XCTAssertTrue(retryApp.staticTexts["category.error"].waitForExistence(timeout: 15))
-        attach(retryApp, name: "category-error")
-        XCTAssertTrue(retryApp.staticTexts["category.error.detail"].exists)
-        let retry = retryApp.buttons["category.retry"]
+    @MainActor func testErrorRetryState() {
+        let app = launch(categoryFixture: "retry")
+        openCategory(app)
+        XCTAssertTrue(app.staticTexts["category.error"].waitForExistence(timeout: 15))
+        attach(app, name: "category-error")
+        XCTAssertTrue(app.staticTexts["category.error.detail"].exists)
+        let retry = app.buttons["category.retry"]
         XCTAssertTrue(retry.exists)
         retry.tap()
-        XCTAssertTrue(retryApp.buttons["category.root.800001"].waitForExistence(timeout: 15))
-        XCTAssertTrue(retryApp.buttons["category.root.800001"].isSelected)
-        retryApp.terminate()
+        XCTAssertTrue(app.buttons["category.root.800001"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["category.root.800001"].isSelected)
+    }
 
-        let loadingApp = launch(categoryFixture: "pending")
-        openCategory(loadingApp)
-        XCTAssertTrue(
-            loadingApp.staticTexts["category.loading.message"].waitForExistence(timeout: 15))
-        XCTAssertFalse(loadingApp.staticTexts["category.empty"].exists)
-        loadingApp.terminate()
+    @MainActor func testLoadingState() {
+        let app = launch(categoryFixture: "pending")
+        openCategory(app)
+        XCTAssertTrue(app.staticTexts["category.loading.message"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.staticTexts["category.empty"].exists)
     }
 }

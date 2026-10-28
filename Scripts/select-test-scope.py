@@ -366,6 +366,10 @@ def plan(root, env, history=None):
                 continue
             test_support_only = False
             if re.search(r'\b(public|open|func|struct|class|extension|typealias|import)\b|@(?:Test|Suite)\b', changed):
+                if any(path == prefix or path.startswith(prefix) for prefix in PREFIX_TARGETS):
+                    selected.update(targets)
+                    method_only = False
+                    continue
                 result['reason'] = 'declaration-api-or-test-discovery-change'
                 return result
             selected.update(targets)

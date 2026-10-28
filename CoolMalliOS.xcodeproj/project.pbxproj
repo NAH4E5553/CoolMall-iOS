@@ -115,6 +115,24 @@
 			<key>fileRef</key>
 			<string>5265678C3E424FFE8E17C3CD</string>
 		</dict>
+		<key>A10000000000000000000011</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOS/Testing/CategoryUITestSupport.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>A10000000000000000000012</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>A10000000000000000000011</string>
+		</dict>
 		<key>660CA075CF0162DDB830E9BB</key>
 		<dict>
 			<key>isa</key>
@@ -198,6 +216,7 @@
 				<string>22B49464A1727A89AEDEFEA3</string>
 				<string>F63E74DFE3180F17FE9D83A2</string>
 				<string>A10000000000000000000003</string>
+				<string>A10000000000000000000011</string>
 			</array>
 			<key>name</key>
 			<string>CoolMalliOS</string>
@@ -218,6 +237,7 @@
 				<string>9EDD97C6A12732C87B234FCD</string>
 				<string>8DA6D32F4AE4C57469515AF5</string>
 				<string>A10000000000000000000004</string>
+				<string>A10000000000000000000012</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>
@@ -438,6 +458,24 @@
 			<key>fileRef</key>
 			<string>41730A52CE7F2281B47E9286</string>
 		</dict>
+		<key>A10000000000000000000013</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOSUITests/CategoryLoadTests.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>A10000000000000000000014</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>A10000000000000000000013</string>
+		</dict>
 		<key>1CD9B7CD3D689C1323F141A1</key>
 		<dict>
 			<key>isa</key>
@@ -445,6 +483,7 @@
 			<key>children</key>
 			<array>
 				<string>41730A52CE7F2281B47E9286</string>
+				<string>A10000000000000000000013</string>
 			</array>
 			<key>name</key>
 			<string>CoolMalliOSUITests</string>
@@ -461,6 +500,7 @@
 			<array>
 				<string>EE8B96540EBBB61C6D2214DC</string>
 				<string>6BC735BB94E0414B8E59E58E</string>
+				<string>A10000000000000000000014</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>

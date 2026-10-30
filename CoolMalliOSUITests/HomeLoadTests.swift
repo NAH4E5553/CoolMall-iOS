@@ -1726,8 +1726,12 @@ extension HomeLoadTests {
             capture("featured-scrolled")
         }
     }
-    @MainActor func testCouponAndFeaturedAtNormalSize() {
-        assertCouponAndFeatured(accessibility: false)
+    @MainActor func testCouponAtNormalSize() {
+        assertCouponAndFeatured(accessibility: false, part: .coupon)
+    }
+
+    @MainActor func testFeaturedAtNormalSize() {
+        assertCouponAndFeatured(accessibility: false, part: .featured)
     }
     @MainActor func testCouponAtAccessibilitySize() {
         assertCouponAndFeatured(accessibility: true, part: .coupon)

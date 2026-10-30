@@ -1417,7 +1417,11 @@ extension HomeLoadTests {
 }
 
 extension HomeLoadTests {
-    @MainActor private func assertApprovedHomeDisplay(accessibility: Bool) throws {
+    private enum HomeDisplayPart { case all, coupon, rowsRecommend, rowsGoods }
+
+    @MainActor private func assertApprovedHomeDisplay(
+        accessibility: Bool, part: HomeDisplayPart = .all
+    ) throws {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["--ui-home-fixture", "valid"]
@@ -1550,50 +1554,70 @@ extension HomeLoadTests {
             attachment.lifetime = .keepAlways
             add(attachment)
         }
-        let couponObservation = try reveal("home.coupon.860001.title")
-        let claim = app.buttons["home.coupon.860001.claim"]
-        XCTAssertTrue(claim.isHittable)
-        let couponFrame = couponObservation.element.frame
-        let claimFrame = claim.frame
-        XCTAssertLessThan(couponFrame.maxX, claimFrame.minX)
-        XCTAssertTrue(couponFrame.minY < claimFrame.maxY && claimFrame.minY < couponFrame.maxY)
-        XCTAssertFalse(couponObservation.element.label.isEmpty)
-        capture("coupon")
-        if !accessibility {
-            _ = try reveal("home.flashSale.830001.title")
-            XCTAssertFalse(app.staticTexts["home.flashSale.830001.sold"].exists)
-            capture("featured")
-        }
-        let rows =
-            accessibility
-            ? [
-                ("recommend", "830009", "2101"), ("recommend", "830010", "4683"),
-                ("goods", "1", "459"),
-            ]
-            : [("recommend", "830009", "2101"), ("goods", "1", "459")]
-        for (key, id, sold) in rows {
-            let price = app.staticTexts["home.\(key).\(id).price"]
-            let row = try reveal("home.\(key).\(id).sold", including: "home.\(key).\(id).price")
-            XCTAssertTrue(price.isHittable)
-            XCTAssertEqual(row.element.label, "已售\(sold)件")
-            let priceFrame = try XCTUnwrap(row.companion).frame
-            let countFrame = row.element.frame
-            if accessibility, id == "830010" {
-                XCTAssertLessThanOrEqual(max(priceFrame.maxY, countFrame.maxY), bottom)
+        if part != .rowsRecommend && part != .rowsGoods {
+            let couponObservation = try reveal("home.coupon.860001.title")
+            let claim = app.buttons["home.coupon.860001.claim"]
+            XCTAssertTrue(claim.isHittable)
+            let couponFrame = couponObservation.element.frame
+            let claimFrame = claim.frame
+            XCTAssertLessThan(couponFrame.maxX, claimFrame.minX)
+            XCTAssertTrue(couponFrame.minY < claimFrame.maxY && claimFrame.minY < couponFrame.maxY)
+            XCTAssertFalse(couponObservation.element.label.isEmpty)
+            capture("coupon")
+            if !accessibility {
+                _ = try reveal("home.flashSale.830001.title")
+                XCTAssertFalse(app.staticTexts["home.flashSale.830001.sold"].exists)
+                capture("featured")
             }
-            print("Home display \(key) amount frame=\(priceFrame), sold frame=\(countFrame)")
-            XCTAssertLessThanOrEqual(priceFrame.maxX, countFrame.minX)
-            XCTAssertTrue(
-                priceFrame.minY < countFrame.maxY && countFrame.minY < priceFrame.maxY,
-                "price and actual sold count must share one row")
-            capture(id == "830010" ? "recommend-4683" : key)
+        }
+        if part != .coupon {
+            let rows: [(String, String, String)]
+            switch part {
+            case .rowsRecommend:
+                rows = [("recommend", "830009", "2101"), ("recommend", "830010", "4683")]
+            case .rowsGoods:
+                rows = [("goods", "1", "459")]
+            default:
+                rows =
+                    accessibility
+                    ? [
+                        ("recommend", "830009", "2101"), ("recommend", "830010", "4683"),
+                        ("goods", "1", "459"),
+                    ]
+                    : [("recommend", "830009", "2101"), ("goods", "1", "459")]
+            }
+            for (key, id, sold) in rows {
+                let price = app.staticTexts["home.\(key).\(id).price"]
+                let row = try reveal("home.\(key).\(id).sold", including: "home.\(key).\(id).price")
+                XCTAssertTrue(price.isHittable)
+                XCTAssertEqual(row.element.label, "已售\(sold)件")
+                let priceFrame = try XCTUnwrap(row.companion).frame
+                let countFrame = row.element.frame
+                if accessibility, id == "830010" {
+                    XCTAssertLessThanOrEqual(max(priceFrame.maxY, countFrame.maxY), bottom)
+                }
+                print("Home display \(key) amount frame=\(priceFrame), sold frame=\(countFrame)")
+                XCTAssertLessThanOrEqual(priceFrame.maxX, countFrame.minX)
+                XCTAssertTrue(
+                    priceFrame.minY < countFrame.maxY && countFrame.minY < priceFrame.maxY,
+                    "price and actual sold count must share one row")
+                capture(id == "830010" ? "recommend-4683" : key)
+            }
         }
     }
     @MainActor func testApprovedHomeDisplayAtNormalSize() throws {
         try assertApprovedHomeDisplay(accessibility: false)
     }
-    @MainActor func testApprovedHomeDisplayAtAccessibilitySize() throws {
-        try assertApprovedHomeDisplay(accessibility: true)
+    @MainActor func testApprovedHomeDisplayAccessibilityCoupon() throws {
+        try assertApprovedHomeDisplay(accessibility: true, part: .coupon)
+    }
+
+    @MainActor func testApprovedHomeDisplayAccessibilityRecommendRows() throws {
+        try assertApprovedHomeDisplay(accessibility: true, part: .rowsRecommend)
+    }
+
+    @MainActor func testApprovedHomeDisplayAccessibilityGoodsRow() throws {
+        try assertApprovedHomeDisplay(accessibility: true, part: .rowsGoods)
     }
 }
 

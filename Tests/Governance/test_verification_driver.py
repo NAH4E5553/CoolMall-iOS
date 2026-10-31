@@ -119,7 +119,7 @@ class VerificationDriverTests(unittest.TestCase):
                         MALL_SIMULATOR_ID='fixture-only-no-device',
                         STUB_EVENTS=str(self.root / 'events.jsonl'),
                         STUB_READY=str(self.root / 'ready'))
-        for key in ['MALL_VERIFICATION_TIER', 'MALL_DIFF_BASE', 'MALL_DIFF_HEAD', 'MALL_TEST_DIAGNOSTICS', 'STUB_FAIL', 'STUB_RC', 'STUB_CORRUPT', 'STUB_BLOCK', 'STUB_BAD_DISCOVERY', 'STUB_CREATE_BYTECODE', 'STUB_MUTATE_SOURCE', 'GITHUB_EVENT_NAME']:
+        for key in ['MALL_VERIFICATION_TIER', 'MALL_DIFF_BASE', 'MALL_DIFF_HEAD', 'MALL_TEST_DIAGNOSTICS', 'STUB_FAIL', 'STUB_RC', 'STUB_CORRUPT', 'STUB_BLOCK', 'STUB_BAD_DISCOVERY', 'STUB_CREATE_BYTECODE', 'STUB_MUTATE_SOURCE', 'GITHUB_EVENT_NAME', 'MALL_EXECUTION_SIMULATOR_ID']:
             self.env.pop(key, None)
 
     def stub(self, path):
@@ -369,6 +369,7 @@ class VerificationDriverTests(unittest.TestCase):
 
     def test_missing_device_is_rejected_before_external_commands(self):
         self.env.pop('MALL_SIMULATOR_ID')
+        self.env.pop('MALL_EXECUTION_SIMULATOR_ID', None)
         result = self.run_entry()
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.events(), [])

@@ -1,0 +1,167 @@
+name: iOS Device Isolation Experiment
+
+# Manual diagnostic only. Not a required check and not a merge gate.
+on:
+  workflow_dispatch:
+    inputs:
+      repetitions:
+        description: Number of independent execution runs (1-20)
+        required: false
+        default: '1'
+        type: string
+  push:
+    branches: [codex/device-isolation]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: device-isolation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Enumerate on a fresh simulator
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Build and enumerate, then remove the enumeration simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN=.build/device-isolation
+          mkdir -p "$RUN"
+          ENUM=$(python3 Scripts/create-simulator.py --runtime-version 27.0 \
+            --name "MallEnum-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT")
+          cleanup() {
+            xcrun simctl shutdown "$ENUM" 2>/dev/null || true
+            xcrun simctl delete "$ENUM" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          xcrun simctl boot "$ENUM"
+          xcrun simctl bootstatus "$ENUM" -b
+          {
+            echo "event=enumeration"
+            date -u +%FT%TZ
+            echo "device=$ENUM"
+            xcrun simctl list devices
+          } | tee "$RUN/enumeration-timeline.log"
+          BASE=$(git merge-base origin/main HEAD)
+          GITHUB_EVENT_NAME=push MALL_DIFF_BASE="$BASE" MALL_DIFF_HEAD="$(git rev-parse HEAD)" \
+            MALL_VERIFICATION_TIER=required \
+            python3 Scripts/select-test-scope.py plan "$RUN/test-scope.json"
+          MALL_TEST_DIAGNOSTICS=never xcodebuild test -enumerate-tests \
+            -test-enumeration-style flat -test-enumeration-format json \
+            -test-enumeration-output-path "$RUN/test-enumeration.json" \
+            -project CoolMalliOS.xcodeproj -scheme CoolMalliOS -testPlan CoolMalliOS \
+            -configuration Debug -parallel-testing-enabled NO \
+            -destination "platform=iOS Simulator,id=$ENUM" \
+            -derivedDataPath "$RUN/DerivedData" CODE_SIGNING_ALLOWED=NO \
+            > "$RUN/enumeration.log" 2>&1
+          python3 Scripts/select-test-scope.py resolve \
+            "$RUN/test-scope.json" "$RUN/test-enumeration.json" "$RUN/expected-tests.txt"
+          python3 Scripts/select-test-scope.py check-source \
+            "$RUN/test-scope.json" "$RUN/expected-tests.txt"
+          python3 Scripts/check-test-support-scope.py \
+            --scope "$RUN/test-scope.json" --enumeration "$RUN/test-enumeration.json" \
+            --tier required
+          date -u +%FT%TZ | tee -a "$RUN/enumeration-timeline.log"
+          echo 'enumeration succeeded' | tee -a "$RUN/enumeration-timeline.log"
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: device-isolation-build
+          path: .build/device-isolation
+          retention-days: 7
+          if-no-files-found: error
+
+  execute:
+    name: Execute on a different fresh simulator
+    needs: [prepare]
+    runs-on: xcode-27
+    timeout-minutes: 300
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      MALL_TEST_DIAGNOSTICS: on-failure
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: device-isolation-build
+          path: .build/device-isolation
+      - name: Run independent execution cycles
+        shell: bash
+        env:
+          # Branch push runs the full observation window; manual dispatch can
+          # select 1..20. No failure is cleared to restart a streak.
+          REPETITIONS: ${{ github.event_name == 'push' && '20' || inputs.repetitions }}
+        run: |
+          set -uo pipefail
+          RUN=.build/device-isolation
+          REPS="${REPETITIONS:-1}"
+          case "$REPS" in ''|*[!0-9]*) echo "invalid repetitions: $REPS"; exit 64;; esac
+          [ "$REPS" -ge 1 ] && [ "$REPS" -le 20 ] || { echo 'repetitions must be 1..20'; exit 64; }
+          FAILURES=0
+          for N in $(seq 1 "$REPS"); do
+            OUT="$RUN/exec-$N"; mkdir -p "$OUT"
+            EXEC=$(python3 Scripts/create-simulator.py --runtime-version 27.0 \
+              --name "MallExec-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$N")
+            cleanup() {
+              xcrun simctl shutdown "$EXEC" 2>/dev/null || true
+              xcrun simctl delete "$EXEC" 2>/dev/null || true
+            }
+            trap cleanup EXIT
+            xcrun simctl boot "$EXEC"
+            xcrun simctl bootstatus "$EXEC" -b
+            {
+              echo "event=execution run=$N"
+              date -u +%FT%TZ
+              echo "device=$EXEC"
+              xcrun simctl list devices
+            } | tee "$OUT/timeline.log"
+            xcrun simctl listapps "$EXEC" | tee -a "$OUT/timeline.log" || true
+            START=$(date -u +%FT%TZ)
+            python3 Scripts/with-banner-trace.py "$EXEC" "$OUT/banner-trace.log" -- \
+              xcodebuild test-without-building -only-testing "@$RUN/expected-tests.txt" \
+                -collect-test-diagnostics on-failure \
+                -project CoolMalliOS.xcodeproj -scheme CoolMalliOS -testPlan CoolMalliOS \
+                -configuration Debug -parallel-testing-enabled NO \
+                -destination "platform=iOS Simulator,id=$EXEC" \
+                -derivedDataPath "$RUN/DerivedData" \
+                -resultBundlePath "$OUT/Tests.xcresult" CODE_SIGNING_ALLOWED=NO \
+                > "$OUT/tests.log" 2>&1
+            CODE=$?
+            END=$(date -u +%FT%TZ)
+            printf 'start=%s end=%s test_exit=%s\n' "$START" "$END" "$CODE" | tee -a "$OUT/timeline.log"
+            if [ "$CODE" -ne 0 ]; then
+              FAILURES=$((FAILURES + 1))
+              xcrun simctl diagnose --udid "$EXEC" --output "$OUT/diagnose" --timeout=120 -b \
+                >> "$OUT/timeline.log" 2>&1 || true
+            fi
+            python3 Scripts/check-test-results.py "$OUT/Tests.xcresult" \
+              --scope "$RUN/test-scope.json" \
+              --execution-status "$OUT/banner-trace.status.log" \
+              --tests-log "$OUT/tests.log" \
+              --output "$OUT/native-results.json" > "$OUT/result-validation.log" 2>&1 || true
+            cleanup
+            trap - EXIT
+            echo "run=$N test_exit=$CODE" | tee -a "$RUN/repetitions.log"
+          done
+          echo "observed=$REPS failures=$FAILURES" | tee -a "$RUN/repetitions.log"
+          [ "$FAILURES" -eq 0 ]
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: device-isolation-evidence
+          path: .build/device-isolation
+          retention-days: 7
+          if-no-files-found: error

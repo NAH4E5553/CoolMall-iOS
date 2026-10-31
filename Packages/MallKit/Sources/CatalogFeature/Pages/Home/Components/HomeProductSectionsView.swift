@@ -7,6 +7,7 @@ struct HomeProductSectionsView: View {
     let pipeline: MallImagePipeline?
     let isActive: Bool
     let action: () -> Void
+    var onOpenProduct: ((Int64) -> Void)? = nil
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .body) private var featuredWidth = 120.0
@@ -66,7 +67,10 @@ struct HomeProductSectionsView: View {
     {
         HomeProductCardView(
             product: product, key: key, pipeline: pipeline,
-            isActive: isActive, role: role, action: action)
+            isActive: isActive, role: role,
+            action: {
+                if let onOpenProduct { onOpenProduct(product.id) } else { action() }
+            })
     }
 }
 

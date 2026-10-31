@@ -1,0 +1,123 @@
+{
+  "code": 1000,
+  "data": [
+    {
+      "id": 840001,
+      "createTime": "2026-07-15 21:24:01",
+      "updateTime": "2026-10-07 09:43:41",
+      "goodsId": 830001,
+      "name": "黑色 12GB+256GB",
+      "price": 3999,
+      "stock": 242,
+      "sortNum": 0,
+      "images": [
+        "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/987F0DAD0109AB0C2B949FBCE65B6384_1780457023354.png"
+      ]
+    },
+    {
+      "id": 840002,
+      "createTime": "2026-07-15 21:24:01",
+      "updateTime": "2026-10-07 09:43:41",
+      "goodsId": 830001,
+      "name": "午夜蓝 12GB+256GB",
+      "price": 3999,
+      "stock": 291,
+      "sortNum": 1,
+      "images": [
+        "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/8E242EB5B0C40ED40A6E623F4BDA3B96_1780457027251.png"
+      ]
+    },
+    {
+      "id": 840003,
+      "createTime": "2026-07-15 21:24:01",
+      "updateTime": "2026-10-07 10:04:40",
+      "goodsId": 830001,
+      "name": "星云紫 12GB+256GB",
+      "price": 3999,
+      "stock": 334,
+      "sortNum": 2,
+      "images": [
+        "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/A451E134ECE439DFE0CE1953DDE5556F_1780457032997.png"
+      ]
+    },
+    {
+      "id": 840004,
+      "createTime": "2026-07-15 21:24:01",
+      "updateTime": "2026-09-05 04:25:25",
+      "goodsId": 830001,
+      "name": "黑色 12GB+512GB",
+      "price": 4499,
+      "stock": 371,
+      "sortNum": 3,
+      "images": [
+        "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/987F0DAD0109AB0C2B949FBCE65B6384_1780457036995.png"
+      ]
+    },
+    {
+      "id": 840005,
+      "createTime": "2026-07-15 21:24:01",
+      "updateTime": "2026-09-28 12:21:18",
+      "goodsId": 830001,
+      "name": "午夜蓝 12GB+512GB",
+      "price": 4499,
+      "stock": 408,
+      "sortNum": 4,
+      "images": [
+        "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/8E242EB5B0C40ED40A6E623F4BDA3B96_1780457045111.png"
+      ]
+    },
+    {
+      "id": 840006,
+      "createTime": "2026-07-15 21:24:01",
+      "updateTime": "2026-09-22 14:57:43",
+      "goodsId": 830001,
+      "name": "星云紫 12GB+512GB",
+      "price": 4499,
+      "stock": 445,
+      "sortNum": 5,
+      "images": [
+        "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/A451E134ECE439DFE0CE1953DDE5556F_1780457047868.png"
+      ]
+    },
+    {
+      "id": 840007,
+      "createTime": "2026-07-15 21:24:01",
+      "updateTime": "2026-07-15 21:24:01",
+      "goodsId": 830001,
+      "name": "黑色 16GB+512GB",
+      "price": 4799,
+      "stock": 482,
+      "sortNum": 6,
+      "images": [
+        "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/987F0DAD0109AB0C2B949FBCE65B6384_1780457051441.png"
+      ]
+    },
+    {
+      "id": 840008,
+      "createTime": "2026-07-15 21:24:01",
+      "updateTime": "2026-09-30 11:02:20",
+      "goodsId": 830001,
+      "name": "午夜蓝 16GB+512GB",
+      "price": 4799,
+      "stock": 519,
+      "sortNum": 7,
+      "images": [
+        "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/8E242EB5B0C40ED40A6E623F4BDA3B96_1780457054097.png"
+      ]
+    },
+    {
+      "id": 840009,
+      "createTime": "2026-07-15 21:24:01",
+      "updateTime": "2026-09-22 09:14:40",
+      "goodsId": 830001,
+      "name": "星云紫 16GB+512GB",
+      "price": 4799,
+      "stock": 556,
+      "sortNum": 8,
+      "images": [
+        "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/A451E134ECE439DFE0CE1953DDE5556F_1780457057176.png"
+      ]
+    }
+  ],
+  "message": "success"
+}

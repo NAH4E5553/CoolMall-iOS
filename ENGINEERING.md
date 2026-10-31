@@ -1164,6 +1164,8 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 
 历史H2返回第2页静止、H3晚唤醒继续沿原跟踪及复发条件，不纳入“已解决”或扩充本表范围；历史H1测量缺陷的关闭结论不改。项目待办/原始证据链接维护于IMPLEMENTATION_PLAN9.12.9与Evidence/iOS/2026-10-21-CI-DEFERRED-01；本地实现未推送前不宣称远端配置已生效。
 
+2026-10-24 approved read-only catalog contracts: APPROVAL-CATEGORY-01-PUBLIC-20261021 authorizes CategoryNode/CategoryLoading/CategoryLoadFailure, HTTPCategoryService and CategoryEntryView. APPROVAL-GOODS-DETAIL-READ-SPEC-20261023 authorizes ProductDetailSnapshot/ProductSpecification/ProductDetailLoading/ProductDetailLoadFailure, HTTPProductDetailService, ProductDetailEntryView, HomeEntryView product-ID intents and RemoteImage.preservesIntrinsicAspectRatio default false. APPROVAL-GOODS-DETAIL-ANDROID-PARITY-20261023 adds read-only coupon/review mapping and detail overlays; deferred share/claim/cart/purchase actions remain entries only. APPROVAL-GOODS-REVIEWS-READ-20261023 authorizes ProductReviewPage/ProductReviewsLoading, HTTPProductReviewsService, ProductReviewsEntryView, optional createdAt and detail view-all product-ID callback. Only exact approved Feature entries are registered; no new Target/SDK/system import exception.
+
 规则有三个等级：MOD/STATE/VM/CHANGE 与“必须”条款是阻断规则；REVIEW 是必须给出结论的评审触发器；标为建议/候选的选型可在约定内决定。检查脚本暂未实现的阻断规则仍需人工核对，不能因没报错而视为允许；F0 未完成不能开始 F1 扩展。
 
 普通功能改动由开发者按既定规则推进；改变规则或申请临时例外由**项目维护者**批准。AI 不得自行批准自己的规则豁免。此次手册细化是用户授权的规则制定，不为日常动作新增重复确认。
@@ -1208,6 +1210,11 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 ### 8.3 当前实施状态
 
 2026-10-23 CI-LAYERS-01：用户授权在 codex/ci-deferred-home-checks@9e47ba4 本地修正并分层；CI 工作树初始干净，分类由 DeepSeek 独立维护。实现/离线治理/保存工件、最小 Runner 链、最终 required 集成与独立复核的实际结果见 Evidence/iOS/2026-10-23-CI-LAYERS-01。实际通过/失败/未验证以本轮冻结身份和 Evidence 结果为准；无 push/远端运行/分支保护/合并，五条旧原生失败、cycle 风险及返回静止/晚唤醒不改写。
+
+
+2026-10-24 R-REVIEWS-01 accepted local repair: the reviews refresh action concurrently waits for the read and a cancellable 300ms minimum hold, allowing the observed refresh-entry transition to reach its normal cleanup path. Only ProductReviewsEntryView changes; original gestures, assertions, idle waits and 60/120s limits remain. Independent clean Debug/Release builds succeeded; the original full chain passed five consecutive runs (29.813/44.484/28.391/27.331/27.068s), empty refresh20.235s and failed refresh24.765s, exact7/0/0. Preserve all original failures. This is bounded iPhone17/iOS27.0 simulator acceptance, not all-runtime proof: 300ms is empirical, private state4/5 thresholds are unconfirmed, probe notifier-pairing warnings limit causal claims, and iOS17/26/hardware remain unverified. Owner authorizes commit/push to PR17; remote CI and owner-deferred closure remain separate, with no CI exemption or merge authorization.
+
+2026-10-24 local catalog delivery: category, product detail and paged reviews are integrated. Category/detail and bounded composition/navigation have independent acceptance evidence; overall reviews acceptance remains incomplete. The owner explicitly defers R-REVIEWS-01 investigation and authorizes a local source commit. Original refresh-quiescence failures and unverified areas remain tracked locally; this is not a passing acceptance or a CI exemption. Keep the original refresh implementation/assertions/allowances; the unaccepted 300ms refresh-action candidate is excluded from this commit. No push, merge or expanded CI exception is authorized by this decision.
 
 | 阶段 | 交付结果 | 当前状态 |
 | --- | --- | --- |

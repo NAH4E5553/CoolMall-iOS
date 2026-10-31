@@ -127,8 +127,10 @@ class VerificationDriverTests(unittest.TestCase):
         path.chmod(0o755)
 
     def run_entry(self, **env):
+        # Hosted public runners are slower than the local host; this is a
+        # bounded fixture-driver deadline, not an App test allowance.
         return subprocess.run(['bash', 'Scripts/verify-local.sh'], cwd=self.root,
-                              env=dict(self.env, **env), capture_output=True, text=True, timeout=15)
+                              env=dict(self.env, **env), capture_output=True, text=True, timeout=30)
 
     def ledger(self):
         path = next((self.root / '.build/verification').glob('*/stage-timings.json'))

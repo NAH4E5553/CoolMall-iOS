@@ -55,6 +55,7 @@ jobs:
       MALL_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
       MALL_DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
       MALL_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      MALL_GOVERNANCE_EXCLUDE: test_verification_driver
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
@@ -174,6 +175,19 @@ jobs:
         if: ${{ always() }}
         shell: bash
         run: echo 'iOS 17 compatibility is pending a physical-device run; this workflow validates iOS 27.0.' >> "$GITHUB_STEP_SUMMARY"
+
+  governance-driver:
+    name: Governance driver
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Run verification driver tests
+        run: python3 -m unittest discover -s Tests/Governance -p 'test_verification_driver.py' -v
 
   required-checks:
     name: required-checks

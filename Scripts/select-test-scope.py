@@ -63,6 +63,7 @@ VERIFICATION_PATHS = {'.github/workflows/ios.yml', '.github/workflows/ios-full-a
                          '.github/workflows/ios-isolation-experiment.yml',
                          '.github/workflows/ios-device-isolation.yml',
                          'Scripts/create-simulator.py',
+                         'Scripts/run-governance.py',
                          'ENGINEERING.md', 'AGENTS.md'} | {
     'Scripts/' + name for name in [
         'SourceBoundaries.swift', 'check-boundaries.py', 'check-boundary-negative.sh',

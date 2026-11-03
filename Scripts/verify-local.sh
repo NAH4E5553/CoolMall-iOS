@@ -57,6 +57,10 @@ if [ -z "${MALL_SIMULATOR_ID-}" ]; then
     echo 'Set MALL_SIMULATOR_ID to an available iOS Simulator UDID'
     exit 1
 fi
+# Enumeration/build may use the first device; formal execution uses a separate
+# fresh device when CI provides one. Local runs fall back to the same device.
+MALL_EXECUTION_SIMULATOR_ID="${MALL_EXECUTION_SIMULATOR_ID:-$MALL_SIMULATOR_ID}"
+export MALL_EXECUTION_SIMULATOR_ID
 # PRs use the required baseline plus current impact. Local default and
 # main/scheduled/manual runs use the complete regression. No history red gate.
 if [ -z "${MALL_VERIFICATION_TIER-}" ]; then
@@ -110,7 +114,7 @@ stage_end
 # Full inventories also use explicit methods, so execution cannot silently drift.
 stage_start test-execute-diagnostics
 MALL_TEST_STARTED=1
-if python3 Scripts/with-banner-trace.py "$MALL_SIMULATOR_ID" "$MALL_RUN/banner-trace.log" -- xcodebuild test-without-building -only-testing "@$MALL_RUN/expected-tests.txt" -collect-test-diagnostics "$MALL_TEST_DIAGNOSTICS" -project CoolMalliOS.xcodeproj -scheme CoolMalliOS -testPlan CoolMalliOS -configuration Debug -parallel-testing-enabled NO -destination "platform=iOS Simulator,id=$MALL_SIMULATOR_ID" -derivedDataPath "$MALL_RUN/DerivedData" -resultBundlePath "$MALL_RUN/Tests.xcresult" CODE_SIGNING_ALLOWED=NO > "$MALL_RUN/tests.log" 2>&1; then MALL_TEST_EXIT=0; else MALL_TEST_EXIT=$?; fi
+if python3 Scripts/with-banner-trace.py "$MALL_EXECUTION_SIMULATOR_ID" "$MALL_RUN/banner-trace.log" -- xcodebuild test-without-building -only-testing "@$MALL_RUN/expected-tests.txt" -collect-test-diagnostics "$MALL_TEST_DIAGNOSTICS" -project CoolMalliOS.xcodeproj -scheme CoolMalliOS -testPlan CoolMalliOS -configuration Debug -parallel-testing-enabled NO -destination "platform=iOS Simulator,id=$MALL_EXECUTION_SIMULATOR_ID" -derivedDataPath "$MALL_RUN/DerivedData" -resultBundlePath "$MALL_RUN/Tests.xcresult" CODE_SIGNING_ALLOWED=NO > "$MALL_RUN/tests.log" 2>&1; then MALL_TEST_EXIT=0; else MALL_TEST_EXIT=$?; fi
 stage_end "$MALL_TEST_EXIT"
 stage_start test-result-validation
 if python3 Scripts/check-test-results.py "$MALL_RUN/Tests.xcresult" --scope "$MALL_RUN/test-scope.json" --execution-status "$MALL_RUN/banner-trace.status.log" --tests-log "$MALL_RUN/tests.log" --output "$MALL_RUN/native-results.json"; then

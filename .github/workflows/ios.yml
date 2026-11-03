@@ -78,8 +78,16 @@ jobs:
             xcrun simctl list runtimes
             xcrun simctl list devices available
           } 2>&1 | tee .build/verification/environment.log
-          MALL_SIMULATOR_ID=$(python3 Scripts/select-simulator.py --runtime-version 27.0)
+          MALL_SIMULATOR_ID=$(python3 Scripts/create-simulator.py --runtime-version 27.0 \
+            --name "MallEnum-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT")
+          MALL_EXECUTION_SIMULATOR_ID=$(python3 Scripts/create-simulator.py --runtime-version 27.0 \
+            --name "MallExec-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT")
           echo "MALL_SIMULATOR_ID=$MALL_SIMULATOR_ID" >> "$GITHUB_ENV"
+          echo "MALL_EXECUTION_SIMULATOR_ID=$MALL_EXECUTION_SIMULATOR_ID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$MALL_SIMULATOR_ID"
+          xcrun simctl boot "$MALL_EXECUTION_SIMULATOR_ID"
+          xcrun simctl bootstatus "$MALL_SIMULATOR_ID" -b
+          xcrun simctl bootstatus "$MALL_EXECUTION_SIMULATOR_ID" -b
       - name: Validate selected tier, builds, governance and exact native results
         id: gates
         shell: bash
@@ -99,14 +107,25 @@ jobs:
             xcrun simctl list devices
             xcrun simctl list runtimes
           } > "$DIR/environment.txt" 2>&1 || true
-          if [ -n "${MALL_SIMULATOR_ID:-}" ]; then
-            xcrun simctl listapps "$MALL_SIMULATOR_ID" > "$DIR/listapps.txt" 2>&1 || true
-            xcrun simctl io "$MALL_SIMULATOR_ID" screenshot "$DIR/simulator.png" > "$DIR/screenshot.log" 2>&1 || true
-            xcrun simctl diagnose --udid="$MALL_SIMULATOR_ID" --output="$DIR/simulator-diagnose" --timeout=120 -b               > "$DIR/diagnose.log" 2>&1 || true
+          CAPTURE_SIM="${MALL_EXECUTION_SIMULATOR_ID:-${MALL_SIMULATOR_ID:-}}"
+          if [ -n "$CAPTURE_SIM" ]; then
+            xcrun simctl listapps "$CAPTURE_SIM" > "$DIR/listapps.txt" 2>&1 || true
+            xcrun simctl io "$CAPTURE_SIM" screenshot "$DIR/simulator.png" > "$DIR/screenshot.log" 2>&1 || true
+            xcrun simctl diagnose --udid="$CAPTURE_SIM" --output="$DIR/simulator-diagnose" --timeout=120 -b               > "$DIR/diagnose.log" 2>&1 || true
           fi
           # The verdict, tests.log and xcresult stay untouched; this directory is
           # additional evidence only. A diagnosis failure must not replace the
           # original test failure.
+      - name: Remove fresh verification simulators
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set +e
+          for id in "${MALL_SIMULATOR_ID:-}" "${MALL_EXECUTION_SIMULATOR_ID:-}"; do
+            [ -n "$id" ] || continue
+            xcrun simctl shutdown "$id" 2>/dev/null || true
+            xcrun simctl delete "$id" 2>/dev/null || true
+          done
       - name: Summarize executed verification stages
         if: ${{ always() }}
         shell: bash

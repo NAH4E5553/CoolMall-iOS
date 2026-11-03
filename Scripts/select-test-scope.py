@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Conservative PR scope and Xcode's actual flat JSON inventory; no source parsing."""
+"""Conservative PR scope, Swift 6 body-boundary proof, and actual Xcode inventory."""
 import hashlib
 import importlib.util
 import datetime
@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -154,12 +155,6 @@ def path_targets(path):
     return None
 PR_SMOKE = [NAVIGATION + '/' + name + '()' for name in [
     'testColdStartDefaultsToHomeWithFourTabs', 'testCartRouteHidesTabBarAndBackRestoresIt',
-]] + [HOME + '/' + name + '()' for name in [
-    'testValidFixtureShowsLoadedStateAndSectionCounts', 'testRetryFixtureFailsFirstReadThenSucceedsOnUserRetry',
-    'testReTapScrollsToTopAndRefreshesWithNewSnapshot',
-    'testBannerObservationBudgetRetriesConsumeTheOriginalDeadline',
-    'testBannerObservationBudgetLocalCapCannotEnlargeOrResetTheBudget',
-    'testBannerObservationBudgetCorrectValueReturnedLateStillFails',
 ]]
 LIFECYCLE = [HOME + '/' + name + '()' for name in [
     'testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag',
@@ -175,7 +170,7 @@ for path in list(PATH_TARGETS):
 VERIFICATION_PATHS = {'.github/workflows/ios.yml', '.github/workflows/ios-full-advisory.yml',
                          '.github/workflows/ios-isolation-experiment.yml',
                          '.github/workflows/ios-device-isolation.yml',
-                         'Scripts/create-simulator.py',
+                         'Scripts/create-simulator.py', 'Scripts/check-governance.py', 'Scripts/ci-job-outcome.py',
                          'ENGINEERING.md', 'AGENTS.md'} | {
     'Scripts/' + name for name in [
         'SourceBoundaries.swift', 'check-boundaries.py', 'check-boundary-negative.sh',
@@ -219,7 +214,7 @@ def test_support_methods(root, path):
         expires = datetime.date.fromisoformat(entry.get('expires', ''))
         require(expires >= datetime.date.today(), 'test-support entry expired')
         methods = entry.get('methods') or []
-        require((methods or entry.get('advisoryOnly') is True)
+        require(methods
                 and all(isinstance(m, str) and ID.fullmatch(m) for m in methods),
                 'test-support methods invalid')
         return set(methods)
@@ -235,7 +230,9 @@ PRODUCTION_TIMING = [CATALOG + '/HomeBannerProductionTimingTests/' + name + '()'
 TEST_SUPPORT_MANIFEST_BYTES = ((ROOT / TEST_SUPPORT_MANIFEST).read_text()
                                 if (ROOT / TEST_SUPPORT_MANIFEST).is_file() else '')
 MAPPING_HASH = hashlib.sha256(json.dumps([PATH_TARGETS, PREFIX_TARGETS, PR_SMOKE, sorted(VERIFICATION_PATHS), CATEGORY,
-                                          PRODUCTION_TIMING, TEST_SUPPORT_MANIFEST_BYTES],
+                                          PRODUCTION_TIMING, TEST_SUPPORT_MANIFEST_BYTES,
+                                          (ROOT / 'Tests/Governance/host-sensitive-advisory.json').read_text()
+                                          if (ROOT / 'Tests/Governance/host-sensitive-advisory.json').is_file() else ''],
                                          sort_keys=True).encode()).hexdigest()
 
 ID = re.compile(r'[A-Za-z_][A-Za-z_0-9]*(?:/[A-Za-z_][A-Za-z_0-9]*)+/[A-Za-z_][A-Za-z_0-9]*\([A-Za-z_0-9:]*\)|[A-Za-z_][A-Za-z_0-9]*/[A-Za-z_][A-Za-z_0-9]*\([A-Za-z_0-9:]*\)')
@@ -274,52 +271,75 @@ FUNC_DECL = re.compile(r'^\s*' + FUNC_ATTRIBUTES + FUNC_MODIFIERS + r'func\s+')
 TEST_FUNC = re.compile(r'^\s*' + FUNC_ATTRIBUTES + FUNC_MODIFIERS + r'func\s+(test[A-Za-z0-9_]+)\s*\(\s*\)')
 
 
-def _ui_test_methods(root, path, patch):
-    """Return the exact changed UI test methods, or None for shared/helper edits."""
+def _test_body_ranges(source, class_name):
+    """Use the pinned Swift grammar, never infer lexical nesting from source regex."""
+    try:
+        with tempfile.TemporaryDirectory(prefix='mall-scope-parse-') as tmp:
+            parsed = subprocess.run(
+                ['xcrun', 'swiftc', '-frontend', '-swift-version', '6',
+                 '-module-cache-path', tmp, '-dump-parse', '-'],
+                input=source, capture_output=True, text=True, check=True)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    stack, bodies = [], {}
+    node = re.compile(r'^( *)(\(\w+)')
+    location = re.compile(r'range=\[.*?:(\d+):(\d+) - line:(\d+):(\d+)\]')
+    for line in parsed.stdout.splitlines():
+        match = node.match(line)
+        if not match:
+            continue
+        indent, kind = len(match[1]), match[2][1:]
+        while stack and stack[-1]['indent'] >= indent:
+            stack.pop()
+        span = location.search(line)
+        names = re.findall(r'"([^"\n]*)"', line)
+        item = dict(indent=indent, kind=kind, name=names[0] if names else '', span=span)
+        if kind == 'brace_stmt' and span and stack and stack[-1]['kind'] == 'func_decl':
+            function = stack[-1]
+            if len(stack) >= 2:
+                owner = stack[-2]
+                if (owner['kind'] in {'class_decl', 'extension_decl'}
+                        and owner['indent'] == 2 and owner['name'] == class_name
+                        and function['indent'] == 4
+                        and re.fullmatch(r'test[A-Za-z0-9_]+\(\)', function['name'])):
+                    name = function['name']
+                    if name in bodies:
+                        return None
+                    bodies[name] = (int(span[1]), int(span[3]))
+        stack.append(item)
+    return bodies or None
+
+
+def _ui_test_methods(root, path, patch, before):
+    """Narrow only replacements proved inside matching old/new test bodies."""
     if not (path.startswith('CoolMalliOSUITests/') and path.endswith('.swift')):
         return None
-    source = (Path(root) / path).read_text(encoding='utf-8').splitlines()
-    changed = []
-    for match in re.finditer(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@', patch, re.M):
-        start = int(match.group(1))
-        count = int(match.group(2) or '1')
-        if count == 0:
-            changed.append(start)
-        else:
-            changed.extend(range(start, start + count))
-    if not changed:
-        return None
-    methods = set()
-    for line in changed:
-        method = None
-        for index in range(min(line, len(source)) - 1, -1, -1):
-            text = source[index]
-            test = TEST_FUNC.match(text)
-            if test:
-                method = test.group(1)
-                break
-            if FUNC_DECL.match(text):
-                # A local function inside a test method is not a shared helper.
-                # Keep scanning to the enclosing class-level test declaration.
-                indent = len(text) - len(text.lstrip())
-                if indent > 4:
-                    continue
-                return None
-        if method is None:
-            return None
-        # A changed comment/blank immediately above a helper would otherwise
-        # be attributed to the previous test method. If the next code line is
-        # a func declaration, this is not a test-method body change.
-        for index in range(line, len(source)):
-            text = source[index].strip()
-            if not text or text.startswith(('//', '/*', '*')):
-                continue
-            if FUNC_DECL.match(text):
-                return None
-            break
-        methods.add(method)
     stem = Path(path).stem
-    return {f'CoolMalliOSUITests/{stem}/{method}()' for method in sorted(methods)}
+    after = (Path(root) / path).read_text(encoding='utf-8')
+    old_bodies = _test_body_ranges(before.decode('utf-8'), stem)
+    new_bodies = _test_body_ranges(after, stem)
+    if old_bodies is None or new_bodies is None:
+        return None
+    old_methods, new_methods = set(), set()
+    hunks = list(re.finditer(r'^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@', patch, re.M))
+    if not hunks:
+        return None
+    for hunk in hunks:
+        for start, count, bodies, methods in [
+            (int(hunk[1]), int(hunk[2] or '1'), old_bodies, old_methods),
+            (int(hunk[3]), int(hunk[4] or '1'), new_bodies, new_methods),
+        ]:
+            # Pure insertion/deletion anchors and method delimiters are ambiguous.
+            if count == 0:
+                return None
+            for row in range(start, start + count):
+                owners = [name for name, (begin, end) in bodies.items() if begin < row < end]
+                if len(owners) != 1:
+                    return None
+                methods.add(owners[0])
+    if old_methods != new_methods:
+        return None
+    return {f'CoolMalliOSUITests/{stem}/{method}' for method in sorted(new_methods)}
 
 
 def plan(root, env, history=None):
@@ -375,15 +395,17 @@ def plan(root, env, history=None):
                 selected.update(targets)
                 method_only = False
                 continue
-            before_mode, _ = CLASSIFY.snapshot(root, base, path)
+            before_mode, before = CLASSIFY.snapshot(root, base, path)
             after_mode = CLASSIFY.snapshot(root, head, path)[0] if event == 'pull_request' else ('100755' if (root/path).stat().st_mode & 0o111 else '100644')
             if before_mode != '100644' or after_mode != '100644':
                 result['reason'] = 'file-type-or-mode-impact'
                 return result
             patch = git(root, 'diff', '--unified=0', *refs, '--', path)
             changed = '\n'.join(line[1:] for line in patch.splitlines() if line[:1] in ('+', '-') and not line.startswith(('+++', '---')))
-            method_scope = _ui_test_methods(root, path, patch)
-            if method_scope:
+            method_scope = _ui_test_methods(root, path, patch, before)
+            if method_scope and not re.search(
+                r'\b(public|open|func|struct|class|extension|typealias|import)\b|@(?:Test|Suite)\b', changed
+            ):
                 selected.update(method_scope)
                 result.setdefault('testMethods', []).extend(sorted(method_scope))
                 method_only = True
@@ -404,11 +426,6 @@ def plan(root, env, history=None):
                 return result
             selected.update(targets)
             method_only = False
-        if tier == 'required':
-            selected = {item for item in selected if item not in blocked}
-            if result.get('testSupportMethods'):
-                result['testSupportMethods'] = [m for m in result['testSupportMethods']
-                                                if m not in blocked]
         result.update(mode='selected', targets=sorted(selected))
         if test_support and test_support_only:
             result['reason'] = 'test-support-targeted'
@@ -420,14 +437,22 @@ def plan(root, env, history=None):
     return result
 
 
+def excluded_advisory(scope):
+    # Direct consumer coverage wins over an unrelated-regression exclusion.
+    if scope.get('tier') != 'required' or scope['mode'] == 'full':
+        return set()
+    return {method for method in scope.get('advisoryMethods', [])
+            if not any(method == prefix or method.startswith(prefix + '/')
+                       for prefix in scope['targets'])}
+
+
 def selected_methods(scope, methods):
     if scope['mode'] == 'full':
         selected = list(methods)
     else:
         selected = [m for m in methods if m.split('/')[0] != 'CoolMalliOSUITests'
-                    or m.startswith(CATEGORY + '/')
                     or any(m == prefix or m.startswith(prefix + '/') for prefix in scope['targets'])]
-    blocked = set(scope.get('advisoryMethods', [])) if scope.get('tier') == 'required' else set()
+    blocked = excluded_advisory(scope)
     if blocked:
         selected = [m for m in selected if m not in blocked]
     targets = [prefix for prefix in scope['targets'] if prefix not in blocked]

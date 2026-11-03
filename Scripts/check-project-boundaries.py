@@ -4,6 +4,7 @@ import argparse
 import importlib.util
 import json
 import os
+import plistlib
 from pathlib import Path
 import subprocess
 import sys
@@ -91,6 +92,14 @@ def validate_project(root, policy, paths):
     require(set(targets) == {'CoolMalliOS', 'CoolMalliOSUITests'}, 'MOD-01: App target set mismatch')
     require(len([o for o in objects.values() if o['isa'] == 'PBXNativeTarget']) == 2, 'MOD-01: unregistered App target')
     allowed_settings = {'PRODUCT_NAME', 'PRODUCT_BUNDLE_IDENTIFIER', 'GENERATE_INFOPLIST_FILE', 'SWIFT_VERSION', 'SWIFT_ACTIVE_COMPILATION_CONDITIONS', 'IPHONEOS_DEPLOYMENT_TARGET', 'TARGETED_DEVICE_FAMILY', 'SDKROOT', 'SUPPORTED_PLATFORMS', 'CODE_SIGN_STYLE', 'SWIFT_STRICT_CONCURRENCY', 'SWIFT_OPTIMIZATION_LEVEL', 'INFOPLIST_KEY_UILaunchScreen_Generation', 'INFOPLIST_KEY_UIApplicationSceneManifest_Generation', 'INFOPLIST_KEY_CFBundleDisplayName', 'CURRENT_PROJECT_VERSION', 'MARKETING_VERSION', 'TEST_TARGET_NAME', 'CLANG_ENABLE_MODULES', 'DEBUG_INFORMATION_FORMAT', 'ENABLE_TESTABILITY', 'ONLY_ACTIVE_ARCH'}
+    simulator_debug_layout_settings = {'ENABLE_DEBUG_DYLIB[sdk=iphonesimulator*]': '$(MALL_SIMULATOR_DEBUG_DYLIB_$(CODE_SIGNING_ALLOWED))', 'MALL_SIMULATOR_DEBUG_DYLIB_NO': 'NO', 'MALL_SIMULATOR_DEBUG_DYLIB_YES': 'YES'}
+    simulator_identity_settings = {'CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]': 'CoolMalliOS/Simulator.entitlements', 'OTHER_LDFLAGS[sdk=iphonesimulator*]': '$(inherited) $(MALL_SIMULATOR_ENTITLEMENTS_$(CODE_SIGNING_ALLOWED))', 'MALL_SIMULATOR_ENTITLEMENTS_NO': '-Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker $(SRCROOT)/CoolMalliOS/Simulator.entitlements', 'MALL_SIMULATOR_ENTITLEMENTS_YES': ''}
+    entitlements = root / 'CoolMalliOS/Simulator.entitlements'
+    require(not entitlements.is_symlink() and entitlements.is_file(), 'MOD-06: simulator Keychain identity file missing/unsafe')
+    require(plistlib.loads(entitlements.read_bytes()) == {
+        'application-identifier': 'com.coolmall.CoolMallIOS',
+        'keychain-access-groups': ['com.coolmall.CoolMallIOS']
+    }, 'MOD-06: simulator Keychain identity contents mismatch')
     for owner in [main, *targets.values()]:
         configs = objects[owner['buildConfigurationList']]['buildConfigurations']
         require(len(configs) == 2 and {objects[i]['name'] for i in configs} == {'Debug', 'Release'}, 'MOD-06: configuration set mismatch')
@@ -98,7 +107,13 @@ def validate_project(root, policy, paths):
             config = objects[cid]
             settings = config['buildSettings']
             require(settings.get('ONLY_ACTIVE_ARCH') == ('YES' if config['name'] == 'Debug' else 'NO'), 'MOD-06: active architecture configuration changed')
-            require(set(settings) <= allowed_settings, f'MOD-06: unknown/unsafe build settings: {set(settings)-allowed_settings}')
+            require(set(settings) <= allowed_settings | set(simulator_identity_settings) | set(simulator_debug_layout_settings), f'MOD-06: unknown/unsafe build settings: {set(settings)-allowed_settings}')
+            if owner is targets['CoolMalliOS']:
+                expected_layout = simulator_debug_layout_settings if config['name'] == 'Debug' else {}
+                require(all(settings.get(k) == v for k, v in expected_layout.items()) and not ((set(settings) & set(simulator_debug_layout_settings)) - set(expected_layout)), 'MOD-06: simulator Keychain debug layout mismatch')
+                require(all(settings.get(k) == v for k, v in simulator_identity_settings.items()), 'MOD-06: simulator Keychain identity settings mismatch')
+            else:
+                require(not (set(settings) & (set(simulator_identity_settings) | set(simulator_debug_layout_settings))), 'MOD-06: simulator Keychain identity must be App-only')
             conditions = settings.get('SWIFT_ACTIVE_COMPILATION_CONDITIONS')
             if conditions is not None:
                 require(config['name'] == 'Debug' and conditions == 'DEBUG',

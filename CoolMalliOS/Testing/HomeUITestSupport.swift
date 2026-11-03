@@ -22,6 +22,7 @@
             case bannerReconcile = "banner-reconcile"
             case bannerRefreshFailure = "banner-refresh-failure"
             case bannerPending = "banner-pending"
+            case couponMany = "coupon-many"
             case imageSuccess = "image-success"
             case imageFailure = "image-failure"
             case imagePending = "image-pending"
@@ -114,7 +115,7 @@
                 root = .home
                 fixtureMode = mode
                 switch mode {
-                case .imageSuccess, .imageFailure, .imagePending,
+                case .couponMany, .imageSuccess, .imageFailure, .imagePending,
                     .bannerSingle, .bannerMultiple, .bannerReconcile,
                     .bannerRefreshFailure, .bannerPending:
                     service = ImageHomeService(mode: mode)

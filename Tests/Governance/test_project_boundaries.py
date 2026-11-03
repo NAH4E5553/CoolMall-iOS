@@ -46,6 +46,132 @@ class ProjectBoundariesTests(unittest.TestCase):
 
     def test_normal_project(self): GATE.check(self.root, BINARY)
 
+    def test_simulator_identity_missing_setting_rejected(self):
+        def mutation(objects):
+            config = next(o for o in objects.values() if o.get('isa') == 'XCBuildConfiguration' and 'MALL_SIMULATOR_ENTITLEMENTS_NO' in o['buildSettings'])
+            del config['buildSettings']['MALL_SIMULATOR_ENTITLEMENTS_NO']
+        self.mutate_project(mutation); self.reject('MOD-06: simulator Keychain identity settings mismatch')
+
+    def test_simulator_identity_cannot_apply_to_device(self):
+        def mutation(objects):
+            config = next(o for o in objects.values() if o.get('isa') == 'XCBuildConfiguration')
+            config['buildSettings']['CODE_SIGN_ENTITLEMENTS'] = 'CoolMalliOS/Simulator.entitlements'
+        self.mutate_project(mutation); self.reject('MOD-06: unknown/unsafe build settings')
+
+    def test_simulator_identity_non_app_target_rejected(self):
+        def mutation(objects):
+            target = next(o for o in objects.values() if o.get('isa') == 'PBXNativeTarget' and o['name'] == 'CoolMalliOSUITests')
+            cid = objects[target['buildConfigurationList']]['buildConfigurations'][0]
+            objects[cid]['buildSettings']['MALL_SIMULATOR_ENTITLEMENTS_YES'] = ''
+        self.mutate_project(mutation); self.reject('MOD-06: simulator Keychain identity must be App-only')
+
+    def test_simulator_identity_extra_entitlement_rejected(self):
+        p = self.root / 'CoolMalliOS/Simulator.entitlements'
+        data = plistlib.loads(p.read_bytes()); data['get-task-allow'] = True
+        p.write_bytes(plistlib.dumps(data)); self.reject('MOD-06: simulator Keychain identity contents mismatch')
+
+    def test_unsigned_simulator_debug_layout_required(self):
+        def mutation(objects):
+            config = next(o for o in objects.values() if o.get('isa') == 'XCBuildConfiguration' and 'MALL_SIMULATOR_DEBUG_DYLIB_NO' in o['buildSettings'])
+            config['buildSettings']['MALL_SIMULATOR_DEBUG_DYLIB_NO'] = 'YES'
+        self.mutate_project(mutation); self.reject('MOD-06: simulator Keychain debug layout mismatch')
+
+    def test_signed_simulator_debug_layout_preserved(self):
+        def mutation(objects):
+            config = next(o for o in objects.values() if o.get('isa') == 'XCBuildConfiguration' and 'MALL_SIMULATOR_DEBUG_DYLIB_YES' in o['buildSettings'])
+            config['buildSettings']['MALL_SIMULATOR_DEBUG_DYLIB_YES'] = 'NO'
+        self.mutate_project(mutation); self.reject('MOD-06: simulator Keychain debug layout mismatch')
+
+    def test_simulator_identity_shared_group_rejected(self):
+        p = self.root / 'CoolMalliOS/Simulator.entitlements'
+        data = plistlib.loads(p.read_bytes()); data['keychain-access-groups'].append('another.application')
+        p.write_bytes(plistlib.dumps(data)); self.reject('MOD-06: simulator Keychain identity contents mismatch')
+
+    def test_simulator_identity_wrong_identifier_rejected(self):
+        p = self.root / 'CoolMalliOS/Simulator.entitlements'
+        data = plistlib.loads(p.read_bytes()); data['application-identifier'] = 'another.application'
+        p.write_bytes(plistlib.dumps(data)); self.reject('MOD-06: simulator Keychain identity contents mismatch')
+
+    def test_footprint_registered_adapter_and_entry(self):
+        GATE.check(self.root, BINARY)
+
+    def test_footprint_other_data_file_cannot_import_swiftdata(self):
+        self.append('import SwiftData', target='MallData')
+        self.reject('MOD-01.*SwiftData import is scoped')
+
+    def test_footprint_other_feature_cannot_access_storage(self):
+        self.append('import SwiftData', target='AccountFeature')
+        self.reject('MOD-01.*forbidden import SwiftData')
+
+    def test_footprint_extra_public_view_rejected(self):
+        self.append('public struct FootprintSettingsView {}', target='AccountFeature')
+        self.reject('MOD-02.*unregistered Feature public type')
+
+    def test_address_exact_registered_entries(self):
+        GATE.check(self.root, BINARY)
+
+    def test_address_extra_entry_rejected(self):
+        self.append('public struct AddressConfirmView {}', 'AccountFeature')
+        self.reject('MOD-02.*unregistered Feature public type AddressConfirmView')
+
+    def test_address_public_viewmodel_rejected(self):
+        self.append('public final class AddressEditorViewModel {}', 'AccountFeature')
+        self.reject('MOD-02.*implementation type must remain internal')
+
+    def test_coupon_exact_registered_entries(self):
+        GATE.check(self.root, BINARY)
+
+    def test_coupon_extra_receive_entry_rejected(self):
+        self.append('public struct CouponBatchReceiveView {}', 'AccountFeature')
+        self.reject('MOD-02.*unregistered Feature public type CouponBatchReceiveView')
+
+    def test_coupon_extra_account_entry_rejected(self):
+        self.append('public struct CouponReceiveView {}', 'AccountFeature')
+        self.reject('MOD-02.*unregistered Feature public type CouponReceiveView')
+
+    def test_coupon_extra_catalog_entry_rejected(self):
+        self.append('public struct CouponScopePickerView {}', 'CatalogFeature')
+        self.reject('MOD-02.*unregistered Feature public type CouponScopePickerView')
+
+    def test_account_registered_entries_and_adapters(self):
+        GATE.check(self.root, BINARY)
+
+    def test_account_extra_public_entry_rejected(self):
+        self.append('public struct ExtraAccountView {}', 'AccountFeature')
+        self.reject('MOD-02.*unregistered Feature public type ExtraAccountView')
+
+    def test_account_cross_feature_rejected(self):
+        self.append('import CartFeature', 'AccountFeature')
+        self.reject('MOD-01.*forbidden import CartFeature')
+
+    def test_security_outside_adapter_rejected(self):
+        self.append('import Security', 'MallData')
+        self.reject('MOD-01.*Security import is scoped')
+
+    def test_security_api_without_import_rejected(self):
+        self.append('let f = SecItemAdd', 'MallData')
+        self.reject('MOD-05.*Keychain API is scoped')
+
+    def test_notifications_outside_adapter_rejected(self):
+        self.append('import UserNotifications', 'MallData')
+        self.reject('MOD-01.*UserNotifications import is scoped')
+
+    def test_notification_api_without_import_rejected(self):
+        self.append('let c = UNUserNotificationCenter.current()', 'AccountFeature')
+        self.reject('MOD-05.*notification API is scoped')
+
+    def test_captcha_decoder_outside_adapter_rejected(self):
+        self.append('import ImageIO', 'AccountFeature')
+        self.reject('MOD-01.*captcha image import is scoped')
+
+    def test_account_testplan_target_required(self):
+        p = self.root / 'CoolMalliOS.xctestplan'
+        data = json.loads(p.read_text())
+        data['testTargets'] = [x for x in data['testTargets'] if x['target']['identifier'] != 'AccountFeatureTests']
+        p.write_text(json.dumps(data))
+        self.reject('MOD-01: Test Plan must include all registered tests')
+
+
     def test_comments_and_strings_are_not_imports(self):
         self.append('// import MallData\nlet text = "URLSession @testable import CartFeature"\nlet apiName = "URLSession"')
         GATE.check(self.root, BINARY)

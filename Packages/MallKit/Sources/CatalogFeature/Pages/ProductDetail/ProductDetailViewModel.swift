@@ -17,6 +17,10 @@ final class ProductDetailViewModel {
         case failed(ProductDetailLoadFailure)
     }
     let productID: Int64
+    private let footprintRecorder: (any FootprintRecording)?
+    private var footprintTask: Task<Void, Never>?
+    private var footprintTaskID: UUID?
+    private(set) var footprintSaveFailed = false
     private let loader: any ProductDetailLoading
     private(set) var detailState: DetailState = .idle
     private(set) var specificationState: SpecificationState = .idle
@@ -29,7 +33,11 @@ final class ProductDetailViewModel {
     private var detailGeneration = 0
     private var specificationGeneration = 0
 
-    init(productID: Int64, loader: any ProductDetailLoading) {
+    init(
+        productID: Int64, loader: any ProductDetailLoading,
+        footprintRecorder: (any FootprintRecording)? = nil
+    ) {
+        self.footprintRecorder = footprintRecorder
         self.productID = productID; self.loader = loader
     }
 
@@ -49,6 +57,7 @@ final class ProductDetailViewModel {
         guard active != value else { return }
         active = value
         if !value {
+            footprintTask?.cancel(); footprintTask = nil; footprintTaskID = nil
             detailGeneration += 1; closeSpecifications()
             if case .loading = detailState { detailState = .idle }
         }
@@ -66,6 +75,7 @@ final class ProductDetailViewModel {
             try Task.checkCancellation()
             guard result.id == productID else { throw ProductDetailLoadFailure.invalidResponse }
             detailState = .ready(result)
+            await saveFootprint(result, generation: generation)
         } catch {
             guard active, generation == detailGeneration else { return }
             detailState =
@@ -74,6 +84,31 @@ final class ProductDetailViewModel {
         }
     }
 
+    private func saveFootprint(_ detail: ProductDetailSnapshot, generation: Int) async {
+        guard let footprintRecorder, active, generation == detailGeneration else { return }
+        do {
+            try Task.checkCancellation();
+            try await footprintRecorder.record(FootprintItem(detail: detail))
+            if active, generation == detailGeneration, !Task.isCancelled {
+                footprintSaveFailed = false
+            }
+        } catch {
+            if active, generation == detailGeneration, !Task.isCancelled,
+                !(error is CancellationError)
+            {
+                footprintSaveFailed = true
+            }
+        }
+    }
+    func retryFootprint() {
+        guard active, let detail, footprintSaveFailed, footprintTask == nil else { return }
+        let epoch = detailGeneration; let id = UUID(); footprintTaskID = id
+        footprintTask = Task { [weak self] in
+            await self?.saveFootprint(detail, generation: epoch)
+            guard let self, self.footprintTaskID == id else { return }
+            self.footprintTask = nil; self.footprintTaskID = nil
+        }
+    }
     func retryDetail() {
         guard active, case .failed = detailState else { return }
         detailGeneration += 1; detailState = .idle; detailAttempt += 1

@@ -7,6 +7,7 @@ struct ProductDetailCouponSheet: View {
     let coupons: [ProductDetailCoupon]
     let height: CGFloat
     let dismiss: () -> Void
+    let onReceive: (ProductDetailCoupon) -> Void
     @ScaledMetric private var titleSize = 16.0
     @ScaledMetric private var couponTitleSize = 14.0
     @ScaledMetric private var titleLeading = 5.0
@@ -100,11 +101,13 @@ struct ProductDetailCouponSheet: View {
                         }
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
-                Button("立即领取") {}.font(.system(size: couponTitleSize, weight: .bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 24).padding(.vertical, 10)
-                    .background(ProductDetailStyle.accent, in: Capsule())
-                    .accessibilityHint("功能暂未实现")
+                Button("立即领取") { onReceive(coupon) }.font(
+                    .system(size: couponTitleSize, weight: .bold)
+                )
+                .foregroundStyle(.white)
+                .padding(.horizontal, 24).padding(.vertical, 10)
+                .background(ProductDetailStyle.accent, in: Capsule())
+                .accessibilityIdentifier("detail.coupon.receive.\(coupon.id)")
             }.padding(12)
         }.background(ProductDetailStyle.surface(scheme), in: RoundedRectangle(cornerRadius: 12))
     }

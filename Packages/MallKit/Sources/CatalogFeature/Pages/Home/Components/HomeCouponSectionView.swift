@@ -1,7 +1,7 @@
 import MallCore
 import SwiftUI
 
-/// Selection belongs to this display row; claiming remains an unavailable action.
+/// Selection belongs to this display row; App handles the selected coupon intent.
 struct HomeCouponSectionView: View {
     let coupons: [HomeCouponSummary]
     let action: (HomeCouponSummary) -> Void

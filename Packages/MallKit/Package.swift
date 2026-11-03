@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "MallDesignSystem", targets: ["MallDesignSystem"]),
         .library(name: "CatalogFeature", targets: ["CatalogFeature"]),
         .library(name: "CartFeature", targets: ["CartFeature"]),
+        .library(name: "AccountFeature", targets: ["AccountFeature"]),
         .library(name: "MallImages", targets: ["MallImages"]),
     ],
     dependencies: [.package(url: "https://github.com/kean/Nuke.git", exact: "13.2.0")],
@@ -22,6 +23,8 @@ let package = Package(
             name: "CatalogFeature", dependencies: ["MallCore", "MallDesignSystem", "MallImages"],
             resources: [.process("Resources")]),
         .target(name: "CartFeature", dependencies: ["MallCore", "MallDesignSystem", "MallImages"]),
+        .target(
+            name: "AccountFeature", dependencies: ["MallCore", "MallDesignSystem", "MallImages"]),
         .target(
             name: "MallImages",
             dependencies: [
@@ -37,6 +40,7 @@ let package = Package(
             resources: [.process("Resources")]),
         .testTarget(name: "CatalogFeatureTests", dependencies: ["CatalogFeature", "MallCore"]),
         .testTarget(name: "CartFeatureTests", dependencies: ["CartFeature", "MallCore"]),
+        .testTarget(name: "AccountFeatureTests", dependencies: ["AccountFeature", "MallCore"]),
     ],
     swiftLanguageModes: [.v6]
 )

@@ -85,9 +85,16 @@ enum HomeMapper {
         var mapped: [HomeCouponSummary] = []
         for item in items {
             try validateID(item.id, seen: &seen)
+            for amount in [item.amount, item.condition?.fullAmount].compactMap({ $0 }) {
+                guard !amount.isNaN, amount >= 0 else { throw HomeLoadFailure.invalidPayload }
+            }
             mapped.append(
                 HomeCouponSummary(
-                    id: item.id, title: try nonBlank(item.title, field: "coupon.title")))
+                    claimOffer: CouponClaimOffer(
+                        id: item.id, title: try nonBlank(item.title, field: "coupon.title"),
+                        description: item.description ?? "", amountYuan: item.amount,
+                        minimumSpendYuan: item.condition?.fullAmount,
+                        endTime: item.endTime.flatMap { $0.isEmpty ? nil : $0 })))
         }
         return mapped
     }

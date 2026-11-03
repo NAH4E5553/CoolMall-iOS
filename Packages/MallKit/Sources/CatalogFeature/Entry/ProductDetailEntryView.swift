@@ -11,31 +11,38 @@ public struct ProductDetailEntryView: View {
     private let imagePipeline: MallImagePipeline?
     private let isActive: Bool
     private let onShowAllReviews: (Int64) -> Void
+    private let footprintRecorder: (any FootprintRecording)?
     private let shoppingCart: (any ShoppingCart)?
     private let cartVerifier: (any CartProductChecking)?
+    private let onReceiveCoupon: (CouponClaimOffer) -> Void
     private let onOpenCart: () -> Void
 
     public init(
         productID: Int64, loader: any ProductDetailLoading,
         imagePipeline: MallImagePipeline? = nil, isActive: Bool,
         onShowAllReviews: @escaping (Int64) -> Void = { _ in },
+        footprintRecorder: (any FootprintRecording)? = nil,
         shoppingCart: (any ShoppingCart)? = nil, cartVerifier: (any CartProductChecking)? = nil,
-        onOpenCart: @escaping () -> Void = {}
+        onOpenCart: @escaping () -> Void = {},
+        onReceiveCoupon: @escaping (CouponClaimOffer) -> Void = { _ in }
     ) {
         self.productID = productID
         self.loader = loader
         self.imagePipeline = imagePipeline
         self.isActive = isActive
         self.onShowAllReviews = onShowAllReviews
+        self.footprintRecorder = footprintRecorder
         self.shoppingCart = shoppingCart; self.cartVerifier = cartVerifier;
         self.onOpenCart = onOpenCart
+        self.onReceiveCoupon = onReceiveCoupon
     }
 
     public var body: some View {
         ProductDetailScreen(
             productID: productID, loader: loader,
             pipeline: imagePipeline, isActive: isActive, onShowAllReviews: onShowAllReviews,
-            shoppingCart: shoppingCart, cartVerifier: cartVerifier, onOpenCart: onOpenCart
+            footprintRecorder: footprintRecorder, shoppingCart: shoppingCart,
+            cartVerifier: cartVerifier, onOpenCart: onOpenCart, onReceiveCoupon: onReceiveCoupon
         )
         .tint(ProductDetailStyle.accent)
         .id(CartDetailIdentity(productID: productID, scope: shoppingCart?.scope))
@@ -64,16 +71,20 @@ private struct ProductDetailScreen: View {
     let isActive: Bool
     let onShowAllReviews: (Int64) -> Void
     let onOpenCart: () -> Void
+    let onReceiveCoupon: (CouponClaimOffer) -> Void
 
     init(
         productID: Int64, loader: any ProductDetailLoading,
         pipeline: MallImagePipeline?, isActive: Bool, onShowAllReviews: @escaping (Int64) -> Void,
-        shoppingCart: (any ShoppingCart)?, cartVerifier: (any CartProductChecking)?,
-        onOpenCart: @escaping () -> Void
+        footprintRecorder: (any FootprintRecording)?, shoppingCart: (any ShoppingCart)?,
+        cartVerifier: (any CartProductChecking)?,
+        onOpenCart: @escaping () -> Void, onReceiveCoupon: @escaping (CouponClaimOffer) -> Void
     ) {
-        _model = State(initialValue: ProductDetailViewModel(productID: productID, loader: loader))
+        _model = State(
+            initialValue: ProductDetailViewModel(
+                productID: productID, loader: loader, footprintRecorder: footprintRecorder))
         self.pipeline = pipeline; self.isActive = isActive; self.onShowAllReviews = onShowAllReviews
-        self.onOpenCart = onOpenCart
+        self.onOpenCart = onOpenCart; self.onReceiveCoupon = onReceiveCoupon
         _cartModel = State(
             initialValue: shoppingCart.flatMap { store in
                 cartVerifier.map { ProductCartViewModel(store: store, verifier: $0) }
@@ -127,6 +138,13 @@ private struct ProductDetailScreen: View {
                 .accessibilityHidden(showsCoupons || showsSpecifications)
             }
         }
+        .overlay(alignment: .top) {
+            if model.footprintSaveFailed {
+                Button("浏览记录未保存，点击重试") { model.retryFootprint() }
+                    .font(.footnote).padding(8).background(.regularMaterial, in: Capsule())
+                    .accessibilityIdentifier("detail.footprint.retry")
+            }
+        }
         .overlay(alignment: .leading) {
             // A narrow edge fallback preserves back navigation while the system
             // bar is hidden. It never attaches a drag recognizer to the pager.
@@ -147,7 +165,15 @@ private struct ProductDetailScreen: View {
                 ProductDetailCouponSheet(
                     coupons: detail.coupons,
                     height: min(windowHeight * 0.70, max(280, windowHeight - 100)),
-                    dismiss: { showsCoupons = false })
+                    dismiss: { showsCoupons = false },
+                    onReceive: { coupon in
+                        showsCoupons = false
+                        onReceiveCoupon(
+                            CouponClaimOffer(
+                                id: coupon.id, title: coupon.title, description: coupon.description,
+                                amountYuan: coupon.amountYuan,
+                                minimumSpendYuan: coupon.minimumSpendYuan, endTime: coupon.endTime))
+                    })
             }
         }
         .task(id: ReadKey(active: active, attempt: model.detailAttempt)) {

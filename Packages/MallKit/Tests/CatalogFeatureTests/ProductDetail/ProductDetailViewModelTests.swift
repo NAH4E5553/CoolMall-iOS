@@ -214,3 +214,57 @@ struct ProductDetailViewModelTests {
         }
     }
 }
+
+extension ProductDetailViewModelTests {
+    @Test func successfulDetailRecordsOnceAndFailedPersistenceCanRetry() async {
+        let recorder = FootprintRecorder(); recorder.fail = true
+        let model = ProductDetailViewModel(
+            productID: 830001, loader: Service(), footprintRecorder: recorder)
+        model.setActive(true); await model.loadDetail()
+        #expect(model.detail == Self.product()); #expect(model.footprintSaveFailed)
+        recorder.fail = false; model.retryFootprint(); await wait { !model.footprintSaveFailed }
+        #expect(recorder.items.map(\.id) == [830001])
+        model.setActive(false); model.setActive(true); await model.loadDetail();
+        #expect(recorder.items.count == 1)
+    }
+    @Test func lateFootprintRetryCannotClearNewRetryOwnership() async {
+        let recorder = FootprintRecorder(); recorder.fail = true
+        let model = ProductDetailViewModel(
+            productID: 830001, loader: Service(), footprintRecorder: recorder)
+        model.setActive(true); await model.loadDetail(); recorder.fail = false; recorder.hold = true
+        model.retryFootprint(); await wait { recorder.gates.count == 1 }
+        model.setActive(false); model.setActive(true); model.retryFootprint();
+        await wait { recorder.gates.count == 2 }
+        recorder.gates[0].resume(); await wait { recorder.finished == 1 }
+        model.retryFootprint(); await Task.yield(); #expect(recorder.calls == 3)
+        model.setActive(false); recorder.gates[1].resume(); await wait { recorder.finished == 2 }
+        #expect(model.footprintSaveFailed)
+        recorder.hold = false; model.setActive(true); model.retryFootprint();
+        await wait { !model.footprintSaveFailed }
+    }
+    @Test func failedAndLateDetailNeverRecordsFootprint() async {
+        let recorder = FootprintRecorder(); let source = Service([.fail(.timeout), .gate])
+        let model = ProductDetailViewModel(
+            productID: 830001, loader: source, footprintRecorder: recorder)
+        model.setActive(true); await model.loadDetail(); #expect(recorder.items.isEmpty)
+        model.retryDetail(); let read = Task { await model.loadDetail() };
+        await wait { !source.detailGates.isEmpty }
+        model.setActive(false); source.detailGates.removeFirst().resume(returning: Self.product());
+        await read.value
+        #expect(recorder.items.isEmpty)
+    }
+}
+@MainActor private final class FootprintRecorder: FootprintRecording {
+    var fail = false
+    var hold = false
+    var calls = 0
+    var finished = 0
+    var gates: [CheckedContinuation<Void, Never>] = []
+    var items: [FootprintItem] = []
+    func record(_ item: FootprintItem) async throws {
+        calls += 1
+        if fail { throw FootprintFailure.writeFailed }
+        if hold { await withCheckedContinuation { gates.append($0) }; finished += 1 }
+        items.append(item)
+    }
+}

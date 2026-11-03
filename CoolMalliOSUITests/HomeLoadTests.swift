@@ -211,7 +211,7 @@ extension HomeLoadTests {
     /// nonempty/empty section condition. Source-specific leaf IDs stay visible.
     @MainActor private func sectionContent(_ app: XCUIApplication, key: String) -> XCUIElement {
         if key == "banner" {
-            return app.buttons.matching(
+            return app.descendants(matching: .any).matching(
                 NSPredicate(format: "identifier BEGINSWITH %@", "home.banner.current.")
             ).firstMatch
         }
@@ -440,15 +440,15 @@ extension HomeLoadTests {
         XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 15))
         XCTAssertEqual(app.staticTexts["home.source"].label, "工程夹具（retap-sequence）")
         XCTAssertEqual(app.staticTexts["home.count.goods"].label, "全部商品：10")
-        let bannerTitle = sectionContent(app, key: "banner")
+        let topAnchor = app.staticTexts["home.loaded"]
+        let initialTopY = topAnchor.frame.minY
         let lastRow = app.staticTexts["home.count.categoryAll"]
         // Reach the full page's auxiliary row, including at accessibility
         // sizes, then prove the re-tap starts from a non-zero content position.
-        let atRestMinY = lastRow.frame.minY
         reachAuxiliaryRow(app, row: lastRow, maximumDrags: 10)
         XCTAssertTrue(lastRow.isHittable)
         XCTAssertLessThan(
-            lastRow.frame.minY, atRestMinY - 20,
+            topAnchor.frame.minY, initialTopY - 20,
             "precondition: actually scrolled to a non-zero position")
         // Real re-tap #1: scrolls to the fixed top anchor (deterministic
         // scrollTo alignment, recorded as the reference) + exactly one new
@@ -459,23 +459,30 @@ extension HomeLoadTests {
         let bSeen = NSPredicate(format: "label CONTAINS %@", "全部商品：11")
         expectation(for: bSeen, evaluatedWith: goods)
         waitForExpectations(timeout: 10)
-        XCTAssertTrue(bannerTitle.isHittable, "the first section must be back on screen")
-        let scrollToTopMinY = bannerTitle.frame.minY
-        // Bound the anchor against the real scroll viewport. The precise
-        // assertions remain visibility and the second re-tap landing on the
-        // SAME position.
-        XCTAssertGreaterThan(
-            scrollToTopMinY, app.scrollViews["home.scroll"].frame.minY - 160,
-            "re-tap must land near the resting (top) position")
+        // topAnchor is the fixed top marker above the variable-height
+        // content; its frame is a stable scroll offset. A banner/current
+        // element changes during autoplay, and a lower row moves when the
+        // refreshed content grows.
+        let waitForTop: () -> Void = {
+            let atTop = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in
+                    abs(topAnchor.frame.minY - initialTopY) <= 2
+                }, object: nil)
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [atTop], timeout: 5), .completed,
+                "re-tap must scroll the page back to the top")
+        }
+        waitForTop()
+        XCTAssertEqual(topAnchor.frame.minY, initialTopY, accuracy: 2)
         // Real re-tap #2 while ALREADY AT TOP (AT: 停在顶部再按→C): a re-tap
         // at the top also refreshes, and the position stays put.
         app.tabBars.buttons["首页"].tap()
         let cSeen = NSPredicate(format: "label CONTAINS %@", "全部商品：12")
         expectation(for: cSeen, evaluatedWith: goods)
         waitForExpectations(timeout: 10)
-        XCTAssertTrue(bannerTitle.isHittable)
+        waitForTop()
         XCTAssertEqual(
-            bannerTitle.frame.minY, scrollToTopMinY, accuracy: 6,
+            topAnchor.frame.minY, initialTopY, accuracy: 2,
             "an at-top re-tap must keep the same fixed top-anchor position")
         keepFeedbackScreenshot(app, name: "PR13-repeat-top")
     }
@@ -575,11 +582,14 @@ extension HomeLoadTests {
 
 extension HomeLoadTests {
     @MainActor private func imageElement(_ app: XCUIApplication, _ state: String) -> XCUIElement {
-        // Every banner image state is exposed on the actionable Button;
-        // decorative product thumbnails are Other elements and may carry the
-        // adapter's same state IDs. The button scope is exact and avoids a
-        // whole-tree Any query on every observation.
-        app.buttons["home.image.\(state)"].firstMatch
+        switch state {
+        case "success", "failure", "missing", "placeholder":
+            // The actionable banner is a Button; decorative product images
+            // are Other elements and may carry the adapter's same state IDs.
+            return app.buttons["home.image.\(state)"].firstMatch
+        default:
+            return app.descendants(matching: .any)["home.image.\(state)"].firstMatch
+        }
     }
 
     @MainActor private func imageMetrics(_ app: XCUIApplication, _ expected: String) {
@@ -723,32 +733,44 @@ extension HomeLoadTests {
 
     @MainActor private func currentBanner(_ app: XCUIApplication) -> XCUIElement {
         // The current leaf is the actionable banner Button (the selected image
-        // is a non-actionable Other). The prefix predicate over all buttons is
-        // still a tree-wide AX query and took seconds on slow CI hosts; one
-        // snapshot locates the current exposed identifier, and the follow-up
-        // exact query resolves the same button. Fall back to the predicate only
-        // if the snapshot has no current banner (e.g. while it is being torn
-        // down).
-        if let identifier = currentBannerIdentifier(app) {
-            return app.buttons[identifier]
+        // is a non-actionable Other). Snapshot + exact query is much faster
+        // than a prefix query, but autoplay can advance between the two. Retry
+        // the snapshot/exact pair before falling back to the live prefix.
+        for _ in 0..<3 {
+            if let identifier = currentBannerIdentifier(app) {
+                let element = app.buttons[identifier]
+                if element.exists { return element }
+            }
         }
         return app.buttons.matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "home.banner.current.")
         ).firstMatch
     }
 
+    private struct BannerProbe {
+        let identifier: String
+        let frame: CGRect
+    }
+
     /// One AX snapshot is cheaper on slow hosts than a repeated prefix query.
-    /// The visible/current banner is the first exposed node with the prefix.
-    @MainActor private func currentBannerIdentifier(_ app: XCUIApplication) -> String? {
+    /// Geometry uses the snapshot frame directly; no exact element is held
+    /// across an autoplay transition.
+    @MainActor private func currentBannerProbe(_ app: XCUIApplication) -> BannerProbe? {
         guard let snapshot = try? app.snapshot() else { return nil }
-        func find(_ node: any XCUIElementSnapshot) -> String? {
-            if node.identifier.hasPrefix("home.banner.current.") { return node.identifier }
+        func find(_ node: any XCUIElementSnapshot) -> BannerProbe? {
+            if node.identifier.hasPrefix("home.banner.current.") {
+                return BannerProbe(identifier: node.identifier, frame: node.frame)
+            }
             for child in node.children {
-                if let identifier = find(child) { return identifier }
+                if let probe = find(child) { return probe }
             }
             return nil
         }
         return find(snapshot)
+    }
+
+    @MainActor private func currentBannerIdentifier(_ app: XCUIApplication) -> String? {
+        currentBannerProbe(app)?.identifier
     }
 
     @MainActor private func bannerIndicators(_ app: XCUIApplication) -> XCUIElement {
@@ -788,12 +810,12 @@ extension HomeLoadTests {
     @MainActor @discardableResult
     private func revealBanner(_ app: XCUIApplication) -> Bool {
         for _ in 0..<4 {
-            let banner = currentBanner(app)
             let scroll = app.scrollViews["home.scroll"].frame.intersection(app.frame)
             let bottom = min(scroll.maxY, app.tabBars.firstMatch.frame.minY)
-            if banner.exists {
-                let frame = banner.frame
+            if let probe = currentBannerProbe(app) {
+                let frame = probe.frame
                 if frame.minY >= scroll.minY, frame.maxY <= bottom {
+                    let banner = app.buttons[probe.identifier]
                     if banner.isHittable { return true }
                     let settled = XCTNSPredicateExpectation(
                         predicate: NSPredicate { _, _ in banner.isHittable }, object: nil)
@@ -817,7 +839,7 @@ extension HomeLoadTests {
         return hittable
     }
 
-    @MainActor func testBannerSingleHidesControlsAndUpdatesSameIDURL() {
+    @MainActor func testBannerSingleHidesControlsAndShowsInitialImage() {
         let app = bannerApp("banner-single")
         XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["home.banner.page"].exists)
@@ -825,8 +847,13 @@ extension HomeLoadTests {
         XCTAssertFalse(app.buttons["home.banner.next"].exists)
         XCTAssertFalse(bannerIndicators(app).exists, "single banner has no pagination dots")
         imageMetrics(app, "图片请求：1；取消：0；首页读取：1")
-        let before = imageElement(app, "success").screenshot()
         keepFeedbackScreenshot(app, name: "HOME04-single-A")
+    }
+
+    @MainActor func testBannerSingleTabReturnUpdatesSameIDImage() {
+        let app = bannerApp("banner-single")
+        XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
+        let before = imageElement(app, "success").screenshot()
         app.tabBars.buttons["首页"].tap()
         imageMetrics(app, "图片请求：2；取消：0；首页读取：2")
         XCTAssertTrue(imageElement(app, "success").waitForExistence(timeout: 10))
@@ -993,11 +1020,11 @@ extension HomeLoadTests {
         app.tabBars.buttons["首页"].tap()
         imageMetrics(app, "图片请求：2；取消：0；首页读取：2")
         bannerPage(app, 2)
-        XCTAssertTrue(app.buttons["home.banner.current.910002"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["home.banner.current.910002"].exists)
         app.tabBars.buttons["首页"].tap()
         imageMetrics(app, "图片请求：3；取消：0；首页读取：3")
         bannerPage(app, 1, count: 2)
-        XCTAssertTrue(app.buttons["home.banner.current.910003"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["home.banner.current.910003"].exists)
         app.tabBars.buttons["首页"].tap()
         imageMetrics(app, "图片请求：3；取消：0；首页读取：4")
         XCTAssertFalse(app.staticTexts["home.section.banner.title"].exists)
@@ -1008,7 +1035,7 @@ extension HomeLoadTests {
         imageMetrics(app, "图片请求：3；取消：0；首页读取：5")
         XCTAssertFalse(app.staticTexts["home.section.banner.title"].exists)
         XCTAssertFalse(app.staticTexts["home.banner.page"].exists)
-        XCTAssertTrue(app.buttons["home.banner.current.910001"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["home.banner.current.910001"].exists)
         XCTAssertFalse(bannerIndicators(app).exists, "refilled single banner has no dots")
     }
 
@@ -1390,7 +1417,11 @@ extension HomeLoadTests {
 }
 
 extension HomeLoadTests {
-    @MainActor private func assertApprovedHomeDisplay(accessibility: Bool) throws {
+    private enum HomeDisplayPart { case all, coupon, rowsRecommend, rowsGoods }
+
+    @MainActor private func assertApprovedHomeDisplay(
+        accessibility: Bool, part: HomeDisplayPart = .all
+    ) throws {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["--ui-home-fixture", "valid"]
@@ -1523,55 +1554,79 @@ extension HomeLoadTests {
             attachment.lifetime = .keepAlways
             add(attachment)
         }
-        let couponObservation = try reveal("home.coupon.860001.title")
-        let claim = app.buttons["home.coupon.860001.claim"]
-        XCTAssertTrue(claim.isHittable)
-        let couponFrame = couponObservation.element.frame
-        let claimFrame = claim.frame
-        XCTAssertLessThan(couponFrame.maxX, claimFrame.minX)
-        XCTAssertTrue(couponFrame.minY < claimFrame.maxY && claimFrame.minY < couponFrame.maxY)
-        XCTAssertFalse(couponObservation.element.label.isEmpty)
-        capture("coupon")
-        if !accessibility {
-            _ = try reveal("home.flashSale.830001.title")
-            XCTAssertFalse(app.staticTexts["home.flashSale.830001.sold"].exists)
-            capture("featured")
-        }
-        let rows =
-            accessibility
-            ? [
-                ("recommend", "830009", "2101"), ("recommend", "830010", "4683"),
-                ("goods", "1", "459"),
-            ]
-            : [("recommend", "830009", "2101"), ("goods", "1", "459")]
-        for (key, id, sold) in rows {
-            let price = app.staticTexts["home.\(key).\(id).price"]
-            let row = try reveal("home.\(key).\(id).sold", including: "home.\(key).\(id).price")
-            XCTAssertTrue(price.isHittable)
-            XCTAssertEqual(row.element.label, "已售\(sold)件")
-            let priceFrame = try XCTUnwrap(row.companion).frame
-            let countFrame = row.element.frame
-            if accessibility, id == "830010" {
-                XCTAssertLessThanOrEqual(max(priceFrame.maxY, countFrame.maxY), bottom)
+        if part != .rowsRecommend && part != .rowsGoods {
+            let couponObservation = try reveal("home.coupon.860001.title")
+            let claim = app.buttons["home.coupon.860001.claim"]
+            XCTAssertTrue(claim.isHittable)
+            let couponFrame = couponObservation.element.frame
+            let claimFrame = claim.frame
+            XCTAssertLessThan(couponFrame.maxX, claimFrame.minX)
+            XCTAssertTrue(couponFrame.minY < claimFrame.maxY && claimFrame.minY < couponFrame.maxY)
+            XCTAssertFalse(couponObservation.element.label.isEmpty)
+            capture("coupon")
+            if !accessibility {
+                _ = try reveal("home.flashSale.830001.title")
+                XCTAssertFalse(app.staticTexts["home.flashSale.830001.sold"].exists)
+                capture("featured")
             }
-            print("Home display \(key) amount frame=\(priceFrame), sold frame=\(countFrame)")
-            XCTAssertLessThanOrEqual(priceFrame.maxX, countFrame.minX)
-            XCTAssertTrue(
-                priceFrame.minY < countFrame.maxY && countFrame.minY < priceFrame.maxY,
-                "price and actual sold count must share one row")
-            capture(id == "830010" ? "recommend-4683" : key)
+        }
+        if part != .coupon {
+            let rows: [(String, String, String)]
+            switch part {
+            case .rowsRecommend:
+                rows = [("recommend", "830009", "2101"), ("recommend", "830010", "4683")]
+            case .rowsGoods:
+                rows = [("goods", "1", "459")]
+            default:
+                rows =
+                    accessibility
+                    ? [
+                        ("recommend", "830009", "2101"), ("recommend", "830010", "4683"),
+                        ("goods", "1", "459"),
+                    ]
+                    : [("recommend", "830009", "2101"), ("goods", "1", "459")]
+            }
+            for (key, id, sold) in rows {
+                let price = app.staticTexts["home.\(key).\(id).price"]
+                let row = try reveal("home.\(key).\(id).sold", including: "home.\(key).\(id).price")
+                XCTAssertTrue(price.isHittable)
+                XCTAssertEqual(row.element.label, "已售\(sold)件")
+                let priceFrame = try XCTUnwrap(row.companion).frame
+                let countFrame = row.element.frame
+                if accessibility, id == "830010" {
+                    XCTAssertLessThanOrEqual(max(priceFrame.maxY, countFrame.maxY), bottom)
+                }
+                print("Home display \(key) amount frame=\(priceFrame), sold frame=\(countFrame)")
+                XCTAssertLessThanOrEqual(priceFrame.maxX, countFrame.minX)
+                XCTAssertTrue(
+                    priceFrame.minY < countFrame.maxY && countFrame.minY < priceFrame.maxY,
+                    "price and actual sold count must share one row")
+                capture(id == "830010" ? "recommend-4683" : key)
+            }
         }
     }
     @MainActor func testApprovedHomeDisplayAtNormalSize() throws {
         try assertApprovedHomeDisplay(accessibility: false)
     }
-    @MainActor func testApprovedHomeDisplayAtAccessibilitySize() throws {
-        try assertApprovedHomeDisplay(accessibility: true)
+    @MainActor func testApprovedHomeDisplayAccessibilityCoupon() throws {
+        try assertApprovedHomeDisplay(accessibility: true, part: .coupon)
+    }
+
+    @MainActor func testApprovedHomeDisplayAccessibilityRecommendRows() throws {
+        try assertApprovedHomeDisplay(accessibility: true, part: .rowsRecommend)
+    }
+
+    @MainActor func testApprovedHomeDisplayAccessibilityGoodsRow() throws {
+        try assertApprovedHomeDisplay(accessibility: true, part: .rowsGoods)
     }
 }
 
 extension HomeLoadTests {
-    @MainActor private func assertCouponAndFeatured(accessibility: Bool) {
+    private enum CouponFeaturedPart { case all, coupon, featured }
+
+    @MainActor private func assertCouponAndFeatured(
+        accessibility: Bool, part: CouponFeaturedPart = .all
+    ) {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["--ui-home-fixture", "valid"]
@@ -1606,70 +1661,84 @@ extension HomeLoadTests {
             attachment.lifetime = .keepAlways
             add(attachment)
         }
-        let coupon = app.staticTexts["home.coupon.860001.title"]
-        reveal(coupon)
-        let claim = app.buttons["home.coupon.860001.claim"]
-        XCTAssertTrue(claim.isHittable)
-        XCTAssertGreaterThanOrEqual(claim.frame.width, 44)
-        XCTAssertGreaterThanOrEqual(claim.frame.height, 44)
-        XCTAssertLessThan(coupon.frame.maxX, claim.frame.minX)
-        XCTAssertTrue(coupon.frame.minY < claim.frame.maxY && claim.frame.minY < coupon.frame.maxY)
-        XCTAssertFalse(coupon.label.isEmpty)
-        let claimFrame = claim.frame
-        coupon.swipeLeft()
-        let nextClaim = app.buttons["home.coupon.860002.claim"]
-        XCTAssertTrue(nextClaim.waitForExistence(timeout: 8))
-        XCTAssertEqual(nextClaim.frame.minX, claimFrame.minX, accuracy: 1)
-        XCTAssertEqual(nextClaim.frame.minY, claimFrame.minY, accuracy: 1)
-        XCTAssertTrue(nextClaim.label.contains("小米家电"))
-        capture("coupon-current-second")
-        XCTAssertTrue(app.staticTexts["home.loaded"].exists)
-        XCTAssertEqual(app.staticTexts["home.count.coupon"].label, "优惠券：3")
-        app.tabBars.buttons["分类"].tap()
-        app.tabBars.buttons["首页"].tap()
-        XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 5))
-        XCTAssertTrue(nextClaim.exists)
-        XCTAssertEqual(nextClaim.frame.minX, claimFrame.minX, accuracy: 1)
-        XCTAssertEqual(nextClaim.frame.minY, claimFrame.minY, accuracy: 1)
-        app.staticTexts["home.coupon.860002.title"].swipeRight()
-        XCTAssertTrue(claim.waitForExistence(timeout: 8))
-        capture("coupon")
-        reveal(app.staticTexts["home.flashSale.830001.title"])
-        XCTAssertFalse(app.staticTexts["home.flashSale.830001.sold"].exists)
-        // Align the actual section top inside the real viewport so all four
-        // white-container insets can be reviewed, including at AX sizes.
-        let homeScroll = app.scrollViews["home.scroll"]
-        let sectionHeader = app.staticTexts["home.section.flashSale.title"]
-        for _ in 0..<2 {
-            let viewport = homeScroll.frame
-            let top = viewport.minY + 12
-            let bottom = min(viewport.maxY, app.tabBars.firstMatch.frame.minY) - 12
-            let delta = sectionHeader.frame.minY - 12 - top
-            if abs(delta) <= 2 { break }
-            let startY = delta > 0 ? bottom - 20 : top + 20
-            let distance = min(abs(delta), (bottom - top) * 0.8)
-            let endY = startY + (delta > 0 ? -distance : distance)
-            let origin = homeScroll.coordinate(withNormalizedOffset: .zero)
-            origin.withOffset(CGVector(dx: viewport.width * 0.98, dy: startY - viewport.minY))
-                .press(
-                    forDuration: 0.05,
-                    thenDragTo: origin.withOffset(
-                        CGVector(dx: viewport.width * 0.98, dy: endY - viewport.minY)),
-                    withVelocity: 500, thenHoldForDuration: 0.2)
+        if part != .featured {
+            let coupon = app.staticTexts["home.coupon.860001.title"]
+            reveal(coupon)
+            let claim = app.buttons["home.coupon.860001.claim"]
+            XCTAssertTrue(claim.isHittable)
+            XCTAssertGreaterThanOrEqual(claim.frame.width, 44)
+            XCTAssertGreaterThanOrEqual(claim.frame.height, 44)
+            XCTAssertLessThan(coupon.frame.maxX, claim.frame.minX)
+            XCTAssertTrue(
+                coupon.frame.minY < claim.frame.maxY && claim.frame.minY < coupon.frame.maxY)
+            XCTAssertFalse(coupon.label.isEmpty)
+            let claimFrame = claim.frame
+            coupon.swipeLeft()
+            let nextClaim = app.buttons["home.coupon.860002.claim"]
+            XCTAssertTrue(nextClaim.waitForExistence(timeout: 8))
+            XCTAssertEqual(nextClaim.frame.minX, claimFrame.minX, accuracy: 1)
+            XCTAssertEqual(nextClaim.frame.minY, claimFrame.minY, accuracy: 1)
+            XCTAssertTrue(nextClaim.label.contains("小米家电"))
+            capture("coupon-current-second")
+            XCTAssertTrue(app.staticTexts["home.loaded"].exists)
+            XCTAssertEqual(app.staticTexts["home.count.coupon"].label, "优惠券：3")
+            app.tabBars.buttons["分类"].tap()
+            app.tabBars.buttons["首页"].tap()
+            XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 5))
+            XCTAssertTrue(nextClaim.exists)
+            XCTAssertEqual(nextClaim.frame.minX, claimFrame.minX, accuracy: 1)
+            XCTAssertEqual(nextClaim.frame.minY, claimFrame.minY, accuracy: 1)
+            app.staticTexts["home.coupon.860002.title"].swipeRight()
+            XCTAssertTrue(claim.waitForExistence(timeout: 8))
+            capture("coupon")
         }
-        capture("featured")
-        let firstFeatured = app.buttons["home.flashSale.830001.card"]
-        let initialFeaturedX = firstFeatured.frame.minX
-        app.scrollViews["home.flashSale.items"].swipeLeft()
-        XCTAssertLessThan(firstFeatured.frame.minX, initialFeaturedX)
-        XCTAssertEqual(app.staticTexts["home.count.flashSale"].label, "限时精选：8")
-        capture("featured-scrolled")
+
+        if part != .coupon {
+            reveal(app.staticTexts["home.flashSale.830001.title"])
+            XCTAssertFalse(app.staticTexts["home.flashSale.830001.sold"].exists)
+            // Align the actual section top inside the real viewport so all four
+            // white-container insets can be reviewed, including at AX sizes.
+            let homeScroll = app.scrollViews["home.scroll"]
+            let sectionHeader = app.staticTexts["home.section.flashSale.title"]
+            for _ in 0..<2 {
+                let viewport = homeScroll.frame
+                let top = viewport.minY + 12
+                let bottom = min(viewport.maxY, app.tabBars.firstMatch.frame.minY) - 12
+                let delta = sectionHeader.frame.minY - 12 - top
+                if abs(delta) <= 2 { break }
+                let startY = delta > 0 ? bottom - 20 : top + 20
+                let distance = min(abs(delta), (bottom - top) * 0.8)
+                let endY = startY + (delta > 0 ? -distance : distance)
+                let origin = homeScroll.coordinate(withNormalizedOffset: .zero)
+                origin.withOffset(CGVector(dx: viewport.width * 0.98, dy: startY - viewport.minY))
+                    .press(
+                        forDuration: 0.05,
+                        thenDragTo: origin.withOffset(
+                            CGVector(dx: viewport.width * 0.98, dy: endY - viewport.minY)),
+                        withVelocity: 500, thenHoldForDuration: 0.2)
+            }
+            capture("featured")
+            let firstFeatured = app.buttons["home.flashSale.830001.card"]
+            let initialFeaturedX = firstFeatured.frame.minX
+            app.scrollViews["home.flashSale.items"].swipeLeft()
+            XCTAssertLessThan(firstFeatured.frame.minX, initialFeaturedX)
+            XCTAssertEqual(app.staticTexts["home.count.flashSale"].label, "限时精选：8")
+            capture("featured-scrolled")
+        }
     }
-    @MainActor func testCouponAndFeaturedAtNormalSize() {
-        assertCouponAndFeatured(accessibility: false)
+    @MainActor func testCouponAtNormalSize() {
+        assertCouponAndFeatured(accessibility: false, part: .coupon)
     }
-    @MainActor func testCouponAndFeaturedAtAccessibilitySize() {
-        assertCouponAndFeatured(accessibility: true)
+
+    @MainActor func testFeaturedAtNormalSize() {
+        assertCouponAndFeatured(accessibility: false, part: .featured)
+    }
+    @MainActor func testCouponAtAccessibilitySize() {
+        assertCouponAndFeatured(accessibility: true, part: .coupon)
+    }
+
+    @MainActor func testFeaturedAtAccessibilitySize() {
+        assertCouponAndFeatured(accessibility: true, part: .featured)
     }
 }
 
@@ -1889,7 +1958,7 @@ extension HomeLoadTests {
         XCTAssertFalse(app.buttons["home.banner.next"].exists)
         XCTAssertTrue(bannerIndicators(app).exists, "multiple banners show in-image dots")
         let appFrame = app.frame
-        let bannerFrame = currentBanner(app).frame
+        let bannerFrame = try XCTUnwrap(currentBannerProbe(app), "current banner").frame
         let y = (bannerFrame.midY - appFrame.minY) / appFrame.height
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: y))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.52, dy: y))
@@ -1972,7 +2041,7 @@ extension HomeLoadTests {
         XCTAssertTrue(app.staticTexts["home.loaded"].waitForExistence(timeout: 10))
         revealBanner(app)
         let appFrame = app.frame
-        let bannerFrame = currentBanner(app).frame
+        let bannerFrame = try XCTUnwrap(currentBannerProbe(app), "current banner").frame
         func point(_ location: CGPoint) -> XCUICoordinate {
             app.coordinate(
                 withNormalizedOffset: CGVector(
@@ -2044,7 +2113,10 @@ extension HomeLoadTests {
         defer { bannerAuditEnd(app) }
         XCTAssertTrue(revealBanner(app))
         let scroll = app.scrollViews["home.scroll"].frame.intersection(app.frame)
-        func bannerAboveViewport() -> Bool { currentBanner(app).frame.maxY < scroll.minY }
+        func bannerAboveViewport() -> Bool {
+            guard let frame = currentBannerProbe(app)?.frame else { return false }
+            return frame.maxY < scroll.minY
+        }
         bannerAuditMarker(app, event: "offscreen-begin")
         for _ in 0..<4 where !bannerAboveViewport() {
             let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.75))
@@ -2080,7 +2152,9 @@ extension HomeLoadTests {
         try assertConsistentBanner(restored)
         try waitAdvance(app, from: restored.page, budget: returnBudget)
         let appFrame = app.frame
-        let bannerY = (currentBanner(app).frame.midY - appFrame.minY) / appFrame.height
+        let bannerY =
+            (try XCTUnwrap(currentBannerProbe(app), "current banner").frame.midY
+                - appFrame.minY) / appFrame.height
         let dragStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: bannerY))
         let dragEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.52, dy: bannerY))
         bannerAuditMarker(app, event: "drag-begin")

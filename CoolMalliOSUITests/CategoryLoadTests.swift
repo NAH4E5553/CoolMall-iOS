@@ -50,7 +50,7 @@ final class CategoryLoadTests: XCTestCase {
         return Int64(marker.label.filter(\.isNumber))
     }
 
-    @MainActor func testThreeColumnLayoutRealChildIDsAndLeftTapScrollLink() {
+    @MainActor func testThreeColumnLayoutRealChildIDs() {
         let app = launch(categoryFixture: "valid")
         openCategory(app)
 
@@ -84,6 +84,15 @@ final class CategoryLoadTests: XCTestCase {
         XCTAssertLessThan(second.frame.minX, third.frame.minX)
 
         attach(app, name: "category-valid-layout")
+    }
+
+    /// Left/right linked browsing, including the retained selection while the
+    /// right pane scrolls. Starts from the same valid fixture and establishes
+    /// the first root before the interaction chain.
+    @MainActor func testLeftTapScrollsRightAndSyncsSelection() {
+        let app = launch(categoryFixture: "valid")
+        openCategory(app)
+        XCTAssertTrue(app.buttons["category.root.800001"].waitForExistence(timeout: 15))
 
         // Left tap scrolls the right pane to that root and highlights it.
         let targetRoot = app.buttons["category.root.800005"]
@@ -264,7 +273,28 @@ final class CategoryLoadTests: XCTestCase {
     /// likely still realized. Tapping it must scroll the right target back to
     /// the top, not only move the highlight. This is also the scrolled-list
     /// background/selection case for the left rail.
-    @MainActor func testLongListLastToPreviousRootScrollsRight() {
+    @MainActor func testLongListLastRootCanBeSelected() {
+        let app = launch(categoryFixture: "many")
+        openCategory(app)
+        XCTAssertTrue(app.buttons["category.root.900001"].waitForExistence(timeout: 15))
+
+        let left = app.scrollViews["category.left.scroll"]
+        XCTAssertTrue(left.exists)
+        let last = app.buttons["category.root.900015"]
+        var tries = 0
+        while !last.isHittable && tries < 6 {
+            left.swipeUp()
+            tries += 1
+        }
+        XCTAssertTrue(last.isHittable)
+        last.tap()
+        XCTAssertTrue(wait({ selectedRoot(app) == 900_015 }, timeout: 6))
+        attach(app, name: "category-many-last-selected")
+    }
+
+    /// The last -> previous interaction keeps the preceding last-selection
+    /// state in this same method; it cannot be replaced by a fresh launch.
+    @MainActor func testLongListPreviousRootScrollsRight() {
         let app = launch(categoryFixture: "many")
         openCategory(app)
         XCTAssertTrue(app.buttons["category.root.900001"].waitForExistence(timeout: 15))
@@ -294,30 +324,30 @@ final class CategoryLoadTests: XCTestCase {
         attach(app, name: "category-many-previous-selected")
     }
 
-    @MainActor func testEmptyErrorRetryAndLoadingStates() {
-        let emptyApp = launch(categoryFixture: "empty")
-        openCategory(emptyApp)
-        XCTAssertTrue(emptyApp.staticTexts["category.empty"].waitForExistence(timeout: 15))
-        XCTAssertFalse(emptyApp.buttons["category.retry"].exists)
-        emptyApp.terminate()
+    @MainActor func testEmptyState() {
+        let app = launch(categoryFixture: "empty")
+        openCategory(app)
+        XCTAssertTrue(app.staticTexts["category.empty"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["category.retry"].exists)
+    }
 
-        let retryApp = launch(categoryFixture: "retry")
-        openCategory(retryApp)
-        XCTAssertTrue(retryApp.staticTexts["category.error"].waitForExistence(timeout: 15))
-        attach(retryApp, name: "category-error")
-        XCTAssertTrue(retryApp.staticTexts["category.error.detail"].exists)
-        let retry = retryApp.buttons["category.retry"]
+    @MainActor func testErrorRetryState() {
+        let app = launch(categoryFixture: "retry")
+        openCategory(app)
+        XCTAssertTrue(app.staticTexts["category.error"].waitForExistence(timeout: 15))
+        attach(app, name: "category-error")
+        XCTAssertTrue(app.staticTexts["category.error.detail"].exists)
+        let retry = app.buttons["category.retry"]
         XCTAssertTrue(retry.exists)
         retry.tap()
-        XCTAssertTrue(retryApp.buttons["category.root.800001"].waitForExistence(timeout: 15))
-        XCTAssertTrue(retryApp.buttons["category.root.800001"].isSelected)
-        retryApp.terminate()
+        XCTAssertTrue(app.buttons["category.root.800001"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["category.root.800001"].isSelected)
+    }
 
-        let loadingApp = launch(categoryFixture: "pending")
-        openCategory(loadingApp)
-        XCTAssertTrue(
-            loadingApp.staticTexts["category.loading.message"].waitForExistence(timeout: 15))
-        XCTAssertFalse(loadingApp.staticTexts["category.empty"].exists)
-        loadingApp.terminate()
+    @MainActor func testLoadingState() {
+        let app = launch(categoryFixture: "pending")
+        openCategory(app)
+        XCTAssertTrue(app.staticTexts["category.loading.message"].waitForExistence(timeout: 15))
+        XCTAssertFalse(app.staticTexts["category.empty"].exists)
     }
 }

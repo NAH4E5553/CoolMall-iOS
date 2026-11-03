@@ -47,9 +47,11 @@ jobs:
     outputs:
       verification_status: ${{ steps.gates.outputs.verification_status }}
       deferred_count: ${{ steps.gates.outputs.deferred_count }}
+      deferred_ids: ${{ steps.gates.outputs.deferred_ids }}
+      failure_category: ${{ steps.outcome.outputs.failure_category }}
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
-      MALL_TEST_DIAGNOSTICS: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_diagnostics && 'on-failure' || 'never' }}
+      MALL_TEST_DIAGNOSTICS: never
       # PR and main push use the blocking required tier. Scheduled/manual runs keep the full tier.
       MALL_VERIFICATION_TIER: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && 'required' || 'full' }}
       MALL_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -63,8 +65,10 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
       - name: Check test-support governance
+        id: support
         run: python3 Scripts/check-test-support.py
       - name: Record environment and select exact runtime
+        id: environment
         shell: bash
         run: |
           set -euo pipefail
@@ -127,6 +131,7 @@ jobs:
             xcrun simctl delete "$id" 2>/dev/null || true
           done
       - name: Summarize executed verification stages
+        id: summary
         if: ${{ always() }}
         shell: bash
         run: |
@@ -138,6 +143,7 @@ jobs:
             if [ -f "$log" ]; then python3 Scripts/test-duration-summary.py "$log" >> "$GITHUB_STEP_SUMMARY"; fi
           done
       - name: "Verification verdict: ${{ steps.gates.outputs.verification_status }}"
+        id: verdict
         if: ${{ always() }}
         shell: bash
         env:
@@ -148,11 +154,13 @@ jobs:
             *) echo 'Missing verification verdict'; exit 1 ;;
           esac
       - name: Retain evidence on success or failure
+        id: artifacts
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 (Node 24)
         with:
           name: ios-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            .build/verification/governance-results.json
             .build/verification/*.log
             .build/verification/*/*.log
             .build/verification/*/stage-timings.json
@@ -170,6 +178,12 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
+      - name: Describe existing CI failures
+        id: outcome
+        if: ${{ always() }}
+        env:
+          MALL_CI_STEPS: ${{ toJSON(steps) }}
+        run: python3 Scripts/ci-job-outcome.py
       - name: Record remaining minimum-system coverage
         if: ${{ always() }}
         shell: bash

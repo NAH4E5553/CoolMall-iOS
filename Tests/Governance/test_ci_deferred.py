@@ -361,7 +361,8 @@ class SummaryDisclosureTests(unittest.TestCase):
         self.assertIn('CI-DEFER-CYCLE-EVIDENCE-01', markdown)
         self.assertIn('Original native/wrapper exits: 65/65', markdown)
         self.assertNotIn('核心检查通过', markdown)
-        self.assertEqual(output, 'verification_status=failed\ndeferred_count=1\n')
+        self.assertEqual(output.splitlines(), ['verification_status=failed',
+            'deferred_ids=["CI-DEFER-CYCLE-EVIDENCE-01"]', 'deferred_count=1'])
 
     def test_unknown_mismatched_or_malformed_warning_never_becomes_an_allowed_issue(self):
         for kind in ['id', 'method', 'state', 'reason', 'not-object', 'list', 'report-status']:
@@ -445,7 +446,8 @@ class SummaryDisclosureTests(unittest.TestCase):
         self.assertEqual((result.returncode, data['status']), (65, 'failed'))
         self.assertEqual((data['priorExitCode'], data['nativeExitCode'], data['wrapperExitCode']), (0, 0, 0))
         self.assertIn('Prior gate/entry exit: 0', markdown)
-        self.assertEqual(output, 'verification_status=failed\ndeferred_count=1\n')
+        self.assertEqual(output.splitlines(), ['verification_status=failed',
+            'deferred_ids=["CI-DEFER-CYCLE-EVIDENCE-01"]', 'deferred_count=1'])
         self.assertTrue(data['disclosureErrors'])
 
     def test_existing_passing_verdicts_and_warning_labels_remain(self):

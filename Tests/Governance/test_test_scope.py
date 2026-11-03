@@ -93,7 +93,7 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(result['targets'], sorted([S.HOME,S.NAVIGATION,*S.PR_SMOKE]))
         self.assertEqual(len(result['paths']), 2)
         self.write('Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeBannerCarouselView.swift','changedBody\n'); self.commit()
-        self.assertEqual(self.plan()['targets'], sorted([S.CATALOG,S.HOME,S.NAVIGATION,*S.PR_SMOKE]))
+        self.assertEqual(self.plan()['targets'], sorted([S.CATALOG,S.HOME,S.NAVIGATION,*S.LIFECYCLE,*S.PR_SMOKE]))
 
     def test_unknown_api_structural_full_but_history_is_irrelevant(self):
         self.write('CoolMalliOSUITests/HomeLoadTests.swift','changedBody\n'); self.commit()
@@ -111,7 +111,7 @@ class SelectionTests(unittest.TestCase):
         self.write(hosted, 'changedBody\n'); self.commit()
         self.assertEqual(self.plan()['targets'], sorted([S.CATALOG,*S.PR_SMOKE]))
         self.write(timing, 'changedBody\n'); self.commit()
-        self.assertEqual(self.plan()['targets'], sorted(set([S.CATALOG,*S.PR_SMOKE])))
+        self.assertEqual(self.plan()['targets'], sorted(set([S.CATALOG,*S.LIFECYCLE,*S.PR_SMOKE])))
 
     def test_new_mapped_timing_files_and_declarations_still_require_full(self):
         paths = [
@@ -276,7 +276,7 @@ class SelectionTests(unittest.TestCase):
         self.assertIn(S.HOME, result['targets'])
         self.assertNotIn('testMethods', result)
 
-    def test_final_expansion_filters_advisory_for_home_and_full_fallback(self):
+    def test_direct_home_impact_and_full_fallback_keep_advisory_consumers(self):
         blocked = S.advisory_methods(ROOT)
         self.assertTrue(blocked)
         for scope in [
@@ -286,7 +286,7 @@ class SelectionTests(unittest.TestCase):
              'advisoryMethods': sorted(blocked)},
         ]:
             selected = S.selected_methods(scope, S.inventory(RAW, TARGETS))
-            self.assertFalse(set(selected) & blocked)
+            self.assertTrue(blocked <= set(selected))
             if scope['mode'] == 'selected':
                 self.assertTrue(any(m.startswith(S.HOME + '/') for m in selected))
 

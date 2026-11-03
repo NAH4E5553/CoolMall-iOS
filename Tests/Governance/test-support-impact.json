@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "files": {
+    "CoolMalliOSUITests/HomeLoadTests.swift": {
+      "owner": "@NAH4E5553",
+      "expires": "2026-12-31",
+      "reason": "Banner helper/geometry changes affect every test that observes or drives the carousel; full 201 remains in nightly/advisory.",
+      "methods": [],
+      "advisoryOnly": true
+    }
+  }
+}

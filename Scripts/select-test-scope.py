@@ -170,7 +170,7 @@ for path in list(PATH_TARGETS):
 VERIFICATION_PATHS = {'.github/workflows/ios.yml', '.github/workflows/ios-full-advisory.yml',
                          '.github/workflows/ios-isolation-experiment.yml',
                          '.github/workflows/ios-device-isolation.yml',
-                         'Scripts/create-simulator.py', 'Scripts/check-governance.py', 'Scripts/ci-job-outcome.py',
+                         'Scripts/check-governance.py', 'Scripts/ci-job-outcome.py',
                          'ENGINEERING.md', 'AGENTS.md'} | {
     'Scripts/' + name for name in [
         'SourceBoundaries.swift', 'check-boundaries.py', 'check-boundary-negative.sh',
@@ -180,10 +180,8 @@ VERIFICATION_PATHS = {'.github/workflows/ios.yml', '.github/workflows/ios-full-a
         'ci-deferred-policy.py', 'finalize-verification.py', 'prepare-ui-test-runner.py',
         'select-test-scope.py', 'select-simulator.py', 'verification-timing.py',
         'verify-local.sh', 'with-banner-trace.py', 'classify-ci-changes.py',
-        'test-duration-summary.py', 'check-test-support.py',
+        'check-test-support.py',
         'check-test-support-scope.py', 'check-test-support-execution.py',
-        'split-test-shards.py', 'prepare-isolation-experiment.sh',
-        'run-isolation-shard.sh', 'report-isolation-experiment.py',
     ]}
 TEST_SUPPORT_MANIFEST = 'Tests/Governance/test-support-impact.json'
 

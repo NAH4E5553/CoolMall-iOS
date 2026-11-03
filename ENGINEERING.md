@@ -1,10 +1,10 @@
 # CoolMall iOS 项目工程手册
 
-更新日期：2026-10-07。适用范围：以 CoolMallKotlin 的业务和接口为参考的新 iOS 客户端。
+更新日期：2026-11-03。适用范围：以 CoolMallKotlin 的业务和接口为参考的原生 iOS 客户端。
 
 本手册是架构决策、基础能力选型、代码规约、开发流程和验收要求的统一维护入口。
 
-**当前状态：F0-01 工程/合同及 F0-02 本地检查/测试入口已落地；五个库 Target、App、共享 Scheme/Test Plan、SwiftSyntax 源码检查和工程归属检查均有实际文件。iOS 26.2/27.0 模拟器测试通过；按用户安排，iOS 17 兼容性保留为后续真机待验项。远程 CI 已接入，正常流水线、三类故意违规和主分支实际合并阻断已有证据；Bootstrap PR #1 已按用户指示合并至 main，合并提交的 main CI 已触发；F0 整体尚未验收，不进入 F1。** 实际命令、结果与限制见第 8 章。
+**当前状态：首页、分类/详情/评价、购物车、账号相关页面、订单/结算和搜索的既有代码已合入main，维护者已完成本轮手动验收。共享工程、Scheme/Test Plan、依赖锁及本地工程检查入口随仓库保留。远端CI关闭，停用实验与执行流水仅本地留档；iOS17、真机和发布覆盖仍按第8章保留实际限制。** 新成员入口见README；当前策略见7.4，实际交付范围见第8章。
 
 先阅读第 1—3 章理解方向与边界；实现页面先查 [2.5 MVVM 合同](#25-feature-内部的-mvvm-合同)；开发基础能力时查第 4—6 章；执行构建与检查时查第 7 章；具体开工顺序见 [8.4](#84-接下来如何开工)。
 
@@ -51,7 +51,7 @@ Apple 提供状态管理、导航、持久化和并发机制，并未在这里�
 
 - 新工程暂以 iOS 17 为最低版本，便于统一使用 Observation。该版本是项目建议，不是 Apple 对所有 App 的要求；产品覆盖范围确定后再调整。
 - 使用 Swift 6 语言模式，显式管理 actor 隔离和跨隔离域传值。编译器版本、语言模式、SDK 版本、最低系统版本是不同概念。
-- 本机及 GitHub Actions 实际检查结果均为 Xcode 27.0（27A266a）、Swift 6.4；运行证据见 8.3。通过 `Scripts/check-toolchain.sh` 锁定这套工具链，远程 `xcode-27` 执行器仍在每次运行时校验实际完整版本。formatter 的版本输出为 `main`，因此同时校验所属 Xcode build 和 Swift 编译器完整版本。
+- 本地工程入口固定使用 Xcode 27.0（27A266a）、Swift 6.4，通过 `Scripts/check-toolchain.sh` 校验完整版本。formatter 的版本输出为 `main`，因此同时校验所属 Xcode build 和 Swift 编译器完整版本。远端CI当前停用，不把旧执行器或历史结果当成本轮运行证据。
 - 本机 SDK 为 iOS 27.0，模拟器 runtime 可使用已安装的 iOS 26.2。SDK 决定编译时可见的系统接口，deployment target 决定 App 支持的最低系统，runtime 是实际运行系统；三者不必同版本。设为最低 iOS 27.0 的 App 无法在 iOS 26.2 上运行。当前只按用户要求切换验证设备，不将测试设备版本当成修改最低支持范围的授权；提高最低版本须同步 App、Package、手册和检查器。[Apple 构建设置定义](https://developer.apple.com/library/archive/documentation/DeveloperTools/Reference/XcodeBuildSettingRef/1-Build_Setting_Reference/build_setting_ref.html)
 - 新代码采用 Observation；只有最低版本或现有依赖要求时才选择 `ObservableObject`。不为追求“纯新 API”重写兼容性所需代码。
 
@@ -783,15 +783,17 @@ Alamofire 可在大量复杂上传/拦截等需求经评估后替换底层实现
 
 ### 4.7 图片加载
 
-商品列表有大量图片，初步选型为 Nuke/NukeUI 稳定版本，由 RemoteImage 隐藏具体组件。它负责缓存、降采样/处理、请求合并、取消等能力；这比自行实现图片缓存引擎更合适。具体版本和缓存限额在列表原型验证后记录，当前未安装任何库。
+图片能力已由 MallImages 接入 Nuke/NukeUI exact 13.2.0，revision 30f7a7e72e0607d304fbf69c799474bd5fb6d1ce，与 Package.resolved 一致。RemoteImage 隐藏供应商类型；App 组装共享管线，Feature 消费者按第3章机器矩阵登记。缓存、降采样、请求合并、取消与生命周期由既有适配器合同负责，不在页面另建图片事实源。
 
 - RemoteImage 对外接收 URL/资源 ID、展示尺寸、内容模式和占位/失败样式，不让 Feature 直接依赖 Nuke 类型。
 - 图片缓存 key 考虑尺寸与必要的账号范围；列表缩略图不解码完整超大图，配置内存/磁盘限额和清理策略。
 - 图片通常从 CDN 获取，不统一附加商城 Token；需要认证的图片通过单独受限配置处理，切换用户清理私有缓存。
 - 确认取消、复用、离屏、后台恢复和解码的性能行为。图片 URL 刷新后正确失效，不能每次渲染都生成随机缓存 key。
-- 接入 Nuke/NukeUI 的首个 PR 按 SPLIT-03 创建 MallImages Target；RemoteImage 与管线适配放其中，Feature 只用包装后的入口。App 配置共享管线，公开接口不泄漏三方类型。使用系统 AsyncImage 的轻量方案可先在 DesignSystem/Images；不能因图片加载例外允许 UI 调用业务 HTTP。
+- MallImages 已按 SPLIT-03 独立为 Target；RemoteImage 与管线适配放其中，Feature 只用包装后的入口。App 配置共享管线，公开接口不泄漏三方类型。使用系统 AsyncImage 的轻量方案可先在 DesignSystem/Images；不能因图片加载例外允许 UI 调用业务 HTTP。
 
 系统 AsyncImage 适合简单场景或原型，但不能用它的存在推断项目已经具备完整可控的商品图片缓存策略。[Nuke 项目能力说明](https://github.com/kean/Nuke)
+
+批准的适配合同（APPROVAL-IMAGE01-I02-20261013 / APPROVAL-IMAGE01-DEBUG-SEAM-20261013）：公开接口仅使用本模块、Foundation、SwiftUI类型。MallImagePipeline.swift 独占供应商/URLSession/URLRequest/FileManager适配；ImageUITestSupport.swift 的URLProtocol注入仅DEBUG可用，Release没有测试注入。精确版本、未知导入/产品和缺失或修改的锁文件仍由现有检查拒绝；私有图片认证不在当前范围。
 
 ### 4.8 本地存储：不同数据使用不同合同
 
@@ -1068,11 +1070,13 @@ Keychain 适配的真实读写另用独立测试 service/account 标识验证，
 
 ### 7.2 自动验证：准确的触发与失败规则
 
-2026-11-03 最新用户决定（APPROVAL-CI-OFF-INTEGRATION-20261103 / APPROVAL-CI-ENTRY-REMOVAL-20261103）：本轮先合并整合已开发代码，App构建、功能测试和CI工具自检均不执行，全部代码合并完成后再按模块逐项单独测试。仓库Actions已关闭、main分支保护已移除，无其他保护规则或rulesets；本次还移除main中的全部GitHub Actions工作流入口，后续整合旧分支时保持这些入口删除，不能把旧CI触发配置带回主干。测试、检查/诊断脚本和历史失败均保留，不通过伪造成功状态解除门禁。本段在整合阶段覆盖下方自动执行与必需CI拦截合并的历史要求，不改变业务断言/测试预算/既有延期日期，不代表功能验收或发布完成。原29项driver诊断继续暂停，CI/保护恢复及测试执行由用户另行安排。备份与逐次整合记录见Evidence/Coordination/2026-11-03-CODE-INTEGRATION，远端设置快照见Evidence/Coordination/2026-11-03-CI-OFF-INTEGRATION。
+本节及7.3中保留的远端触发、必需门禁和调度表述，是验证工具的接入合同；当前没有启用这些远端入口，以7.4的停用状态为准。本地只按任务授权手动调用7.3和README中的命令。
 
-2026-11-03 CI-POLICY-LOCAL（用户授权本地最小修正，待确认提交）：本段为本地候选，覆盖下方旧的无差别治理、固定首页/分类基线与直接影响仍排除advisory的部分，不声称远端生效。普通required保留Debug/Release、完整发现、全部Package测试、冷启动与路由返回两条全局UI冒烟；首页、分类按消费者追加，未知/共享/发现变化完整回退。直接影响及完整回退优先于advisory排除，替代方法仍必须发现且通过。治理留在verify单一必需链；仅可证明driver输入未变的干净精确PR/main required diff可省略driver整模块，其余治理保留；缺历史/脏树/本地/full均包含driver，记录精确清单和执行数，零项/重复/缺模块不得通过。保留macOS，不采用PR39迁移或任意环境变量排除。classify→verify→required-checks不变；汇总核对批准延期ID、唯一数量及原期限，未知/重复/错配/到期拒绝。失败按已有步骤和阶段分类，保留原结果，不推断产品根因。普通诊断固定never；状态流水放普通文档/PR，规则矩阵仍重验证。远端管理员保护仅准备配置待确认；功能提交合并与超时诊断继续暂停。
+当前交付策略：GitHub仅保留App/Package源码、正式资源、工程与依赖锁文件、业务测试和本地工程验证所需工具。Actions关闭、工作流入口删除、远端保护停用；不自动运行或恢复CI。停用实验、独立耗时诊断、自身专用测试和执行流水在维护者本地归档，不参与同事检出后的依赖装配。本次仓库整理不构建、不测试、不恢复原29项driver诊断；不改变业务断言、测试预算或延期日期。
 
-2026-11-03 P1/P2本地返修：UI方法级缩窄仅在现有Swift6工具对变更前后语法解析均成功，且所有替换行严格位于同一组既有测试方法体内部时成立；初始化器、属性、类型/extension边界、纯插入删除锚点、无可靠边界或解析工具不可用均保守回退。该步骤仅dump-parse，不编译/运行App，不放宽任何预算。治理driver省略改为明确无关路径允许清单，未知路径保留driver；原始Astra未通过报告与冻结包保留，返修另行冻结独立复验。
+保留的验证规则：普通required保留Debug/Release、完整发现、全部Package测试、冷启动与路由返回两条全局UI冒烟；首页、分类按消费者追加，未知/共享/发现变化完整回退。直接影响及完整回退优先于advisory排除，替代方法仍必须发现且通过。治理仍由verify单一入口执行；仅可证明driver输入未变的干净精确PR/main required diff可省略driver整模块，其余治理保留；缺历史、脏树、本地或full均包含driver，零项、重复、缺模块不得通过。未来重新启用远端调度前需维护者另行安排，不采用Linux迁移或任意环境变量排除。
+
+UI方法级缩窄仅在Swift6对变更前后语法解析均成功，且所有替换行严格位于同一组既有测试方法体内部时成立；初始化器、属性、类型/extension边界、纯插入删除锚点、边界不可靠或解析工具不可用均保守回退。治理driver省略使用明确无关路径允许清单，未知路径保留driver。该语法步骤仅dump-parse；不执行App，也不放宽预算。
 
 2026-10-21 最新维护者决定 DEC-016 / APPROVAL-CI-DEFERRED-01：为继续已明确的分类→购物车→我的功能开发，将 `CI-DEFER-HOME-TIMEOUT-01` 和 `CI-DEFER-CYCLE-EVIDENCE-01` 登记为有期限的延期修复、未闭环项；范围和到期/复核见7.5的CI专用登记及 `Scripts/ci-deferred-checks.json`。本段仅覆盖以下两类CI结果，优先于本节旧“任意非零/审计缺失即阻塞”表述的对应部分，不批准模块/权限豁免、跳过测试或扩大失败白名单。
 
@@ -1195,36 +1199,17 @@ Apple 的 Xcode 27 支持表列出 iOS 17 及以上模拟器；但 Xcode 27 发�
 
 ### 7.4 远程 CI 接入与门禁
 
-2026-10-19 DEC-014覆盖本节旧“所有PR同一完整验证、不裁剪纯文档”策略：保留原事件入口和轻量classify/required-checks，纯文档/可确认占位改动条件跳过F0 verification（全部构建和App测试均不启动）。只有classify明确排除的skip为合法；实现/规则/未知变动仍沿原完整远端入口，时限不变。实现已在开发worktree本地，尚未推送，不能宣称远端已生效。依据7.2及既有Evidence的implemented-only-ci记录。
+仓库为 [NAH4E5553/CoolMall-iOS](https://github.com/NAH4E5553/CoolMall-iOS)。维护者已关闭GitHub Actions并移除工作流入口及远端保护；此处记录当前策略，不把停用状态称为CI通过，也不以本地通过覆盖历史失败。
 
-远程为 GitHub 仓库 [NAH4E5553/CoolMall-iOS](https://github.com/NAH4E5553/CoolMall-iOS)，使用 GitHub Actions；已核实 Actions 启用及本机 Git 推送认证。工作流为 `.github/workflows/ios.yml`，执行器 `xcode-27`，通过 `DEVELOPER_DIR=/Applications/Xcode_27.0.app/Contents/Developer` 选择固定工具链；实际运行仍须通过原有完整版本校验，不用官方清单代替运行证据。主分支先初始化为空提交，工程经 Bootstrap PR #1 合并进入 main；实际远程运行和保护状态见 8.3。[官方执行器清单](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)
+同事检出后的构建、运行及本地工程验证按README和7.3执行，不需要维护者的Evidence、规格副本、诊断候选、临时联调配置或私有签名。格式、模块边界、完整测试发现、原生结果核对及生命周期业务审计所需工具仍随仓库交付。停用的隔离/分片实验和独立耗时报告不属于这些入口。
 
-F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 验证；当前按 DEC-014/017：PR 分类后 required，main/定时/手动 full，不缓存 DerivedData。远程明确选择已安装的 iOS 27.0 runtime；本地 iOS 26.2 证据另保留。`Scripts/select-simulator.py` 对准确 OS 和可用设备失败关闭；`Scripts/verify-local.sh` 执行 policy、format、boundaries、真实编译负向、Debug/Release 和包含 UI 的完整 Test Plan。只读工作流权限、不持有发布签名，checkout/upload-artifact 固定 commit SHA；成功或失败均上传日志和 xcresult（14 天），不上传 DerivedData。`required-checks` 使用 `always()` 汇总，只有所有登记上游成功才通过，缺失、失败、跳过、取消都拒绝。Bootstrap PR #1 合并后，工作流已位于默认 main 分支，main 推送已实际触发验证；手动及周期入口配置已进入默认分支，尚无已执行手动/周期验收记录，不能把配置存在写成已执行验收。
-
-每周入口目前覆盖当前系统的干净构建、全部测试及边界负向；iOS 17 按用户安排留待真机补验，因此 **7.2 的完整最低/当前系统 clean-compatibility 尚未完成**。Bootstrap 绿色仅说明现已执行的 F0 检查通过，不能据此宣称最低系统兼容、发布签名或 F0 整体验收完成。
-
-落地顺序：
-
-1. 创建 App/Package 和测试，先在本地跑通上节命令。
-2. 保存 `.swift-format`；实现 `format.sh`、`check-format.sh`、源码/工程边界检查、构建和测试入口，复用已有 `check-boundaries.py`，并提交项目自身仓库。
-3. 选定 macOS 执行器，确认安装的 Xcode 版本及 iOS Simulator runtime。通过 `DEVELOPER_DIR` 或平台设置选择固定工具链，不仅依赖会漂移的默认版本。
-4. 建立流水线：检出代码 → 校验工具版本 → 解析依赖 → 格式/边界检查 → 模拟器编译 → 单元与 UI 冒烟测试 → 保留日志和 xcresult。
-5. 若使用 GitHub，将工作流存为 `.github/workflows/ios.yml`；GitLab 对应 `.gitlab-ci.yml`；Xcode Cloud 在产品的工作流配置中连接仓库和 Scheme。配置中的 runner、Scheme、模拟器和脚本名称必须与真实工程匹配。
-6. 缓存按 Xcode 版本、依赖锁文件等区分，不能让旧构建产物掩盖缺失依赖。按 7.2 每周和发布前执行干净构建。
-7. 跑一次成功流水线，再故意引入一个格式错误和一个禁止依赖，分别确认对应检查变红，然后撤销。只有绿色结果不足以证明拦截规则有效。
-8. 在仓库平台把这些作业设为主分支合并必需检查。否则 CI 失败仍可能被直接合并；仅有 YAML 不等于完成门禁。
-
-外部贡献的 PR 验证只需模拟数据，不获取发布凭据。签名、TestFlight、App Store 发布作为独立发布流程配置，不加入普通 PR 的必经步骤。
-
-#### CI 验收清单
-
-- 新机器检出后能够按照本文完成构建，不依赖个人本地文件。
-- Xcode、Swift、formatter 的实际版本可追溯；依赖锁定文件随工程管理。
-- 故意制造格式、依赖和业务行为错误时，分别由对应作业失败并阻止合并。
-- 测试报告中能看到实际运行的用例，能下载失败日志与结果包。
-- Scheme/Test Plan 为共享文件，所用模拟器在执行器上真实可用。
+远端CI或保护恢复须由维护者另行安排；不因提交文档或清理分支自动开启，不设置假成功状态。发布签名、TestFlight/App Store与真实设备验收仍为独立范围。
 
 ### 7.5 例外与规则变更
+
+2026-10-28 SEARCH-WIDTH-FEATURED-01 / CHANGE-02：用户明确要求搜索发现框填满原生返回右侧及首页精选查看全部复用搜索结果。增量公开合同仅SearchQuery.featuredOnly默认false、SearchResultsEntryView同默认参数及HomeEntryView可选onShowFeatured意图；App为实际消费者并以typed route保留来源。Core空词仅featuredOnly有效，Data精选编码true/普通省略、空词省略keyWord，结果VM排序/筛选/改词保留范围。无新Target/SDK/schema/写入权/规则放宽；固定Android cf5029b及本轮匿名1000/9项分页读取为合同证据。状态/取消/验证见本地Evidence/iOS/2026-10-28-SEARCH-WIDTH-FEATURED/scope.md。
+
+2026-10-27 SEARCH-V1 v0.2 / CHANGE-02：用户明确确认整卡并授权开发，历史采用环境+游客/账号独立最近10词、去重置顶、清空确认、无登录合并。CatalogFeature新增SearchEntryView/SearchResultsEntryView两个公开入口，Core新增不可变SearchQuery/SearchSort/SearchProductSummary及热词/搜索/历史窄能力和scope/snapshot；Data新增HTTPProductSearchService及唯一PersistentSearchHistoryStore，独立VersionedSchema v1、不迁移或复用Cart/Footprint库。SwiftData仅新增该适配器精确路径登记，Feature VM/DTO保持内部。App组装同scope唯一store、类型化来源导航；筛选草稿/排序/布局归结果VM，沿用Core分页协调器和既有CategoryLoading/MallImages。不新增Target/SDK/依赖/CI政策，不改订单工作树。批准规格与状态/取消/验收合同见本地Evidence/Specs/2026-10-27-SEARCH-V1/PLAN.md v0.2。
 
 2026-10-27 ORDER-BADGES-PAGING-01 / CHANGE-02、REVIEW-02：用户明确我的订单角标、列表左右分页、详情购物车角标三项，按三个可独立构建提交。Core新增UserOrderCounts/OrderCountsLoading只读值与能力，Data复用HTTPOrderService的GET order/info/userCount与现有鉴权；App同实例注入Me入口，Account私有VM拥有账号页面投影。Orders各filter持原分页协调器、原生page与header同步。Catalog入口仅新增App原CartBadge同scope件数值，不新建存储或投影owner。两个Feature的纯视觉CountBadge共享于DesignSystem，不泄漏Core/业务状态。三Feature分别对应用户三项必要消费者，无互相依赖；不新Target/SDK/schema/CI/预算。状态/取消/接口/验证合同唯一见本地Evidence/iOS/2026-10-27-ORDER-BADGES-PAGING/scope.md。
 
@@ -1308,198 +1293,25 @@ F0 工作流配置所有 PR、main 推送、手动触发及每周一 UTC 03:23 �
 
 ### 8.3 当前实施状态
 
-2026-11-03 合并前保全与CI入口清理：已保存完整Git bundle（含全部工作树HEAD）及36个工作树状态，9个脏工作树的42个文件有字节快照/哈希、暂存与未暂存补丁；原工作树及证据不删除。基于PR41合并后的main f145f27仅移除3个工作流并同步本节规则，App/Package/测试/检查脚本未改，不执行构建测试。业务PR尚待按依赖逐项整合，PR16/17不重复合并；每步以来源提交、文件对照和冲突记录核对代码保全，运行验收待整合后进行。实际提交/合并状态见Evidence/Coordination/2026-11-03-CODE-INTEGRATION/state.json。
+首页、分类、商品详情与分页评价、购物车、账号/地址/优惠券/足迹、订单/结算和搜索的既有实现已合入main，维护者已完成本轮手动验收。App唯一组装依赖与跨Feature导航；模块边界和公开入口以第3章矩阵、7.5合同及源码检查器为准。
 
-2026-11-03 PR41 dump-package两项P2返修：保留上一冻结diff及Astra未通过报告，本地修正已启动采样的所有权/收尾和静默截断标记；原清单60秒预算、校验断言及延期不变。新diff、正反例与后续独立复验状态见Evidence/Coordination/2026-11-03-CI-POLICY-LOCAL/dump-package-repair/repair-p2；复验追加发现ps超时部分输出未经进程树过滤，继续仅保留归属可证的完整可解析行，丢弃部分/未知归属并明确标记，最新冻结见其repair-ps-filter子目录。本地返修不代表原远端超时已定位或修复。无提交推送/合并，原29项driver诊断及功能合并继续暂停。
-
-2026-11-03 PR41 dump-package专项：PR41/e480a43远端CI41612278935在原清单命令60秒截止，治理测试集及App构建/测试未执行，失败保留。用户本轮仅批准本地排查修复、展示diff和定向结果；原检查正常本机权限2.742秒通过，独立冷缓存对照1.470秒通过，未复现远端超时，不据此猜测锁竞争/缓存/宿主为根因。本地候选仅补本命令详细输出与一次有界进程采样，修复证据缺失，尚未解决或远端验证原超时；证据见Evidence/Coordination/2026-11-03-CI-POLICY-LOCAL/dump-package-repair。无提交推送/合并/保护或延期修改，原29项driver诊断及功能合并继续暂停。
-
-2026-11-03 CI-POLICY-LOCAL：独立工作树基于main3a76a05进行用户授权的本地规则修正。仅开发自检，定向结果/源码身份/完整diff见共享Evidence/Coordination/2026-11-03-CI-POLICY-LOCAL；未提交/推送/远端设置变更/CI重跑或App执行。延期日期、业务断言、60/120秒及job120分钟不变；功能交付与超时诊断暂停。
-
-2026-10-23 CI-LAYERS-01：用户授权在 codex/ci-deferred-home-checks@9e47ba4 本地修正并分层；CI 工作树初始干净，分类由 DeepSeek 独立维护。实现/离线治理/保存工件、最小 Runner 链、最终 required 集成与独立复核的实际结果见 Evidence/iOS/2026-10-23-CI-LAYERS-01。实际通过/失败/未验证以本轮冻结身份和 Evidence 结果为准；无 push/远端运行/分支保护/合并，五条旧原生失败、cycle 风险及返回静止/晚唤醒不改写。
-
-2026-10-25 ADDRESS-01 v0.1 本地独立验收通过：我的地址管理已接page/info/add/update/delete；列表与编辑独立VM、草稿/默认Toggle、整框焦点与精确提示、固定高度省市区三级弹层，外侧/顶部下拖取消且与列表滚动隔离，无额外表单按钮。用户选内置完整地区，MallData以MIT许可固定Vant2.2.0 revision4dec8e0dbd7dd12b3d58c38e3d0f3449f9c41ecb，34/369/3478节点；不称官方实时2026校验。开发最终5/0/0，Debug/Release/格式/边界通过，治理208；Astra同冻结包完整定向29/0/0、深色2/0/0，244源码/配置、18构建、15资源前后匹配。原失败及非致命运行警告保留；真实后端地址写入、iOS17/硬件/完整VoiceOver未验，checkout选择不在本轮。证据Evidence/iOS/2026-10-25-ADDRESS/astra-review/review.md；无commit/push/PR/merge。
-
-2026-10-26 ADDRESS-FEEDBACK-01 v0.1本地独立验收通过：截图10位手机号依原11位规则禁用正确，完整表单补明确提示，补有效号码启用；原unknown锁/保存单飞保留。Toggle为accountAccent，保存私有ButtonStyle白字、可用蓝紫/禁用45%浅紫，无新增按钮。地区header以global坐标驱动整层正向跟手，短拖临界阻尼回位、原64pt长拖取消；列表双向滚动/固定height/背景AX/取消不回填保持。开发最终地区完整链1/0/0及前包有界复用，Astra同冻结包15/0/0＋dark2/0/0，244源/18构建/15资源前后匹配；Debug/Release/格式/边界通过。原失败、8+2运行警告及未知原因保留，减弱动态仅静态核对，真实后端写入/iOS17/硬件/fullVO未验。证据Evidence/iOS/2026-10-25-ADDRESS-FEEDBACK/astra-review/review.md；仅本地无commit/push/PR/merge。
-
-2026-10-26 ADDRESS-COLOR-01 v0.1本地独立验收通过：默认标记/新增地址按钮及联系人/手机号/详细地址聚焦边框、浮动标签、光标统一accountAccent，与保存按钮同色。仅两个私有View局部配色、现有用例增加列表截图及本状态，无新增按钮/状态/布局/VM/接口/依赖/Target/CI变化。开发2/0/0，Astra同冻结包浅色2/0/0、深色2/0/0（两个不同方法四次执行），实际8张新图已独立目视；244源/18构建/15资源前后全匹配，Debug/Release/格式/边界通过。原行为/AX5有界复用，不称本轮15或492全套；原frame/host/AX警告保留。真实写入/iOS17/硬件/fullVO未验。证据Evidence/iOS/2026-10-26-ADDRESS-COLOR/astra-review/review.md；无commit/push/PR/merge。
-
-2026-10-25 COUPON-FEEDBACK-03 v0.2 本地独立验收通过：实际第三券code500/message“已领取过该优惠券”，最终按用户最新要求toast优先message，所有非1000仍拒绝、不据文案伪成功；卡片稳定按钮、顶部下滑与列表隔离、生命周期清理实现。开发最终19/0/0、Astra同冻结包34/0/0（9VM+7Data+18UI），230源码/18构建验前后哈希一致；Debug/Release、格式/边界通过，默认60/max120不变。前候选31与17及原失败保留；本次13条frame警告、历史unknown未归因、最终真实线上UI领取/iOS17/真机/fullVO未验证保留。无提交/推送/PR/合并。Evidence/iOS/2026-10-25-COUPON-FEEDBACK/state.json与astra-review/review.md。
-
-2026-10-25 COUPON-SHEET-02 v0.1 本地独立验收通过：首页全券底部overlay、外部点击关闭/无关闭按钮、统一立即领取、前三卡/更多竖滚及首页图片保持完成。真实GET本次3券；修复旧claim遮挡使homeIsVisible=false→nil request→missing，仅分离首页图片活跃与轮播暂停，保留Tab/push/background规则。Astra同冻结包实际49/0/0（35模型/真实宿主+14UI），exact集合/验前后230源配置与18构建身份一致；Debug/Release、格式/边界及开发深色2通过，完整记录 Evidence/iOS/2026-10-25-COUPON-SHEET/state.json 与 astra-review/review.md。原始失败、未唯一确认的输入时序原因及10条frame warning保留；不把461枚举称全套通过。真实账号资产/线上领取、iOS17/真机/fullVO未验证；现有类型/Target集合及CI规则未扩大，无提交/推送/PR/合并。
-
-2026-10-25 CAPTCHA-UI-01 v0.1 本地同包独立验收通过：图形验证码提交业务拒绝提示改为“图形验证码输入错误！”，删除安全验证弹层“取消”与键盘“完成”，保留“完成验证”、点图刷新及原生下拉关闭，外层登录表单Done保留。Astra实际12+1两个批次合计13不同方法通过（9模型＋4直接UI消费者，含真实系统本地通知），精确集合/源码身份核验通过，验前后230源配置＋18构建零差异。Debug/Release、现有边界/格式检查通过或按未变生产身份限定复用；不称全452通过。原文案复现9=8/1、开发10/2及11/1驱动失败、编译/格式/MOD03原失败与几何非同刻限度保留；独立两summary仍3+1条runtime warning，不称根因消除。真实账号请求、iOS17/真机/完整VoiceOver未验证；无接口/Target/依赖/SDK/边界/CI政策变化。报告 Evidence/iOS/2026-10-25-CAPTCHA-UI/astra-review/review.md，唯一状态该目录state.json；本段仅验后状态文字更新，无提交/推送/合并。
-
-2026-10-25 COUPON-01 v0.2 本地同包独立验收通过：Astra新执行53/0/0（33模型＋15券UI＋5既有直接回归）及67项边界正反例，精确原生方法集/源码身份通过，验前后230源配置与18构建文件零差异。范围含我的优惠券读取/说明/空态/真实下拉/追加/重试/重登录、按门槛浏览商品及详情、首页和详情所选券显式确认领取与未知结果恢复。归属/失败和取消合同见7.5；独立报告 Evidence/iOS/2026-10-25-COUPON/astra-review/review.md，唯一状态为该目录state.json。开发Debug/Release、边界/格式、同包深色AX2/0/0按未变身份限定复用；不称独立55或全449已执行。native01调用范围错误零模型、exit75及开发原失败完整保留，native02仍17条frame warning，不称根因消除。真实账号资产领取、结算核销、后端时区/幂等保证、iOS17/真机/完整VoiceOver未验证；结算功能未实现。仅本地，未提交/推送/合并。本段是验收后状态文字更新，生产/测试/规则与构建不改。
-
-2026-10-25 FOOTPRINT-01 v0.2 local independent repair acceptance passed (developer8/0/0 and Astra same-package8/0/0; no remote delivery). User approved local footprint preview/all/refresh/more and guest/account isolation. v0.1 independent37 methods36/1/0 first-pull failure retained; bounded presentation/input repair now8/0/0 UI, exact native inventory and source checks, Debug/Release and boundary/format passed. Unchanged30 model methods plus cart regression and63 governance retain their original independent scope. Latest state and all original failures: Evidence/iOS/2026-10-25-FOOTPRINT/state.json and refresh-repair/handoff.md. Historical first-pull mechanism remains not uniquely established; no budget/assertion/CI change. Existing AccountFeature adds public FootprintEntryView; Core footprint values/recording/browsing contracts, Data PersistentFootprintStore is the only new scoped SwiftData adapter under Footprints/. Existing cart adapter and all other prohibitions remain. Detail recording, local latest8 and20-item pages, refresh/clear, scope ownership and acceptance contract in Evidence/iOS/2026-10-25-FOOTPRINT/scope.md. No new Target/SDK/dependency/CI policy.
-
-
-2026-10-25 ACCOUNT-LOGIN-01 Keychain repair independently accepted locally: real App integration reproduced save failure, OSStatus -34018. Earlier entitled standalone probe missed App executable identity. Simulator-only App build identity is registered exactly in check-project-boundaries.py; signed simulator builds use native CODE_SIGN_ENTITLEMENTS, unsigned builds embed the same minimal simulator application-identifier/group via conditional linker flags. No device entitlement, shared group, storage fallback or credential schema change. DEBUG isolated synthetic HTTP tests retain actual SessionCoordinator and Keychain in the real App process. Independent real-App13/0/0 and governance59 passed; four simulator executable identities checked, device settings unchanged. Scope/evidence: Evidence/iOS/2026-10-25-ACCOUNT-LOGIN/keychain-repair/astra-review/review.md. Live account/hardware remain unverified; original failures retained. No commit/push/merge.
-
-
-2026-10-25 ACCOUNT-LOGIN-01 v0.2 accepted locally after explicit user correction: guest/signedIn only, credential-read failure is guest; guest add/edit/delete permitted, checkout alone checks login; full read-only profile. GPT-6 Astra independently27/0/0 including original detail-add and checkout-login return stack. Debug/Release and source boundaries/format passed; earlier failures/warnings and unverified live-account/iOS17/hardware limits retained. Evidence: Evidence/iOS/2026-10-25-ACCOUNT-LOGIN/revision-02/astra-review/review.md. No commit/push/merge. This status-only update follows frozen acceptance; implementation and binaries unchanged. Earlier development records below are historical.
-
-
-2026-10-25 ACCOUNT-LOGIN-01 v0.2开发中：本轮用户明确将AccountState统一guest/signedIn，读取凭据失败按guest开放游客车，仅结算登录检查；按截图二补齐个人中心。覆盖此前第三态/阻止游客车合同，存储失败、隔离和取消规则保留。CartEntryView新增可选onCheckout意图，App依据实时会话导航。详见revision-02/scope.md。
-
-2026-10-25 ACCOUNT-LOGIN-01 本地实现及 GPT-6 Astra 独立验收通过：用户批准验证码与密码真实登录、我的静态订单/足迹/菜单、只读个人中心与退出；注册/找回/第三方/写资料/订单/足迹业务暂缓。用户明确授权本任务只在 account-login-v1 工作树完成最小边界登记及正反例，覆盖此前本任务涉及登记文件的 DeepSeek 独占安排，其他 CI/工作流/HomeLoadTests 所有权不变。基线 65339ff，未提交/推送/合并。独立同包原生28/0/0、治理51条、真实Keychain隔离宿主双进程验证通过；Debug/Release与影响链限定复用详见 Evidence/iOS/2026-10-25-ACCOUNT-LOGIN/astra-review/review.md。线上真实账号、iOS17/真机/完整VoiceOver未验证，SwiftUI布局warning及历史失败保留。本次验收后仅更新状态文字，生产/测试/边界规则及二进制保持冻结身份。
-
-
-2026-10-24 R-REVIEWS-01 accepted local repair: the reviews refresh action concurrently waits for the read and a cancellable 300ms minimum hold, allowing the observed refresh-entry transition to reach its normal cleanup path. Only ProductReviewsEntryView changes; original gestures, assertions, idle waits and 60/120s limits remain. Independent clean Debug/Release builds succeeded; the original full chain passed five consecutive runs (29.813/44.484/28.391/27.331/27.068s), empty refresh20.235s and failed refresh24.765s, exact7/0/0. Preserve all original failures. This is bounded iPhone17/iOS27.0 simulator acceptance, not all-runtime proof: 300ms is empirical, private state4/5 thresholds are unconfirmed, probe notifier-pairing warnings limit causal claims, and iOS17/26/hardware remain unverified. Owner authorizes commit/push to PR17; remote CI and owner-deferred closure remain separate, with no CI exemption or merge authorization.
-
-2026-10-24 CART-V1 boundary registration (owner A/B/C/D approval): CartFeature gains the direct MallImages dependency; MallData source policy appends SwiftData, scoped by the source checker to Sources/MallData/Cart/PersistentCartStore.swift; MallCore/CartFeature/App and tests do not import SwiftData. CartEntryView remains the only public CartFeature entry; existing test targets, TestPlan and timeouts are unchanged. The Package.swift CartFeature dependency hunk is Codex-owned at cart handoff; ENGINEERING/Scripts/tests are DeepSeek-owned. Positive/negative boundary evidence is recorded in CI-TO-CART.
-
-2026-10-24 local catalog delivery: category, product detail and paged reviews are integrated. Category/detail and bounded composition/navigation have independent acceptance evidence; overall reviews acceptance remains incomplete. The owner explicitly defers R-REVIEWS-01 investigation and authorizes a local source commit. Original refresh-quiescence failures and unverified areas remain tracked locally; this is not a passing acceptance or a CI exemption. Keep the original refresh implementation/assertions/allowances; the unaccepted 300ms refresh-action candidate is excluded from this commit. No push, merge or expanded CI exception is authorized by this decision.
-
-| 阶段 | 交付结果 | 当前状态 |
-| --- | --- | --- |
-| 工程手册/AI 入口 | 本文保留唯一规则正文；模块矩阵、系统 import 列表与真实状态同步 | 已实施，沿用 DEC-001—003，无新增规则例外 |
-| F0-01 工程与合同 | CoolMalliOS App、MallKit 五个库 Target、4 个 Package 测试 Target、共享 CoolMalliOS Scheme/Test Plan、最小合同、fake、原生 Tab/Stack 外壳 | 已实施并在当前模拟器验证；未实现 F1 页面业务 |
-| F0-02 本地门禁 | `.swift-format`、工具链锁定、清单图、SwiftSyntax 源码、Xcode 归属/链接/配置、实际测试结果核验、负向夹具 | 已实施；具体本地验收记录如下，最低 runtime 行为仍待补验 |
-| 第一条业务链 | 商品列表/详情/规格、网络/分页/图片、真实 CartStore/磁盘恢复 | 未开始，继续等待 F0 整体验收 |
-| 本地版本管理 | `.gitignore`、GitHub `origin`、初始化 main、Bootstrap 分支 | main 从初始化空提交 `645584a` 快进至合并提交 `443888e`；Bootstrap PR #1 已合并，本地 main 已同步 |
-| F0-03 远程 CI | GitHub Actions 工作流、精确 runtime 选择、required-checks、PR/周期触发与日志留存 | 已实施，正常远程及三类负向/合并阻断有实测证据；最终 PR 提交检查通过，main 合并提交验证已触发，尚待结果 |
-
-#### 本轮范围、公开入口与状态合同
-
-CHANGE-01：用户可启动 App、进入两个 fixture 页面、由商品入口发意图经 App 路由打开购物车并返回。修改范围仅 App、五个批准库 Target、登记测试及工程工具；不接入网络、登录、商品列表/详情/分页、支付或持久化。采用系统 SwiftUI、Observation、actor 与协议注入，无第三方运行时依赖。SPLIT-01 已建立 Catalog/Cart 编译边界；其他 SPLIT/REVIEW 触发器未出现，不增加 Target。
-
-| 新公开 API / 所属模块 | 实际消费者与最小合同 |
+| 能力 | 当前交付范围 |
 | --- | --- |
-| Product、ProductLoading / Core | Catalog fixture 和 Data 夹具；按 Int64 ID 读单个商品，仅 id/title，不冒充后端完整 DTO。缺失/加载失败抛错，取消传播 |
-| CartScope、CartItemID、CartSnapshot、CartError、CartCommands、CartObserving / Core | Data fake、Cart 只读投影及合同测试；环境+账号/游客分区，商品+规格身份；数量 0 删除、负数失败，提交后 revision 增加 |
-| FixtureProductService / Data | App 注入 Catalog；从 `Bundle.module` 读取工程 JSON 夹具；internal FixtureProductDTO 不对外公开 |
-| FakeCartStore / Data | App 创建同一实例注入 Tab 与路由 Cart 入口；测试注入失败写入。仅内存 fixture，不声称持久化成功 |
-| FixtureNoticeView / DesignSystem | 两个 Feature 复用纯展示组件，输入仅标题/说明；语义字体、原生颜色及长文案/深色预览 |
-| CatalogEntryView、CartEntryView / 各 Feature | App 组合入口；接受 Core 能力和导航闭包。两个 fixture ViewModel 保持 internal，均非 F1 页面模型 |
+| 首页与Catalog | 真实首页读取/展示、刷新与轮播；分类联动、详情、分页评价；搜索/历史/筛选排序/精选浏览 |
+| 购物车 | SKU加入、件数与选择、持久化及环境/游客/账号分区、已实现的核验和结算接线 |
+| 账号与我的 | 登录/退出、资料读取、地址管理、优惠券读取/领取及足迹；会话所有权按7.5 |
+| 订单与结算 | 订单读取、确认/创建、只读收银台、待付款取消、分页和角标；真实支付SDK未接入 |
+| 工程交付 | 共享Scheme/TestPlan、正式资源、依赖锁、本地格式/边界/构建/测试入口；远端CI关闭 |
 
-| 状态 / owner Target | scope / 隔离 / 写命令与读取者 | await 后校验、取消与销毁、提交点 / 测试 |
-| --- | --- | --- |
-| 商品 fixture 展示 / CatalogFixtureViewModel / CatalogFeature | Entry View 的 @State 身份拥有；@MainActor；load；View 只读 idle/loading/ready/failed | generation 防反序，Task 取消回 idle；`.task` 随页面离开取消；无持久化，因为只是读取投影。成功/失败/取消/旧响应测试 |
-| 已提交内存 fixture / FakeCartStore / MallData | App 生命周期单实例；固定 fixture 环境+游客 scope；actor；setQuantity；多个 CartObserving 读取者 | 提交段无 await，入口检查取消；仅内存提交后发 revision 快照，失败保留旧值；初始快照与订阅注册在同一 actor 段，慢消费者可合并中间版本但保留最新值。流取消移除 continuation，销毁 store 结束流；onTermination 的短清理 Task 弱引用 owner。双观察者/重连/失败/取消/分区/销毁测试；磁盘测试不适用，F1 未实现 |
-| Cart 快照投影 / CartFixtureViewModel / CartFeature | 每个 Entry View 身份拥有；@MainActor；observe；只有 View 读取 | generation/取消校验，同 scope 不接受旧 revision；`.task` 拥有订阅，离开取消；无独立写数组/计数器/持久化。旧 revision 与取消缓冲值测试 |
-| Tab 与导航栈 / SceneRouter / App | 每个 RootView/Scene 的 @State；@MainActor；Binding、openCart；根 View 读取 | 无异步任务或持久化；Feature 仅发导航意图，不互相 import。UI 验证启动、路由、返回、两个 Tab |
+原始失败、旧独立验收、截图/日志、源代码身份及交付流水在维护者本地保留，不随本章反复上传；用户手动验收不改写这些历史结果。iOS17实际运行、真机、完整VoiceOver、发布签名及未覆盖的真实后端场景不因本次验收自动记作通过。延期策略原范围和到期日期保持。
 
-#### 实际本地验收（2026-10-07）
-
-工具链：Xcode **27.0 (27A266a)**，Apple Swift **6.4 (swiftlang-6.4.0.34.1)**，Swift **6** 语言模式，iOS deployment target **17.0**；swift-format 输出 `main`，随固定 Xcode 一起校验。当前模拟器：**iPhone 18 Pro / iOS 27.0 (24A434) / A82A0761-D2D8-4A46-A517-98B945A52E15**。只有本地 Package，没有外部解析依赖，因而没有人为生成空 `Package.resolved`。
-
-标准完整入口（新建唯一 DerivedData/日志/xcresult 目录；失败保留退出码）：
-
-```sh
-MALL_SIMULATOR_ID=A82A0761-D2D8-4A46-A517-98B945A52E15 Scripts/verify-local.sh
-```
-
-独立验证入口：
-
-```sh
-Scripts/check-toolchain.sh
-Scripts/check-format.sh
-Scripts/check-source-boundaries.sh
-python3 Scripts/check-boundaries.py
-python3 -m unittest discover -s Tests/Governance -p 'test_*.py' -v
-Scripts/check-boundary-negative.sh
-# App Debug、Release 及 Test Plan 的 xcodebuild 命令见 7.3，完整脚本记录确切参数。
-python3 Scripts/check-test-results.py .build/verification/F0-all.xcresult
-```
-
-- 清单检查：真实 `dump-package` 通过，精确五库/四测试依赖、Swift 6/iOS 17 基线均校验。
-- 格式、SwiftSyntax 源码（18 个 App/库/测试文件）及 Xcode 归属/链接/编译配置检查通过。工具自身 Swift 文件也受格式检查。
-- 治理正反例 **56 项通过**；包括真实 Package 的未知 Target/外部依赖、Catalog→Cart/Data（含不活跃条件分支与选择性导入）、Core→SwiftUI、生产 @testable、重导出、SPI、package 权限、public ViewModel、直接 API、源码软链接/重复归属、搜索路径、缺失链接/测试、格式错误。注释/字符串为正常对照。
-- 真实临时工程编译对照：public FixtureProductService 调用 exit **0**；读取 internal FixtureProductDTO exit **65**，精确诊断为 `module 'MallData' has no member named 'FixtureProductDTO'`；不以任意编译错误充数。
-- 该次完整 Test Plan 实际 **13 项通过，0 失败，0 跳过**：Core 1、Data 6、Catalog 3、Cart 2、UI 1。`.build/verification/F0-all.xcresult` 及其 `.summary.json`/`.tests.json` 已核对。不能只以 `TEST SUCCEEDED` 作为验收。
-- `Scripts/verify-local.sh` **exit 0**：新建 DerivedData 的 Debug/Release 模拟器构建均成功，工程直接入口运行相同 **13 项测试、0 失败/跳过**，结果计数门禁通过。完整记录：`.build/verification/20261007T065927Z-27250/run.log`、`Debug.log`、`Release.log`、`tests.log`、`Tests.xcresult`、`Tests.summary.json`、`Tests.tests.json`。该次集成运行时治理为 55 项；随后新增例外登记失败关闭测试和字符串 token 回归，最终治理复验为 56 项。
-- 最终脚本/手册同步后再执行 `Scripts/check-boundary-negative.sh`（日志 `.build/verification/boundaries-complete.log`）；格式入口另执行 `Scripts/check-format.sh`。编译负向每次使用独立临时源码/DerivedData，并把正常/违规日志保留在 `.build/verification/compiler-<UTC时间>/`。
-
-保留的诊断历史：首次测试因 App 缺少 Debug `ONLY_ACTIVE_ARCH=YES` 与 Package 架构不一致而链接失败（`tests-first.log` / `F0-first.xcresult`）；修复后发现只执行 UI 的 1 项测试（`F0-second.xcresult`），补齐本地 Package 的项目 wrapper 引用后才得到 13 项结果，并加入缺引用/缺结果的回归测试。临时目录检查曾误判系统 `/var` 符号链接，已在入口规范化根路径，项目内源码符号链接仍被拒绝。源码 API token 检查曾将单独的 `"URLSession"` 字符串误当成调用；新增用例先复现失败，再限制为 identifier token，正常字符串和真实直接 API 正反例均保留（`string-token-regression.log` / `string-token-fixed.log`）。首次 DTO 负向测试预期的诊断措辞与 Swift 6.4 实际输出不同，已依据真实输出精确匹配，保留 `.build/verification/internal-dto.log`。沙箱内 SwiftPM/CoreSimulator/xcresult 缓存权限不足的运行未计为通过；最终验证使用正常本机工具访问权限，未删测试或放宽依赖。
-
-#### iOS 命名统一（2026-10-07）
-
-按用户要求，项目自有路径统一使用小写 `i` 的 `iOS`：`CoolMalliOS/`、`CoolMalliOSUITests/`、`CoolMalliOS.xcodeproj`、`CoolMalliOS.xctestplan`、`CoolMalliOS.xcscheme` 与 `CoolMalliOSApp.swift`；对应 Target、Scheme、Test Plan、App 入口类型、检查脚本和示例命令同步改名。使用中间路径完成仅大小写变化的重命名，已核对磁盘实际名称。Bundle Identifier 属于应用身份，保留原值；既有验证日志也保留原始内容。
-
-CHANGE-01：本次仅统一命名和引用；涉及 App/UI 测试 Target 及工程工具，不增加模块或依赖，不改变业务状态所有者、失败/取消处理。沿用共享入口重跑格式、边界正反例、Debug/Release 和完整测试计划；结果记录在 `.build/verification/20261007T070816Z-32000/`。
-
-本次实际执行 `MALL_SIMULATOR_ID=A82A0761-D2D8-4A46-A517-98B945A52E15 Scripts/verify-local.sh`，exit **0**：格式、源码/工程边界及 **56 项**治理正反例通过，Debug/Release 模拟器构建通过；完整 Test Plan 在 iOS 27.0 实际 **13 项通过、0 失败、0 跳过**（Core 1、Data 6、Catalog 3、Cart 2、UI 1）。新 UI 测试 Target 为 `CoolMalliOSUITests`，已由结果计数门禁确认。F0-03 与 iOS 17 runtime 的未完成项仍见下文。
-
-#### 仓库与最低系统环境核验（2026-10-07）
-
-用户提供的远程地址为 `https://github.com/NAH4E5553/CoolMall-iOS.git`。首次通过已连接 GitHub API 核实时：仓库公开、未归档，配置的默认分支为 `main`，大小为 0，分支查询返回空列表，当时尚无实际远程分支。当前连接身份的仓库权限包含 `pull`、`push`、`admin`；不据此推断本机 gh 或 Git 推送凭据可用。该次执行 `git remote add origin` 并以 `git remote -v` 确认 fetch/push 地址，当时没有提交、推送或修改远程设置；随后初始化与 CI 接入见下方 F0-03 记录。
-
-本次 `xcrun simctl list runtimes` / `xcrun simctl runtime list -j` 再次确认本机只有 iOS 18.3、26.2、27.0，没有 iOS 17。已核对本机 `xcodebuild -help` 的平台下载/导入选项和 Apple 文档，在 7.3 补充安装与补验步骤；本次未安装 runtime，也未执行 iOS 17 测试。修改仅涉及本地 remote 和手册中的操作说明、实际状态，不涉及 Target、业务合同、状态所有权或可执行检查；既有 iOS 27 测试记录仍按原运行时间保留。
-
-#### 按用户要求验证 iOS 26.2（2026-10-07）
-
-CHANGE-01：切换本次验证目的地至 **iPhone 17 Pro / iOS 26.2 (23C54) / B9578251-B27D-450A-9081-D308F9F49783**。App、Package 与测试 Target 的最低版本仍为 **17.0**；不改 Target、依赖、状态所有者或失败/取消路径。本机 `xcodebuild -version` / `-showsdks` 确认 Xcode **27.0 (27A266a)** 与 iOS/Simulator SDK **27.0**，`-showdestinations` 确认该 26.2 目的地可用。产物 `CoolMalliOS.app/Info.plist` 的 `MinimumOSVersion` 实际为 **17.0**。
-
-实际执行 `MALL_SIMULATOR_ID=B9578251-B27D-450A-9081-D308F9F49783 Scripts/verify-local.sh`，exit **0**：格式、源码/工程边界、**56 项**治理正反例通过；真实 public 编译对照 exit **0**，internal DTO 负向 exit **65** 且诊断匹配；干净 DerivedData 的 Debug/Release 模拟器构建成功；完整 Test Plan 在 iOS **26.2** 实际 **13 项通过、0 失败、0 跳过**（Core 1、Data 6、Catalog 3、Cart 2、UI 1），结果计数检查通过。
-
-日志与结果位于 `.build/verification/20261007T072727Z-35246/`：`run.log`、`Debug.log`、`Release.log`、`tests.log`、`Tests.xcresult`、`Tests.summary.json`、`Tests.tests.json`。该结果新增 26.2 运行证据，不覆盖 17.0 最低系统，也不代表真机、签名或全部手动外观/辅助功能检查完成。若产品决定提高最低版本，先明确支持范围，再同步 App/Package/手册/检查器并按 7.2 重验；最低 27.0 与在 26.2 运行不可同时成立。
-
-#### F0-03 远程接入与正反例验收（2026-10-07）
-
-CHANGE-01：用户批准接入 GitHub Actions、提交 Bootstrap PR、远程正反例和主分支保护验收。修改范围为工作流及 host 工具；App/五库 Target、公开合同、状态所有权与失败/取消路径不变。Actions 已启用；正常本机环境的 `gh auth status` 与首次 Git 推送成功，沙箱内钥匙串不可访问的认证失败不作真实登录失败结论。
-
-新增 `Scripts/select-simulator.py`、`Scripts/check-ci-results.py` 和 9 项治理用例；不增加运行时依赖。本地 actionlint **1.7.12** 官方发行包 SHA256 校验通过，工作流 lint exit **0**；`.github/actionlint.yaml` 仅声明新官方执行器标签供 lint 识别，不代表注册了 self-hosted runner。实际运行 `MALL_SIMULATOR_ID=B9578251-B27D-450A-9081-D308F9F49783 Scripts/verify-local.sh`，exit **0**：**65 项**治理正反例、格式/完整边界、真实编译正负对照、Debug/Release 和 iOS 26.2 的 **13 项测试、0 失败/跳过**通过。记录 `.build/verification/20261007T073901Z-38122/`；启动时尚无提交 SHA，日志按原事实保留。
-
-main 原保护查询返回 404（未受保护）；已通过 GitHub API 配置 `required-checks` 必需状态、strict 更新要求、`enforce_admins=true`、禁止强推/删除，再读取返回确认，记录 `.build/verification/protection-enabled.json`。此时只证明配置生效，远程失败实际阻止合并仍待随后 PR 验证。首次初始化 main 空提交 `645584a` 后仅向 Bootstrap 分支提交工程，不直接推送受保护 main。
-
-正式 [Bootstrap PR #1](https://github.com/NAH4E5553/CoolMall-iOS/pull/1) 的工程提交 `ecd4e8f088c94a9724959ae776bf8a9959ae33d1`：首次 [远程运行 37588961772](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/37588961772) 成功，完整工具链/格式/源码及工程边界、**65 项**治理正反例、真实 public/internal 编译对照、Debug/Release 及完整 Test Plan 通过；`F0 verification` 和 `required-checks` 均 SUCCESS，非草稿 PR 的 GraphQL 合并状态 **CLEAN**。实际运行设备 **iPhone 17 / iOS 27.0 (24A434) / A27B3C4F-6985-4D01-B7B7-99FAD2F57801**，**13 项通过、0 失败、0 跳过**。下载 artifact 后再次执行 `Scripts/check-test-results.py` 复核成功；记录 `.build/verification/remote-positive-initial/`、`positive-initial.log`、`positive-initial-pr-state.json`。
-
-实际 runner 环境为 macOS **27.0 (26A428)**、image **macos27 / 20260928.0222.1**；环境日志再次验证工具链 **27.0 (27A266a)** 与 Swift **6.4**。PR 的 checkout 构建对象是测试合并提交 `5aa9d06ad7f508616f6ec4c364ce9b4645a99b74`，与 PR head SHA 分别记录；工作流后续同时输出 checkout SHA 和 source SHA，不把两者混为同一提交。
-
-独立 [诊断 PR #2](https://github.com/NAH4E5553/CoolMall-iOS/pull/2) 只承载人工负向夹具，正常工程分支不带故障。已保存三类故意失败版本的合并状态及日志：
-
-| 诊断提交 / 远程运行 | 精确失败原因 | 必需检查与合并状态 |
-| --- | --- | --- |
-| `fe0ae2f` / [37589110969](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/37589110969) | Product.swift 多余空格，swift-format `[Spacing] remove 1 space` | required-checks FAILURE；非草稿 PR BLOCKED |
-| `b48ab8a` / [37589399136](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/37589399136) | CatalogFeature 导入 CartFeature，`MOD-01: forbidden import CartFeature in CatalogFeature` | required-checks FAILURE；非草稿 PR BLOCKED |
-| `3f5a863` / [37592704529](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/37592704529) | 商品 JSON 标题错误，仅 MallDataTests/bundledProductAndMissingID 合同断言失败；13 项中 12 通过、1 失败、0 跳过 | required-checks FAILURE；非草稿 PR BLOCKED；UI 31.69 秒通过 |
-
-每次原子恢复上一个故障后才注入下一个；故障命中正确规则，不以任意环境错误充数。三类失败 artifact 均已下载至 `.build/verification/remote-format/`、`remote-boundary/`、`remote-business-fixed/`；对应 `.log` 与 `*-pr-state.json` 保留。已从真实检查识别 `github-actions` App ID **15368**，将必需检查绑定该来源并回读确认，管理员仍受强制约束。这里的阻断证据是 GitHub 返回的合并状态，没有对诊断 PR 调用合并接口。
-
-首次 Action v4 运行成功但提示 Node 20 已弃用且由平台强制切换 Node 24；核实官方 checkout/upload-artifact **v7.0.1** 的 `action.yml` 运行时为 Node 24 后，固定其真实 commit SHA 替换该配置。本地 actionlint 复验 exit **0**；最终提交必须另跑远程验证，不能用旧提交的绿灯验收新提交。
-
-错误商品夹具的首次 [运行 37589678902](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/37589678902) 如实保留：合同断言正确失败，但同轮 UI 冷启动超时，因此为 **13 项、11 通过、2 失败、0 跳过**，不能作为“只有预期合同失败”的验收。UI 日志显示 App 冷启动约 29 秒，整条交互超过原定 60 秒限额；超时后的 Xcode 诊断收集再等待 600 秒。结果与日志下载到 `.build/verification/remote-business/`。隔离副本在本地 iOS 27.0 复现错误商品时，exit **65**，实际 **13 项、12 通过、仅商品合同 1 失败、0 跳过**，UI 通过；记录 `.build/verification/local-business-negative/`。
-
-CHANGE-04：修复限定于执行环境准备。完整入口显式 bootstatus、安装并预启动 App，再串行运行测试进程；不改业务实现、用例断言、登记 Target、60/120 秒限额或 Swift Testing 用例内部 Task 竞争。修改后本地实际执行 `MALL_SIMULATOR_ID=B9578251-B27D-450A-9081-D308F9F49783 Scripts/verify-local.sh`，exit **0**：**65 项**治理、格式/源码/工程边界、真实编译正负对照、干净 Debug/Release 构建与 iOS 26.2 的 **13 项通过、0 失败/跳过**；记录 `.build/verification/20261007T081602Z-42840/`。包含同一修复与错误商品夹具的远程诊断 `3f5a863` / `37592704529` 已完成：完整门禁/Debug/Release 通过，测试入口按预期 exit **65**，下载 xcresult 核对为 **13 项、12 通过、仅商品合同 1 失败、0 跳过**，UI **31.69 秒**通过，required-checks FAILURE 且 PR BLOCKED。记录 `.build/verification/negative-business-fixed.log`、`negative-business-fixed-pr-state.json`、`remote-business-fixed/classification.json`。该故意失败运行约 21 分钟，日志显示失败后的 Xcode 诊断收集等待 600 秒；这不是新的用例超时，实际 UI 已通过。不通过提高时限或删测试消除波动。
-
-正式提交 `09e633d` 的 [正常运行 37595605708](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/37595605708) 仍失败，不能用前一轮诊断的 UI 通过代替正常验收。实际 **13 项、12 通过、1 失败、0 跳过**：所有合同通过，唯一失败为 UI 60 秒超时；动作最终完成约 79 秒，没有其他功能断言失败。`required-checks` FAILURE 且非草稿 PR BLOCKED，保护继续有效。预热已缩短启动至约 16 秒，但同一条测试中路由往返和 Tab 往返的自动化查询累计仍超过单用例预算。保留 `.build/verification/positive-final-first.log` 与 `remote-positive-final-first/` 的 xcresult，不隐藏首次正式提交失败。
-
-CHANGE-04：将 UI 冒烟按两个独立行为拆为 `testCatalogRouteOpensCartAndReturns` 和 `testFeatureTabsSwitchAndReturn`，每条均从 App 启动并验证 Catalog 夹具开始；原来的打开购物车、返回、切换两 Tab 及全部断言均保留，多验证一次启动前提。不改 App/五库实现、状态所有权、共享 Test Plan 的 Target 与 60/120 秒限额，也不改并发合同测试。登记实际用例从 **13 增为 14**（Core 1、Data 6、Catalog 3、Cart 2、UI 2），本地实际执行 `MALL_SIMULATOR_ID=B9578251-B27D-450A-9081-D308F9F49783 Scripts/verify-local.sh`，exit **0**：**65 项**治理正反例、格式/完整边界、真实编译正负对照和干净 Debug/Release 构建通过；iOS **26.2** 的完整 Test Plan 实际 **14 项通过、0 失败、0 跳过**，结果计数确认 UI 为 2 项，其他四 Target 共 12 项不变。日志与 xcresult 位于 `.build/verification/20261007T090505Z-47905/`；本地启动时为 `09e633d` 加工作区修改，远程最新工程提交另行验证，不能将本地结果冒充远程通过。
-
-诊断验收结束后，[PR #2](https://github.com/NAH4E5553/CoolMall-iOS/pull/2) 已关闭且未合并；临时分支通过恢复提交 `5dac1af73ca2e1b84d9a4539eb2882b931bde4c2` 回到最初正常工程快照，远程 tree SHA 与 `ecd4e8f` 的 tree 精确一致。正式 Bootstrap 分支始终未包含故意错误；诊断提交与首次失败记录保留供审计。最终组合的正常结果以 [PR #1 最新检查](https://github.com/NAH4E5553/CoolMall-iOS/pull/1/checks) 为准，每次正式提交都重新验证；旧提交成功不作为新提交通过。
-
-#### Bootstrap 合并记录（2026-10-07）
-
-CHANGE-01：用户明确要求“合并 PR”。本次按正常主分支保护合并既有成果，并更新实际状态文案；没有修改 Target、公开合同、状态所有者、失败/取消路径、规则矩阵或测试配置。合并前核对精确 head `ae67f837e0cbef01df16c99086455684390a9875`，`F0 verification` 与 `required-checks` 均 SUCCESS，PR 为非草稿、MERGEABLE/CLEAN；该 head 的 [远程运行 37598417769](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/37598417769) 实际完成 **65 项治理及 14 项测试通过、0 失败、0 跳过**，下载 xcresult 已独立复核，两条 UI 分别约 21/19 秒。
-
-执行 `gh pr merge 1 --repo NAH4E5553/CoolMall-iOS --merge --match-head-commit ae67f837e0cbef01df16c99086455684390a9875` 成功，未使用管理员绕过。随后 `gh pr view` 确认为 MERGED，时间 **2026-10-07 10:07:25 UTC**，合并提交 **443888e487a6194cae64986f3439d26c7e151319**；`git fetch origin`、`git switch main`、`git merge --ff-only origin/main` 成功同步本地。该精确合并 SHA 已触发 [main 推送运行 37605293272](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/37605293272)，记录时为 **in_progress**，尚不宣称 main 测试通过。本节状态更新通过独立文档 PR 入库，不直接推送 main；诊断 PR #2 保持关闭且未合并。
-
-本次状态文案更新实际执行 `git diff --check`、`python3 Scripts/check-boundaries.py`、`python3 Scripts/check-project-boundaries.py` 与 `python3 -m unittest discover -s Tests/Governance`：均通过，治理测试为 **65 项**。治理首次沙箱执行中，两项真实清单负向被 SwiftPM/Clang 缓存写权限阻止，未视为预期规则命中；正常缓存权限下重跑原用例通过，日志 `.build/verification/merge-status-governance.log`。本次没有重跑本地 App 行为测试；该手册 PR 仍按现有工作流执行完整远程验证，不改路径过滤或测试要求。
-
-#### 未完成与下一步
-
-1. **main 合并提交验收**：Bootstrap PR #1 已按用户指示合并，最新 PR head `ae67f83` 的两个检查均 SUCCESS；main 合并提交 `443888e` 已触发完整验证，当前仍运行中，不把 PR 通过代替 main 通过。默认分支已包含手动/每周入口配置，尚无已执行手动/周期验收记录。
-2. **iOS 17 兼容性留待后续真机验证（用户确认，2026-10-07）**：最低版本保留 **17.0**；当前已有 iOS 26.2/27.0 模拟器证据，iOS 17 实际运行、真机和发布签名仍未验证。暂不安装 iOS 17 runtime，后续具备真机时按 6.2/7.2 补验并记录准确系统版本与覆盖缺口。此安排仅调整验证时间和设备路径，不将待验项记为通过或豁免验收。
-3. 继续通过 PR 维护 main，禁止直接推送受保护分支。初始化空提交 `645584a`、早期“无提交 SHA”日志和诊断失败记录按当时事实保留；工程已通过 Bootstrap PR #1 进入 main。
-4. 后续变更仍需维护者复核公共 API、状态所有权与脚本局限。SwiftSyntax 检查已知语法/API 用法，不解析全部动态语义、别名或任意运行时副作用；不宣称架构永远正确。
-5. 确认 main 验证通过并完成必要兼容性与设备补验，才结束 F0、启动 F1-01。
+本次交付内容整理只迁出停用工程实验/独立诊断和过程记录，不改App、资源、Xcode工程、Package/锁文件或业务测试；未新增构建或测试运行。当前验收模拟器和冻结构建在维护者本地保留。
 
 ### 8.4 接下来如何开工
 
-F0-01/F0-02 已有真实代码和本地验证，F0-03 已接入并有远程正反例与合并拦截证据，Bootstrap 已合并且默认分支验证已触发，接下来确认该次运行结果；iOS 17 兼容性按用户安排保留为后续真机待验项。完整未完成项见 8.3，每一步按实际结果更新，不以目录或配置文件存在代替验收。
+新成员从README检出并打开共享工程，使用固定工具链和可用模拟器编译运行；按任务授权调用本地格式、模块边界和完整验证入口，并报告实际结果。不要依赖维护者机器上的Evidence路径、旧工作树、临时域名或全局私有配置。
 
-| 工作项 | 所属阶段与先决条件 | 具体交付 | 验收与当前状态 |
-| --- | --- | --- | --- |
-| F0-01 工程与合同 | 以本手册和 DEC-003 为基线 | 五个库 Target + App；最小 ProductLoading/购物车能力合同、fake、组合入口和共享 Scheme/Test Plan | 已实施；真实依赖图、public/internal 编译对照与当前系统测试通过，详见 8.3 |
-| F0-02 工具与测试入口 | 有 F0-01 可编译骨架 | 格式配置、源码/工程边界检查、合同测试、fixture 导航冒烟；锁定工具链 | 本地已实施；含 CI 工具正反例共 65 项治理测试与 14 项 App/合同测试通过（UI 拆为 2 场景）；最低 runtime、真机与必要手动设备验收仍待完成 |
-| F0-03 远程门禁 | F0-02 本地通过；仓库与 CI 平台确定 | 共享命令接入 CI、结果留存、必需检查及分支保护 | 已落地，正常远程/三类故意违规/实际合并阻断/日志下载见 8.3；最终 PR 提交绿色且已合并，main 验证运行中，手动/周期配置已进入默认分支但尚无运行证据 |
-| F1-01 商品列表 | F0 验收通过 | ProductListViewModel + View + fake/真实 ProductLoading；最少所需反馈组件、分页和图片方案 | 正常/空/失败/取消/反序返回、刷新与追加测试；待实施 |
-| F1-02 商品详情与规格 | 列表和基础能力合同稳定 | 独立 ProductDetailViewModel；以商品 ID 路由、规格草稿和加入购物车动作 | 页面实例隔离、输入校验、重复动作及失败恢复；待实施 |
-| F1-03 购物车闭环 | CartStore 合同/实现就绪，与商品动作联调 | CartViewModel、角标投影、同一事实源、持久化与重启恢复 | 第 6 章存储/账号分区/失败回滚测试；待实施。F1-02 可先用同合同 fake，F1 完成前必须换真实实现验证 |
-
-每个具体任务沿用 CHANGE-01 的五项开工说明。接口未确认、设备验证缺失等问题记到该任务和 8.3 的实际状态；不要为每一步另建重复的开发规范。每个业务 PR 同时交付对应 ViewModel 行为测试及必要 UI 验证，防止最后集中补测试。
+新功能和修复仍遵守CHANGE-01的范围、Target、状态所有权、失败/取消路径及验证说明；公共合同变化按7.5登记，不通过删断言、加预算或恢复停用工具消除失败。具体产品任务和批准记录由维护者提供，未实现业务不冒称完成。合并和发布由维护者决定，远端CI及保护不自动恢复。
 
 ## 9. 官方参考与手册维护
 
@@ -1519,21 +1331,3 @@ F0-01/F0-02 已有真实代码和本地验证，F0-03 已接入并有远程正�
 同一规则只在其所属章节定义；其他章节引用它，不复制一套可能漂移的规则。AGENTS.md 提供 AI 的开工检查、规则索引、验证和交接流程；具体工程规则引用本文，不是第二份架构手册；清单矩阵由脚本直接读取本文，代码测试只验证检查器机制。修改接口、依赖或状态机制时，同时检查对应验收是否需要调整。代码实现后以实际构建、测试和设备结果更新状态，不把规划写成已完成能力。
 
 仅当后续出现一份有独立维护价值的接口合同、复杂迁移方案或发布操作指南时，才另建专题文档，并从本手册链接。专题文档描述具体事实和操作，不复制架构规则；优先在任务/PR 保存短期实现计划。当前不新建 DEVELOPMENT.md，也不恢复 ARCHITECTURE.md/CONTRIBUTING.md 两份正文。
-
-### IMAGE-01 approved adapter contract (2026-10-13)
-
-APPROVAL-IMAGE01-I02-20261013 approves MallImages with Nuke/NukeUI exact13.2.0, revision30f7a7e72e0607d304fbf69c799474bd5fb6d1ce. CatalogFeature is the sole Feature consumer; App owns the shared adapter. Public interfaces use only own/Foundation/SwiftUI types. MallImagePipeline.swift alone adapts URLSession/URLRequest/FileManager; ImageUITestSupport.swift alone adapts URLSession/URLRequest/URLProtocol under DEBUG. APPROVAL-IMAGE01-DEBUG-SEAM-20261013 additionally approves the DEBUG-only init(configuration:testingProtocolClasses:[URLProtocol.Type]); Release has no test injection. Unknown versions/products/imports and missing or modified resolution pins remain rejected. MallImagesTests is required and nonempty; existing timeouts and tests remain required. Private image authentication is out of scope; ordinary homepage CDN assets remain placeholders pending resource permission.
-
-Historical development note, superseded by8.3: 2026-10-25 COUPON-01 v0.1 in development. User screenshot request authorizes My Coupons read/browse and GoUse price-filter product page; receiving/settlement remain deferred pending scope response. Existing AccountFeature adds exact public CouponEntryView; existing CatalogFeature adds exact public CouponProductsEntryView. Core owns numbered-page coordinator and coupon/value/read contracts; Data uses existing APIClient transport plus SessionCoordinator-internal generation/account/environment-bound authorization. No public token, Target, SDK, dependency, persistent coupon copy or CI policy change. Source boundary exact entries plus positive/negative governance cases updated. Scope and eventual acceptance status: Evidence/iOS/2026-10-25-COUPON/state.json.
-
-2026-10-25 COUPON-01 v0.2: user explicitly expanded scope to home/detail receiving. Adds exact AccountFeature.CouponReceiveEntryView, Core id/title intent and narrow CouponReceiving/write errors; shared Data HTTPCouponReceiver actor is injected once by App, protects account/coupon in-flight ownership and uses existing SessionCoordinator-internal environment/generation authorization plus existing APIClient. Home/Detail only send intent, no Feature cross-import or invented offer fields. Native Account sheet owns confirmation/Login/VM request, never auto-submits after login, uncertain writes never auto-replay or claim rollback. Busy offers Stop Waiting; result unknown routes authoritative owned-coupon read. Existing Me account-change path reset remains (guest Me-footprint-detail source returns Me root after login); Home/category/cart source stacks stay. No Target/SDK/storage/CI-policy changes; exact boundary registration tests included. Independent early review receive-early-review.md and receive-implementation-review.md; final acceptance pending.
-
-2026-10-26 ORDER-V1：从account checkpoint d6bad40创建codex/order-v1，用户已批准两个Feature Target与受限金额方案；只读订单及立即购买确认草稿已完成本地独立验收。开发最终104单元/12新UI/11既有回归通过，Astra同冻结258源配置资源/12构建独立34/0/0及实际深色1/0/0，验前后身份一致；格式/边界/212治理与Debug/Release实际exit0。526仅发现不称全套通过，开发失败及checkpoint旧5条UI失败、frame告警保留。仅三读、SKU商品小计与意向券，无订单创建/支付/修改、最终报价、存储副本或CI政策变更；真实账号后端/写入/iOS17/硬件/fullVO/remoteCI未验。证据Evidence/iOS/2026-10-26-ORDER-V1/state.json及astra-review/review.md；待普通提交推送并建base account的stacked draft，PR30不改、不merge/retarget main。
-
-2026-10-26 ORDER-TRANSACTIONS-02 v0.1：确认页选券估算/备注/默认标识、创建→只读收银台→真实订单详情、待付款原因字典/取消后权威重读、横滑历史商品与来源栈已实现。Sol自检128单元、17订单UI及3地址券回归通过；尾部提交锁定回归与完整链、取消等待分类、HTTP401/403与原因登录恢复已定向补验，新增登录UI1条通过（分阶段复验/复用边界见Evidence，不冒称单次全量）。格式/边界/213治理及最终Debug/Release exit0；556仅发现，不全套。Astra同冻结265源/13构建独立49/0/0，另真实深色大字号1/0/0，native/exact均0且验前后身份一致；本轮限定范围本地验收通过，无真实账号写验、支付/iOS17/真机/fullVO/远程CI通过结论。初轮编译/边界/4条UI失败保留。唯一状态Evidence/iOS/2026-10-26-ORDER-TRANSACTIONS/state.json；保持PR31 stacked draft base account，不merge/retarget main。
-
-2026-10-26 CHECKOUT-COUPON-FEEDBACK-01 v0.1：删除确认页不使用入口，默认nil/再次点已选取消；按endpoint区分确认候选与MyCoupon严格状态，缺字段不伪造，明确失效/未知枚举/门槛仍拦截并说明原因。关闭时按钮展示用本次presentation快照，实际选择/金额仍归VM；刷新禁止旧券操作并结束弹框。Sol最终50单元+4UI、格式/边界及Debug/Release exit0，563仅发现；213治理exit0限定复用本轮未变策略。初轮两条UI失败及无效触摸/布局/AX试验保留并已撤回，原断言/60/120预算不变。Astra同冻结265源/13构建独立54/0/0、native/exact均0且验前后身份一致，本轮限定范围本地验收通过；无真实响应/后端资格或写入验证。唯一状态Evidence/iOS/2026-10-26-CHECKOUT-COUPON-FEEDBACK/state.json；保持PR31 stacked draft base account，不merge/retarget main。
-
-2026-10-26 CART-CHECKOUT-01 v0.1：Cart结算已接共用确认订单与原写入/收银台链；仅选中行新鲜核验/多商品精确合计，guest登录续接不合并，创建确认后按原scope/revision条件清选中行，同步失败保留并提示。自检110模型及12条UI分批完成（初轮系统保存密码遮挡与大字号首屏定位失败保留，驱动返修后对应场景通过），最终格式/边界/Debug/Release exit0，governance213/0；自检完成，独立验收结果以本轮state.json为准；无真实账号/后端写入/iOS17/真机/fullVO/远程CI通过声明。唯一状态Evidence/iOS/2026-10-26-CART-CHECKOUT/state.json。
-
-2026-10-27 ORDER-BADGES-PAGING-01 v0.1：我的订单五类正计数角标接GET userCount六字段，缺失/失败不伪造0；列表原生横向分页、独立筛选快照/分页/滚动位置与写后/重登全缓存失效；详情购物车复用App同scope总件数投影。Sol自检94模型+15UI分组通过（新9条实际深色/大字号，回归6条浅色），格式/边界/213治理与Debug/Release exit0，599仅发现不全套；首轮格式/编译/4条UI失败及修正保留。通用Debug构建与之前自检App哈希不同，最终构建复核/同包独立结果以本轮state.json和astra-review/review.md为准；自检完成，待独立验收，不冒称远程CI/真实账号或后端写验/iOS17/真机/fullVO通过。唯一状态Evidence/iOS/2026-10-27-ORDER-BADGES-PAGING/state.json。

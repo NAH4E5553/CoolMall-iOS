@@ -86,6 +86,7 @@ jobs:
         with:
           name: ios-full-advisory-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            .build/verification/governance-results.json
             .build/verification/*.log
             .build/verification/*/*.log
             .build/verification/*/stage-timings.json

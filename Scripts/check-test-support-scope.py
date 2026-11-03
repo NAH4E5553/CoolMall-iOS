@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validate test-support/advisory methods against the real selected inventory."""
 import argparse
+import importlib.util
 import json
 import re
 import sys
@@ -41,7 +42,9 @@ def main():
         if missing:
             raise ValueError(f'methods missing from real enumeration: {missing[:3]}')
         if args.tier == 'required':
-            leaked = sorted(advisory_methods & expected)
+            spec = importlib.util.spec_from_file_location('support_selector', ROOT / 'Scripts/select-test-scope.py')
+            selector = importlib.util.module_from_spec(spec); spec.loader.exec_module(selector)
+            leaked = sorted(selector.excluded_advisory(scope) & expected)
             if leaked:
                 raise ValueError(f'advisory methods leaked into required: {leaked[:3]}')
         else:

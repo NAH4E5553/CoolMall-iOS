@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import unittest
 from pathlib import Path
 
@@ -52,7 +53,7 @@ class CIRuntimeTests(unittest.TestCase):
 class CIResultTests(unittest.TestCase):
     def needs(self, required='true', result='success', reason='implementation-rules-or-unknown'):
         return {'classify': {'result': 'success', 'outputs': {'run_verification': required, 'reason': reason}},
-                'verify': {'result': result, 'outputs': {'verification_status': 'core-passed', 'deferred_count': '0'}}}
+                'verify': {'result': result, 'outputs': {'verification_status': 'core-passed', 'deferred_count': '0', 'deferred_ids': '[]'}}}
 
     def test_success(self):
         self.assertIn('verification succeeded', RESULTS.validate(self.needs()))
@@ -60,7 +61,7 @@ class CIResultTests(unittest.TestCase):
 
     def test_deferred_core_success_is_explicit_warning(self):
         data = self.needs()
-        data['verify']['outputs'] = {'verification_status':'core-passed-with-deferred', 'deferred_count':'2'}
+        data['verify']['outputs'] = {'verification_status':'core-passed-with-deferred', 'deferred_count':'2', 'deferred_ids': json.dumps(list(RESULTS.POLICY.IDS)[:2])}
         self.assertIn('核心检查通过，但存在延期问题', RESULTS.validate(data))
 
     def test_success_without_valid_structured_result_blocks(self):

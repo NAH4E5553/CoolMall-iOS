@@ -160,6 +160,7 @@ def main():
     if os.environ.get('GITHUB_OUTPUT'):
         with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
             output.write('verification_status=' + data['status'] + '\n')
+            output.write('deferred_ids=' + json.dumps(sorted({v['id'] for v in data.get('deferred', [])})) + '\n')
             output.write('deferred_count=' + str(data.get('deferredIssueCount', 0)) + '\n')
     print(markdown(data))
     return code

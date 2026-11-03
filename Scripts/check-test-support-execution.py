@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validate test-support/advisory methods in the actual native result set."""
 import argparse
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -36,7 +37,10 @@ def main():
         if failed:
             raise ValueError(f'methods not passed: {failed[:3]}')
         if args.tier == 'required':
-            leaked = sorted(advisory_methods & results.keys())
+            spec = importlib.util.spec_from_file_location('execution_selector', ROOT / 'Scripts/select-test-scope.py')
+            selector = importlib.util.module_from_spec(spec); spec.loader.exec_module(selector)
+            scope = load(Path(args.native_results).with_name('test-scope.json'))
+            leaked = sorted(selector.excluded_advisory(scope) & results.keys())
             if leaked:
                 raise ValueError(f'advisory methods executed in required: {leaked[:3]}')
         else:

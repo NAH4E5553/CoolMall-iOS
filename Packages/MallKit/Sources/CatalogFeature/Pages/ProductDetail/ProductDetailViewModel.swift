@@ -3,7 +3,7 @@ import MallCore
 import Observation
 
 /// Page-owned read state and uncommitted SKU/quantity draft. Nothing writes
-/// the cart. Structured View tasks own I/O; generations reject late responses.
+/// the cart directly. Structured View tasks own I/O; generations reject late responses.
 @MainActor @Observable
 final class ProductDetailViewModel {
     enum DetailState: Equatable {
@@ -40,6 +40,10 @@ final class ProductDetailViewModel {
         if case .ready(let values) = specificationState { values } else { [] }
     }
     var selected: ProductSpecification? { specifications.first { $0.id == selectedID } }
+    var canAddToCart: Bool {
+        guard let selected else { return false }
+        return selected.stock > 0 && quantity > 0 && quantity <= selected.stock
+    }
 
     func setActive(_ value: Bool) {
         guard active != value else { return }
@@ -127,5 +131,6 @@ final class ProductDetailViewModel {
         if delta == 1, quantity < selected.stock { quantity += 1 }
         if delta == -1, quantity > 1 { quantity -= 1 }
     }
+    func didAddToCart() { quantity = 1 }
     func toggleLayout() { isGrid.toggle() }
 }

@@ -82,19 +82,25 @@ struct ProductDetailSectionTitle: View {
     }
 }
 
-/// Entrances only. No cart, order, login, network command or fake success.
+/// Add is injected; purchase remains an entrance without order side effects.
 struct ProductDetailPurchaseButtons: View {
     var roundedCapsule = true
+    var onAdd: () -> Void = {}
+    var isAdding = false
+    var addIdentifier = "detail.addCart"
+    var canAdd = true
     @ScaledMetric private var labelSize = 14.0
     var body: some View {
         HStack(spacing: 12) {
-            Button {
-            } label: {
-                Text("加入购物车").lineLimit(2).fixedSize(horizontal: false, vertical: true).frame(
+            Button(action: onAdd) {
+                Text(isAdding ? "处理中" : "加入购物车").lineLimit(2).fixedSize(
+                    horizontal: false, vertical: true
+                ).frame(
                     maxWidth: .infinity
                 ).padding(.vertical, roundedCapsule ? 12 : 8).frame(
                     minHeight: roundedCapsule ? 48 : 34)
             }
+            .disabled(isAdding || !canAdd).accessibilityIdentifier(addIdentifier)
             .foregroundStyle(ProductDetailStyle.accent)
             .background(
                 RoundedRectangle(cornerRadius: roundedCapsule ? 100 : 8).stroke(
@@ -115,11 +121,14 @@ struct ProductDetailPurchaseButtons: View {
         }
         .font(.system(size: labelSize))
         .buttonStyle(.plain)
-        .accessibilityHint("功能暂未实现")
     }
 }
 
 struct ProductDetailBottomBar: View {
+    var onAdd: () -> Void = {}
+    var onOpenCart: () -> Void = {}
+    var isAdding = false
+    var canAdd = true
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
@@ -128,25 +137,28 @@ struct ProductDetailBottomBar: View {
                 VStack(spacing: 8) {
                     HStack(spacing: 24) {
                         entrance("客服", icon: "detail-service")
-                        entrance("购物车", icon: "detail-cart")
+                        entrance("购物车", icon: "detail-cart", action: onOpenCart)
                         Spacer(minLength: 0)
                     }
-                    ProductDetailPurchaseButtons(roundedCapsule: false)
+                    ProductDetailPurchaseButtons(
+                        roundedCapsule: false, onAdd: onAdd, isAdding: isAdding, canAdd: canAdd)
                 }
             } else {
                 HStack(spacing: 16) {
                     entrance("客服", icon: "detail-service")
-                    entrance("购物车", icon: "detail-cart")
-                    ProductDetailPurchaseButtons(roundedCapsule: false)
+                    entrance("购物车", icon: "detail-cart", action: onOpenCart)
+                    ProductDetailPurchaseButtons(
+                        roundedCapsule: false, onAdd: onAdd, isAdding: isAdding, canAdd: canAdd)
                 }
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(ProductDetailStyle.surface(scheme))
     }
-    private func entrance(_ text: String, icon: String) -> some View {
-        Button {
-        } label: {
+    private func entrance(_ text: String, icon: String, action: @escaping () -> Void = {})
+        -> some View
+    {
+        Button(action: action) {
             VStack(spacing: 2) {
                 Image(icon, bundle: .module).resizable().frame(width: 20, height: 20)
                 Text(text).font(.caption2)
@@ -154,6 +166,7 @@ struct ProductDetailBottomBar: View {
             .frame(minWidth: 32, minHeight: 44)
         }
         .buttonStyle(.plain).foregroundStyle(ProductDetailStyle.onSurface(scheme))
-        .accessibilityHint("功能暂未实现")
+        .accessibilityIdentifier(text == "购物车" ? "detail.openCart" : "detail.service")
+        .accessibilityHint(text == "购物车" ? "打开独立购物车" : "功能暂未实现")
     }
 }

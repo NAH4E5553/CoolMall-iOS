@@ -14,6 +14,11 @@ final class BoundaryVisitor: SyntaxVisitor {
     let job: SourceJob
     var failures: [String] = []
     init(job: SourceJob) { self.job = job; super.init(viewMode: .all) }
+
+    private var isPersistentCartStore: Bool {
+        job.target == "MallData"
+            && job.path.hasSuffix("/Sources/MallData/Cart/PersistentCartStore.swift")
+    }
     func fail(_ rule: String, _ message: String) {
         failures.append("\(rule): \(job.path): \(message)")
     }
@@ -22,6 +27,11 @@ final class BoundaryVisitor: SyntaxVisitor {
         let module = node.path.first?.name.text ?? ""
         if !job.imports.contains(module) {
             fail("MOD-01", "forbidden import \(module) in \(job.target)")
+        }
+        if job.target == "MallData", module == "SwiftData", !isPersistentCartStore {
+            fail(
+                "MOD-01",
+                "SwiftData import is scoped to Sources/MallData/Cart/PersistentCartStore.swift")
         }
         for attribute in node.attributes {
             guard let value = attribute.as(AttributeSyntax.self) else { continue }
@@ -84,6 +94,14 @@ final class BoundaryVisitor: SyntaxVisitor {
                 && node.text == "URLProtocol")
         {
             fail("MOD-05", "direct API \(node.text)")
+        }
+        let swiftDataAPIs: Set<String> = [
+            "ModelContext", "ModelContainer", "PersistentContainer", "NSPersistentContainer",
+        ]
+        if job.target == "MallData", swiftDataAPIs.contains(node.text), !isPersistentCartStore {
+            fail(
+                "MOD-05",
+                "SwiftData API is scoped to Sources/MallData/Cart/PersistentCartStore.swift")
         }
         if node.text == "unchecked" { fail("MOD-02", "unchecked concurrency conformance") }
         return .visitChildren

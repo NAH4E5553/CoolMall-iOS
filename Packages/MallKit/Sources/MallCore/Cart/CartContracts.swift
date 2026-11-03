@@ -1,7 +1,7 @@
 import Foundation
 
 /// A store instance is bound to one environment and account (nil means guest).
-public struct CartScope: Equatable, Sendable {
+public struct CartScope: Hashable, Sendable {
     public let environment: String
     public let accountID: String?
     public init(environment: String, accountID: String?) {

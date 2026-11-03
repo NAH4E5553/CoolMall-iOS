@@ -11,6 +11,8 @@ import MallImages
 struct AppDependencies {
     let products = FixtureProductService()
     let cart = FakeCartStore(scope: CartScope(environment: "fixture", accountID: nil))
+    let shoppingCart: any ShoppingCart
+    let cartVerifier: any CartProductChecking
     let home: any HomeLoading
     let productReviews: any ProductReviewsLoading
     let productDetails: any ProductDetailLoading
@@ -119,6 +121,22 @@ struct AppDependencies {
         #else
             productReviews = HTTPProductReviewsService(environment: environment)
             productDetails = HTTPProductDetailService(environment: environment)
+        #endif
+        cartVerifier = CartProductVerifier(loader: productDetails)
+        let support = URL.applicationSupportDirectory.appending(
+            path: "ShoppingCart", directoryHint: .isDirectory)
+        #if DEBUG
+            if let fixture = CartUITestSupport.make(loader: productDetails, directory: support) {
+                shoppingCart = fixture
+            } else {
+                shoppingCart = LocalShoppingCart(
+                    scope: CartScope(environment: Self.homeBaseURL.absoluteString, accountID: nil),
+                    url: support.appending(path: "cart-v1.store"))
+            }
+        #else
+            shoppingCart = LocalShoppingCart(
+                scope: CartScope(environment: Self.homeBaseURL.absoluteString, accountID: nil),
+                url: support.appending(path: "cart-v1.store"))
         #endif
         #if DEBUG
             if let testService = homeTesting.service {

@@ -21,7 +21,7 @@ let package = Package(
         .target(
             name: "CatalogFeature", dependencies: ["MallCore", "MallDesignSystem", "MallImages"],
             resources: [.process("Resources")]),
-        .target(name: "CartFeature", dependencies: ["MallCore", "MallDesignSystem"]),
+        .target(name: "CartFeature", dependencies: ["MallCore", "MallDesignSystem", "MallImages"]),
         .target(
             name: "MallImages",
             dependencies: [

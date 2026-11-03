@@ -51,6 +51,27 @@ struct ProductDetailViewModelTests {
             }
         }
     }
+    @Test func accountAdapterReplacementKeepsSkuDraftAndStopsOldOperations() async {
+        let service = Service()
+        let model = await loaded(service); await model.loadSpecifications()
+        model.select(1); model.changeQuantity(by: 1)
+        model.replaceFootprintRecorder(nil); model.setActive(true)
+        #expect(model.selectedID == 1); #expect(model.quantity == 2)
+        #expect(!model.footprintSaveFailed)
+    }
+
+    @Test func accountAdapterReplacementCanRestartAnInterruptedInitialRead() async {
+        let service = Service([.gate, .value(Self.product())])
+        let model = ProductDetailViewModel(productID: 830001, loader: service)
+        model.setActive(true)
+        let old = Task { await model.loadDetail() }; await wait { !service.detailGates.isEmpty }
+        model.replaceFootprintRecorder(nil); model.setActive(true)
+        await model.loadDetail()
+        service.detailGates.removeFirst().resume(returning: Self.product(999))
+        await old.value
+        #expect(model.detail?.id == 830001); #expect(service.detailCalls == 2)
+    }
+
     func loaded(_ service: Service) async -> ProductDetailViewModel {
         let model = ProductDetailViewModel(productID: 830001, loader: service)
         model.setActive(true); await model.loadDetail(); return model

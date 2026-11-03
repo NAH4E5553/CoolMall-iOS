@@ -4,14 +4,16 @@
     import MallData
 
     struct CartUITestSupport {
-        static func make(loader: any ProductDetailLoading, directory: URL) -> (any ShoppingCart)? {
+        static func make(loader: any ProductDetailLoading, directory: URL, accountID: String?) -> (
+            any ShoppingCart
+        )? {
             let arguments = ProcessInfo.processInfo.arguments
             guard let index = arguments.firstIndex(of: "--ui-cart-store"),
                 arguments.indices.contains(index + 1),
                 let token = UUID(uuidString: arguments[index + 1])
             else { return nil }
             let store = LocalShoppingCart(
-                scope: .init(environment: "cart-ui-fixture", accountID: nil),
+                scope: .init(environment: "cart-ui-fixture", accountID: accountID),
                 url: directory.appending(path: "test-\(token.uuidString).store"))
             return PreparedCart(
                 store: store, loader: loader, seed: arguments.contains("--ui-cart-seed"))

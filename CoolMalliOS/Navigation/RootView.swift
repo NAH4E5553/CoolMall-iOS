@@ -1,3 +1,5 @@
+import OrdersFeature
+import CheckoutFeature
 import AccountFeature
 import CartFeature
 import CatalogFeature
@@ -21,7 +23,11 @@ struct RootView: View {
         let offers: [CouponClaimOffer]
     }
     @State private var claimPresentation: ClaimPresentation?
-    @State private var checkoutDeferred = false
+    private struct AddressSelection: Identifiable {
+        let id = UUID(); let accountID: Int64; let choose: @MainActor (ShippingAddress) -> Void
+    }
+    @State private var addressSelection: AddressSelection?
+    @State private var cartCleanupNotice: UUID?
     @State private var unavailableNotice: UUID?
     @State private var categoryUnavailableNotice: UUID?
     @State private var categoryRequestedChildID: Int64?
@@ -55,8 +61,30 @@ struct RootView: View {
                     ).id(presentation.id)
                 }
             }
-            .alert("结算暂未开放", isPresented: $checkoutDeferred) {
-                Button("知道了", role: .cancel) {}
+            .sheet(item: $addressSelection) { selection in
+                CheckoutAddressSheet(
+                    accountID: selection.accountID, loader: dependencies.addresses,
+                    writer: dependencies.addresses, regions: dependencies.addressRegions,
+                    onSelect: { address in
+                        guard dependencies.accountState.profile?.id == selection.accountID,
+                            addressSelection?.id == selection.id
+                        else { return }
+                        selection.choose(address); addressSelection = nil
+                    })
+            }
+            .overlay(alignment: .bottom) {
+                if cartCleanupNotice != nil {
+                    Text("订单已创建，购物车未同步，请核对后手动删除已下单商品")
+                        .font(.subheadline).foregroundStyle(.white).padding(14)
+                        .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 12))
+                        .padding().allowsHitTesting(false).accessibilityIdentifier(
+                            "order.cartCleanupNotice")
+                }
+            }
+            .task(id: cartCleanupNotice) {
+                guard let notice = cartCleanupNotice else { return }
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                if cartCleanupNotice == notice { cartCleanupNotice = nil }
             }
             .task {
                 for await state in await dependencies.accountSession.states() {
@@ -67,10 +95,17 @@ struct RootView: View {
                     if old.profile?.id != state.profile?.id || (state == .guest && old != .guest) {
                         let resumesCoupons =
                             old == .guest && state.profile != nil
-                            && (router.mePath == [.coupons] || router.mePath == [.addresses])
+                            && (router.mePath == [.coupons] || router.mePath == [.addresses]
+                                || router.hasMeOrderIntent)
+                        router.updateOrderAccount(old: old.profile?.id, new: state.profile?.id)
+                        addressSelection = nil
                         if !resumesCoupons { router.mePath = [] }
                     }
                 }
+            }
+            .onChange(of: accountScenePhase) { _, phase in
+                // Selection is cancelled on interruption; a resumed picker must obtain a new callback.
+                if phase != .active { addressSelection = nil }
             }
             .task(id: dependencies.shoppingCart.scope) {
                 if !usesCartFixture {
@@ -124,7 +159,9 @@ struct RootView: View {
                 set: { router.selectFromTabBar($0) }
             )
         ) {
-            NavigationStack(path: $router.homePath) {
+            NavigationStack(
+                path: Binding(get: { router.homePath }, set: { router.setPath($0, on: .home) })
+            ) {
                 homeRoot
                     .navigationDestination(for: SceneRouter.Route.self) { route in
                         destination(for: route, on: .home)
@@ -132,7 +169,10 @@ struct RootView: View {
             }
             .tabItem { Label("首页", systemImage: "house") }
             .tag(SceneRouter.Tab.home)
-            NavigationStack(path: $router.categoryPath) {
+            NavigationStack(
+                path: Binding(
+                    get: { router.categoryPath }, set: { router.setPath($0, on: .category) })
+            ) {
                 categoryRoot
                     .navigationDestination(for: SceneRouter.Route.self) { route in
                         destination(for: route, on: .category)
@@ -140,7 +180,9 @@ struct RootView: View {
             }
             .tabItem { Label("分类", systemImage: "square.grid.2x2") }
             .tag(SceneRouter.Tab.category)
-            NavigationStack(path: $router.cartPath) {
+            NavigationStack(
+                path: Binding(get: { router.cartPath }, set: { router.setPath($0, on: .cart) })
+            ) {
                 cartEntry(on: .cart, root: true)
                     .navigationDestination(for: SceneRouter.Route.self) { route in
                         destination(for: route, on: .cart)
@@ -152,7 +194,9 @@ struct RootView: View {
                     ? cartBadge.count.flatMap { $0 > 0 ? String($0) : nil } : nil
             )
             .tag(SceneRouter.Tab.cart)
-            NavigationStack(path: $router.mePath) {
+            NavigationStack(
+                path: Binding(get: { router.mePath }, set: { router.setPath($0, on: .me) })
+            ) {
                 meRoot
                     .navigationDestination(for: SceneRouter.Route.self) { route in
                         destination(for: route, on: .me)
@@ -177,6 +221,8 @@ struct RootView: View {
                 onOpenFootprints: { router.mePath.append(.footprints) },
                 onOpenCoupons: { router.mePath.append(.coupons) },
                 onOpenAddresses: { router.mePath.append(.addresses) },
+                onOpenOrders: { router.mePath.append(.orders(filter: $0)) },
+                orderCounts: dependencies.orderCounts, orderRefreshRevision: router.orderRevision,
                 onOpenProduct: { router.mePath.append(.productDetail(goodsID: $0)) }
             ) {
                 if case .guest = dependencies.accountState {
@@ -426,9 +472,13 @@ struct RootView: View {
             footprintRecorder: dependencies.footprints,
             shoppingCart: dependencies.shoppingCart,
             cartVerifier: dependencies.cartVerifier,
-            onOpenCart: { router.append(.cart, on: tab) }, onReceiveCoupon: beginClaim
+            cartItemCount: cartBadge.scope == dependencies.shoppingCart.scope
+                ? cartBadge.count : nil,
+            onOpenCart: { router.append(.cart, on: tab) }, onReceiveCoupon: beginClaim,
+            onBuyNow: {
+                router.beginPurchase($0, accountID: dependencies.accountState.profile?.id, on: tab)
+            }
         )
-        .id(dependencies.shoppingCart.scope)
     }
 
     private func beginClaim(_ offer: CouponClaimOffer) { beginClaims([offer]) }
@@ -476,12 +526,9 @@ struct RootView: View {
             imagePipeline: dependencies.detailImagePipeline,
             isActive: router.selectedTab == tab && (root ? path.isEmpty : path.last == .cart),
             onOpenProduct: { router.append(.productDetail(goodsID: $0), on: tab) },
-            onCheckout: {
-                if dependencies.accountState.profile == nil {
-                    router.append(.login, on: tab)
-                } else {
-                    checkoutDeferred = true
-                }
+            onCheckout: { intent in
+                router.beginCartPurchase(
+                    intent, accountID: dependencies.accountState.profile?.id, on: tab)
             }
         )
         .id(dependencies.shoppingCart.scope)
@@ -493,6 +540,14 @@ struct RootView: View {
     /// tab re-tap and that cannot be vetoed with public API). PRD-017/NAV-R07:
     /// the detail page and the independent cart it opens keep the bar hidden;
     /// returning to the source root restores the four tabs.
+    private func orderLogin(on tab: SceneRouter.Tab) -> some View {
+        LoginEntryView(
+            session: dependencies.accountSession, challenges: dependencies.loginChallenges,
+            notifier: dependencies.codeNotifier,
+            isActive: router.selectedTab == tab && accountScenePhase != .background,
+            onAuthenticated: {})
+    }
+
     @ViewBuilder
     private func destination(for route: SceneRouter.Route, on tab: SceneRouter.Tab) -> some View {
         switch route {
@@ -507,7 +562,11 @@ struct RootView: View {
                     case .category: router.categoryPath.removeAll { $0 == .login }
                     case .cart: router.cartPath.removeAll { $0 == .login }
                     case .me:
-                        router.mePath = router.mePath.contains(.coupons) ? [.coupons] : []
+                        if router.hasMeOrderIntent {
+                            router.mePath.removeAll { $0 == .login }
+                        } else {
+                            router.mePath = router.mePath.contains(.coupons) ? [.coupons] : []
+                        }
                     }
                 }
             )
@@ -575,6 +634,75 @@ struct RootView: View {
                 onOpenProduct: { router.append(.productDetail(goodsID: $0), on: tab) }
             )
             .toolbar(.hidden, for: .tabBar).toolbar(.visible, for: .navigationBar)
+        case .orders(let filter):
+            Group {
+                if let profile = dependencies.accountState.profile {
+                    OrderListEntryView(
+                        accountID: profile.id, filter: filter, loader: dependencies.orders,
+                        isActive: router.selectedTab == tab && router.path(on: tab).last == route,
+                        imagePipeline: dependencies.detailImagePipeline,
+                        onRequestLogin: { router.append(.login, on: tab) },
+                        onOpenOrder: { router.append(.orderDetail(id: $0), on: tab) },
+                        refreshRevision: router.orderRevision)
+                } else {
+                    orderLogin(on: tab)
+                }
+            }.toolbar(.hidden, for: .tabBar).toolbar(.visible, for: .navigationBar)
+        case .orderDetail(let id):
+            Group {
+                if let profile = dependencies.accountState.profile {
+                    OrderDetailEntryView(
+                        accountID: profile.id, orderID: id, loader: dependencies.orders,
+                        isActive: router.selectedTab == tab && router.path(on: tab).last == route,
+                        imagePipeline: dependencies.detailImagePipeline,
+                        onRequestLogin: { router.append(.login, on: tab) },
+                        canceller: dependencies.orderCanceller,
+                        onCashier: {
+                            guard router.path(on: tab).last == route else { return };
+                            router.append(.cashier(orderID: id), on: tab)
+                        },
+                        onChanged: { router.orderChanged() })
+                } else {
+                    orderLogin(on: tab)
+                }
+            }.toolbar(.hidden, for: .tabBar).toolbar(.visible, for: .navigationBar)
+        case .checkout(let intent, let accountID):
+            Group {
+                if let profile = dependencies.accountState.profile, accountID == profile.id {
+                    CheckoutEntryView(
+                        accountID: profile.id, intent: intent, loader: dependencies.checkout,
+                        isActive: router.selectedTab == tab && router.path(on: tab).last == route,
+                        imagePipeline: dependencies.detailImagePipeline,
+                        onRequestLogin: { router.append(.login, on: tab) },
+                        onChooseAddress: { callback in
+                            guard router.path(on: tab).last == route else { return }
+                            addressSelection = AddressSelection(
+                                accountID: profile.id, choose: callback)
+                        }, creator: dependencies.orderCreator,
+                        cart: dependencies.checkoutCart(for: intent),
+                        onCartCleanupFailure: { cartCleanupNotice = UUID() },
+                        onCreated: { id in
+                            guard dependencies.accountState.profile?.id == profile.id else {
+                                return
+                            }
+                            router.orderCreated(id, from: route, on: tab)
+                        })
+                } else if dependencies.accountState.profile == nil {
+                    orderLogin(on: tab)
+                }
+            }.toolbar(.hidden, for: .tabBar).toolbar(.visible, for: .navigationBar)
+        case .cashier(let id):
+            Group {
+                if let profile = dependencies.accountState.profile {
+                    CashierEntryView(
+                        accountID: profile.id, orderID: id, loader: dependencies.orders,
+                        isActive: router.selectedTab == tab && router.path(on: tab).last == route,
+                        onBack: { router.cashierBack(on: tab) },
+                        onRequestLogin: { router.append(.login, on: tab) })
+                } else {
+                    orderLogin(on: tab)
+                }
+            }.toolbar(.hidden, for: .tabBar).toolbar(.visible, for: .navigationBar)
         case .profile:
             ProfileEntryView(
                 state: dependencies.accountState, session: dependencies.accountSession,
@@ -799,3 +927,28 @@ private struct FixturePathProbeView: View {
         }
     }
 #endif
+
+/// App composes the address Feature without creating a cross-Feature dependency.
+@MainActor private struct CheckoutAddressSheet: View {
+    private struct Editor: Hashable { let id: Int64? }
+    @State private var path: [Editor] = []
+    let accountID: Int64
+    let loader: any AddressLoading
+    let writer: any AddressWriting
+    let regions: any AddressRegionsLoading
+    let onSelect: (ShippingAddress) -> Void
+    var body: some View {
+        NavigationStack(path: $path) {
+            AddressEntryView(
+                accountID: accountID, loader: loader, writer: writer,
+                isActive: path.isEmpty, onEdit: { path.append(Editor(id: $0)) }, onSelect: onSelect
+            )
+            .navigationDestination(for: Editor.self) { editor in
+                AddressEditorEntryView(
+                    accountID: accountID, id: editor.id, loader: loader, writer: writer,
+                    regions: regions, isActive: path.last == editor,
+                    onSaved: { if path.last == editor { path.removeLast() } })
+            }
+        }.tint(Color(red: 0.29, green: 0.32, blue: 1))
+    }
+}

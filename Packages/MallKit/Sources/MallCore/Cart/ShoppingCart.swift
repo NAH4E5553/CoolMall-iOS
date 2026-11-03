@@ -87,8 +87,15 @@ public struct CartProductCheck: Sendable {
     public let productID: Int64
     public let isAvailable: Bool
     public let quotes: [CartQuote]
-    public init(productID: Int64, isAvailable: Bool, quotes: [CartQuote]) {
+    /// Fresh catalog facts for order snapshots, never persisted into cart records.
+    public let product: ProductDetailSnapshot?
+    public let specifications: [ProductSpecification]
+    public init(
+        productID: Int64, isAvailable: Bool, quotes: [CartQuote],
+        product: ProductDetailSnapshot? = nil, specifications: [ProductSpecification] = []
+    ) {
         self.productID = productID; self.isAvailable = isAvailable; self.quotes = quotes
+        self.product = product; self.specifications = specifications
     }
     public func quote(for item: CartItemID) throws -> CartQuote {
         guard productID == item.productID, isAvailable,

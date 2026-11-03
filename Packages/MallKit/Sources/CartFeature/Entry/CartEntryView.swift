@@ -9,7 +9,7 @@ public struct CartEntryView: View {
     private let verifier: (any CartProductChecking)?
     private let pipeline: MallImagePipeline?
     private let isActive: Bool
-    private let onCheckout: (() -> Void)?
+    private let onCheckout: (@MainActor (CheckoutIntent) -> Void)?
     private let onOpenProduct: (Int64) -> Void
     public init(cart: any CartObserving) {
         fixture = cart; store = nil; verifier = nil; pipeline = nil; isActive = true;
@@ -18,7 +18,8 @@ public struct CartEntryView: View {
     public init(
         store: any ShoppingCart, verifier: any CartProductChecking,
         imagePipeline: MallImagePipeline? = nil, isActive: Bool,
-        onOpenProduct: @escaping (Int64) -> Void, onCheckout: (() -> Void)? = nil
+        onOpenProduct: @escaping (Int64) -> Void,
+        onCheckout: (@MainActor (CheckoutIntent) -> Void)? = nil
     ) {
         fixture = nil; self.store = store; self.verifier = verifier
         pipeline = imagePipeline; self.isActive = isActive; self.onOpenProduct = onOpenProduct
@@ -46,11 +47,12 @@ private struct ShoppingCartScreen: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     let pipeline: MallImagePipeline?
     let isActive: Bool
-    let onCheckout: (() -> Void)?
+    let onCheckout: (@MainActor (CheckoutIntent) -> Void)?
     let onOpenProduct: (Int64) -> Void
     init(
         store: any ShoppingCart, verifier: any CartProductChecking, pipeline: MallImagePipeline?,
-        isActive: Bool, onOpenProduct: @escaping (Int64) -> Void, onCheckout: (() -> Void)?
+        isActive: Bool, onOpenProduct: @escaping (Int64) -> Void,
+        onCheckout: (@MainActor (CheckoutIntent) -> Void)?
     ) {
         _model = State(initialValue: CartViewModel(store: store, verifier: verifier))
         self.pipeline = pipeline; self.isActive = isActive; self.onOpenProduct = onOpenProduct
@@ -304,17 +306,22 @@ private struct ShoppingCartScreen: View {
     }
     private var actionButton: some View {
         Button {
-            if model.editing { model.removeSelected() } else { onCheckout?() }
+            if model.editing {
+                model.removeSelected()
+            } else if let onCheckout {
+                model.checkout(onReady: onCheckout)
+            }
         } label: {
             Text(
                 model.editing
                     ? "删除(\(model.selection.count))"
-                    : (model.selection.isEmpty ? "结算" : "结算(\(model.selection.count))")
+                    : (model.checkingOut
+                        ? "核验中" : model.selection.isEmpty ? "结算" : "结算(\(model.selection.count))")
             )
             .bold().foregroundStyle(.white).padding(.horizontal, 24).padding(.vertical, 12)
             .background(model.editing ? .red : accent, in: Capsule())
             .opacity(model.selection.isEmpty ? 0.5 : 1)
-        }.disabled(model.selection.isEmpty || model.isRemoving || model.total == nil)
+        }.disabled(model.selection.isEmpty || model.busy || model.total == nil)
             .buttonStyle(.plain).accessibilityIdentifier(
                 model.editing ? "cart.delete" : "cart.checkout"
             )

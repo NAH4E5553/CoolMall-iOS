@@ -1,4 +1,5 @@
 import MallCore
+import MallDesignSystem
 import MallImages
 import SwiftUI
 
@@ -11,6 +12,9 @@ import SwiftUI
     private let onOpenProduct: (Int64) -> Void
     private let onOpenAddresses: () -> Void
     private let onOpenCoupons: () -> Void
+    private let orderCounts: (any OrderCountsLoading)?
+    private let orderRefreshRevision: UInt64
+    private let onOpenOrders: (OrderFilter) -> Void
     private let openAccount: () -> Void
     @State private var unavailable = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -20,8 +24,12 @@ import SwiftUI
         onOpenFootprints: @escaping () -> Void = {},
         onOpenCoupons: @escaping () -> Void = {},
         onOpenAddresses: @escaping () -> Void = {},
+        onOpenOrders: @escaping (OrderFilter) -> Void = { _ in },
+        orderCounts: (any OrderCountsLoading)? = nil, orderRefreshRevision: UInt64 = 0,
         onOpenProduct: @escaping (Int64) -> Void = { _ in }, openAccount: @escaping () -> Void
     ) {
+        self.orderCounts = orderCounts; self.orderRefreshRevision = orderRefreshRevision
+        self.onOpenOrders = onOpenOrders
         self.onOpenAddresses = onOpenAddresses
         self.onOpenCoupons = onOpenCoupons
         self.footprints = footprints; self.isActive = isActive;
@@ -67,36 +75,12 @@ import SwiftUI
                 }
                 .padding(16).foregroundStyle(Color(red: 0.87, green: 0.65, blue: 0.43))
                 .background(Color(white: 0.14), in: RoundedRectangle(cornerRadius: 18))
-                VStack(spacing: 16) {
-                    sectionHeader("我的订单", icon: "list.bullet.rectangle.fill", tint: accountAccent)
-                    LazyVGrid(
-                        columns: [
-                            GridItem(
-                                .adaptive(minimum: dynamicTypeSize.isAccessibilitySize ? 130 : 56),
-                                spacing: 10)
-                        ], spacing: 16
-                    ) {
-                        ForEach(
-                            Array(
-                                zip(
-                                    ["待付款", "待发货", "待收货", "待评价", "退款/售后"],
-                                    [
-                                        "wallet.bifold", "shippingbox", "truck.box", "text.bubble",
-                                        "arrow.uturn.backward.circle",
-                                    ])), id: \.0
-                        ) { label, icon in
-                            Button {
-                                unavailable = true
-                            } label: {
-                                VStack(spacing: 10) {
-                                    Image(systemName: icon).font(.title2);
-                                    Text(label).font(.caption)
-                                }
-                                .frame(maxWidth: .infinity, minHeight: 62)
-                            }.buttonStyle(.plain)
-                        }
-                    }
-                }.padding(16).background(.background, in: RoundedRectangle(cornerRadius: 18))
+                MeOrderSection(
+                    accountID: state.profile?.id, loader: orderCounts,
+                    isActive: isActive, refreshRevision: orderRefreshRevision,
+                    onOpenOrders: onOpenOrders
+                )
+                .id(state.profile?.id)
                 if let footprints {
                     FootprintPreviewView(
                         store: footprints, pipeline: imagePipeline, isActive: isActive,
@@ -132,24 +116,6 @@ import SwiftUI
             .padding(8).overlay(
                 Capsule().stroke(Color(red: 0.87, green: 0.65, blue: 0.43), lineWidth: 1))
     }
-    private func sectionHeader(_ title: String, icon: String, tint: Color) -> some View {
-        HStack {
-            Label {
-                Text(title).foregroundStyle(.primary)
-            } icon: {
-                Image(systemName: icon).foregroundStyle(tint)
-            }
-            .font(.headline)
-            Spacer()
-            Button {
-                unavailable = true
-            } label: {
-                HStack(spacing: 4) {
-                    Text("查看全部"); Image(systemName: "chevron.right")
-                }.font(.subheadline)
-            }.foregroundStyle(.secondary)
-        }
-    }
     private func menu(_ title: String, icon: String, tint: Color, action: (() -> Void)? = nil)
         -> some View
     {
@@ -163,5 +129,97 @@ import SwiftUI
                 Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.tertiary)
             }.padding(18).frame(minHeight: 56).contentShape(Rectangle())
         }.buttonStyle(.plain)
+    }
+}
+
+@MainActor private struct MeOrderSection: View {
+    @State private var model: OrderCountsViewModel
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    let isActive: Bool
+    let refreshRevision: UInt64
+    let onOpenOrders: (OrderFilter) -> Void
+    init(
+        accountID: Int64?, loader: (any OrderCountsLoading)?, isActive: Bool,
+        refreshRevision: UInt64, onOpenOrders: @escaping (OrderFilter) -> Void
+    ) {
+        _model = State(initialValue: OrderCountsViewModel(accountID: accountID, loader: loader))
+        self.isActive = isActive; self.refreshRevision = refreshRevision;
+        self.onOpenOrders = onOpenOrders
+    }
+    private struct ReadKey: Equatable { let active: Bool; let revision: UInt64 }
+    private var active: Bool { isActive && scenePhase == .active }
+    private func count(_ label: String) -> Int64? {
+        let filters: [String: OrderFilter] = [
+            "待付款": .unpaid, "待发货": .unshipped,
+            "待收货": .unreceived, "待评价": .unevaluated, "退款/售后": .afterSale,
+        ]
+        return filters[label].flatMap { model.counts?.count(for: $0) }
+    }
+    var body: some View {
+        VStack(spacing: 16) {
+            Button {
+                onOpenOrders(.all)
+            } label: {
+                HStack {
+                    Label {
+                        Text("我的订单").foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: "list.bullet.rectangle.fill").foregroundStyle(.blue)
+                    }
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Text("查看全部"); Image(systemName: "chevron.right")
+                    }
+                    .font(.subheadline).foregroundStyle(.secondary)
+                }.font(.headline).frame(minHeight: 44).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityIdentifier("me.orders.all")
+            LazyVGrid(
+                columns: [
+                    GridItem(
+                        .adaptive(minimum: dynamicTypeSize.isAccessibilitySize ? 130 : 56),
+                        spacing: 10)
+                ], spacing: 16
+            ) {
+                ForEach(
+                    Array(
+                        zip(
+                            ["待付款", "待发货", "待收货", "待评价", "退款/售后"],
+                            [
+                                "wallet.bifold", "shippingbox", "truck.box", "text.bubble",
+                                "arrow.uturn.backward.circle",
+                            ])), id: \.0
+                ) { label, icon in
+                    Button {
+                        let filters: [String: OrderFilter] = [
+                            "待付款": .unpaid, "待发货": .unshipped, "待收货": .unreceived,
+                            "待评价": .unevaluated, "退款/售后": .afterSale,
+                        ]
+                        if let filter = filters[label] { onOpenOrders(filter) }
+                    } label: {
+                        VStack(spacing: 10) {
+                            Image(systemName: icon).font(.title2)
+                                .frame(width: 32, height: 32)
+                                .overlay(alignment: .topTrailing) {
+                                    if let count = count(label), count > 0 {
+                                        CountBadge(count: count).offset(x: 12, y: -7)
+                                            .accessibilityHidden(true)
+                                    }
+                                };
+                            Text(label).font(.caption)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 62)
+                    }.buttonStyle(.plain).accessibilityValue(
+                        count(label).map { "\($0)个订单" }
+                            ?? (model.failure == nil ? "数量暂不可用" : "数量读取失败")
+                    ).accessibilityHint(model.failure == nil ? "查看\(label)订单" : "数量读取失败，重新进入页面重试")
+                        .accessibilityIdentifier("me.orders.\(label)")
+                }
+            }
+        }.padding(16).background(.background, in: RoundedRectangle(cornerRadius: 18))
+            .task(id: ReadKey(active: active, revision: refreshRevision)) {
+                await model.activate(active)
+            }
+            .onDisappear { model.stop() }
     }
 }

@@ -27,6 +27,11 @@ final class AppDependencies {
     let productReviews: any ProductReviewsLoading
     let productDetails: any ProductDetailLoading
     let category: any CategoryLoading
+    let orderCounts: any OrderCountsLoading
+    let orders: any OrdersLoading
+    let checkout: any CheckoutLoading
+    let orderCreator: any OrderCreating
+    let orderCanceller: any OrderCancelling
     let addresses: any AddressLoading & AddressWriting
     let addressRegions: any AddressRegionsLoading
     let userCoupons: any UserCouponsLoading
@@ -186,6 +191,26 @@ final class AppDependencies {
         #else
             addresses = HTTPAddressService(environment: environment, session: session)
         #endif
+        #if DEBUG
+            if let fixture = OrderUITestSupport.make(arguments: ProcessInfo.processInfo.arguments) {
+                orders = fixture; checkout = fixture; orderCounts = fixture
+                orderCreator = fixture; orderCanceller = fixture
+            } else if let session = accountSession as? SessionCoordinator {
+                let service = HTTPOrderService(environment: environment, session: session)
+                orders = service; checkout = service; orderCounts = service
+                let transactions = HTTPOrderTransactions(environment: environment, session: session)
+                orderCreator = transactions; orderCanceller = transactions
+            } else {
+                orders = UnavailableOrderReads(); checkout = UnavailableOrderReads();
+                orderCounts = UnavailableOrderReads()
+                orderCreator = UnavailableOrderReads(); orderCanceller = UnavailableOrderReads()
+            }
+        #else
+            let orderService = HTTPOrderService(environment: environment, session: session)
+            orders = orderService; checkout = orderService; orderCounts = orderService
+            let transactions = HTTPOrderTransactions(environment: environment, session: session)
+            orderCreator = transactions; orderCanceller = transactions
+        #endif
         let initialAccountState = accountSession.initialState
         accountState = initialAccountState
         #if DEBUG
@@ -213,7 +238,10 @@ final class AppDependencies {
         #endif
         cartStorageURL = storageURL
         #if DEBUG
-            if let fixture = CartUITestSupport.make(loader: productDetails, directory: support) {
+            if let fixture = CartUITestSupport.make(
+                loader: productDetails, directory: support,
+                accountID: initialAccountState.profile.map { String($0.id) })
+            {
                 shoppingCart = fixture
             } else {
                 shoppingCart = LocalShoppingCart(
@@ -271,6 +299,11 @@ final class AppDependencies {
         footprintStores[historyScope] = footprints
         accountCarts[shoppingCart.scope] = shoppingCart
     }
+    /// Retains the same original partition across a guest-to-account checkout; no rows are copied.
+    func checkoutCart(for intent: CheckoutIntent) -> (any ShoppingCart)? {
+        guard case .cart(let scope, _) = intent.source else { return nil }
+        return accountCarts[scope]
+    }
     /// Scope identity is selected only from a committed session profile. Each
     /// partition reuses its own store; login never copies guest rows.
     func applyAccount(_ state: AccountState) {
@@ -323,6 +356,35 @@ final class AppDependencies {
         }
         func deleteAddress(accountID: Int64, id: Int64) async throws {
             throw AddressWriteFailure.invalidInput
+        }
+    }
+#endif
+
+#if DEBUG
+    private struct UnavailableOrderReads: OrdersLoading, CheckoutLoading, OrderCreating,
+        OrderCountsLoading,
+        OrderCancelling
+    {
+        func loadOrderCounts(accountID: Int64) async throws -> UserOrderCounts {
+            throw PageReadFailure.invalidConfiguration
+        }
+        func createOrder(accountID: Int64, input: OrderCreation) async throws -> Int64 {
+            throw OrderWriteFailure.unavailable
+        }
+        func loadCancelReasons(accountID: Int64) async throws -> [OrderCancelReason] {
+            throw OrderWriteFailure.unavailable
+        }
+        func cancelOrder(accountID: Int64, orderID: Int64, reason: OrderCancelReason) async throws {
+            throw OrderWriteFailure.unavailable
+        }
+        func loadOrders(accountID: Int64, filter: OrderFilter, page: Int, pageSize: Int)
+            async throws -> NumberedPage<OrderSnapshot>
+        { throw PageReadFailure.invalidConfiguration }
+        func loadOrder(accountID: Int64, orderID: Int64) async throws -> OrderSnapshot {
+            throw PageReadFailure.invalidConfiguration
+        }
+        func loadCheckout(accountID: Int64) async throws -> CheckoutContext {
+            throw PageReadFailure.invalidConfiguration
         }
     }
 #endif

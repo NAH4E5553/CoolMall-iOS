@@ -7,7 +7,7 @@ import Observation
 final class CartViewModel {
     enum Status { case loading, ready, failed }
     private static let pendingMessage = "当前购物项正在处理，请稍后再操作"
-    enum WriteOperation: Equatable { case quantity(CartItemID), removal }
+    enum WriteOperation: Equatable { case quantity(CartItemID), removal, checkout }
     struct PriceConfirmation {
         let item: CartItemID
         let old: CartMoney
@@ -31,6 +31,7 @@ final class CartViewModel {
         return nil
     }
     var isRemoving: Bool { operation == .removal }
+    var checkingOut: Bool { operation == .checkout }
     private(set) var message: String?
     private(set) var confirmation: PriceConfirmation?
     private(set) var checks: [Int64: CartProductCheck] = [:]
@@ -63,12 +64,14 @@ final class CartViewModel {
     var allSelected: Bool { !selectable.isEmpty && selection == selectable }
     var total: CartMoney? { try? snapshot?.total(for: selection) }
     func toggle(_ item: CartItemID) {
-        guard selectable.contains(item) else { return }
+        guard !checkingOut, selectable.contains(item) else { return }
         if !selection.insert(item).inserted { selection.remove(item) }
     }
-    func toggleAll() { selection = allSelected ? [] : selectable }
+    func toggleAll() {
+        guard !checkingOut else { return }; selection = allSelected ? [] : selectable
+    }
     func toggleEditing() {
-        guard !isRemoving, confirmation == nil else { return }
+        guard !isRemoving, !checkingOut, confirmation == nil else { return }
         editing.toggle(); selection = []
     }
     func note(for line: CartLine) -> String? {
@@ -146,6 +149,39 @@ final class CartViewModel {
             guard let self, self.active, self.generation == token, !Task.isCancelled else { return }
             self.verification = nil
             self.verifyMissing()
+        }
+    }
+    func checkout(onReady: @escaping @MainActor (CheckoutIntent) -> Void) {
+        guard !editing, confirmation == nil, !selection.isEmpty,
+            canStart(.checkout), let value = snapshot
+        else { return }
+        let chosen = selection
+        guard chosen.isSubset(of: selectable) else { return }
+        operation = .checkout; message = nil
+        verification?.cancel(); verification = nil
+        let token = generation
+        mutation = Task { [weak self, store, verifier] in
+            do {
+                var fresh: [Int64: CartProductCheck] = [:]
+                for line in value.lines where chosen.contains(line.id) {
+                    if fresh[line.productID] != nil { continue }
+                    let check = try await verifier.check(productID: line.productID)
+                    try Task.checkCancellation()
+                    guard let self, self.active, self.generation == token else { return }
+                    guard check.productID == line.productID else {
+                        throw ShoppingCartFailure.unavailable
+                    }
+                    fresh[line.productID] = check; self.checks[line.productID] = check
+                }
+                let current = try await store.current()
+                try Task.checkCancellation()
+                guard let self, self.active, self.generation == token else { return }
+                guard current.scope == value.scope, current.revision == value.revision,
+                    self.selection == chosen
+                else { throw ShoppingCartFailure.staleRevision }
+                let intent = try CheckoutIntent(cart: current, selection: chosen, checks: fresh)
+                self.finish(token); onReady(intent)
+            } catch { self?.finish(token, error: error) }
         }
     }
     func decrease(_ item: CartItemID) {

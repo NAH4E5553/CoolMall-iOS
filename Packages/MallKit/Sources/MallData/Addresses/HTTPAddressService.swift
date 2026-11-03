@@ -130,7 +130,7 @@ public actor HTTPAddressService: AddressLoading, AddressWriting {
         }
     }
 }
-private struct AddressDTO: Decodable {
+struct AddressDTO: Decodable {
     let id: Int64
     let contact: String; let phone: String; let province: String; let city: String
     let district: String; let address: String; let isDefault: Bool

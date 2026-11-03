@@ -23,6 +23,11 @@ final class BoundaryVisitor: SyntaxVisitor {
         job.target == "MallData"
             && job.path.hasSuffix("/Sources/MallData/Footprints/PersistentFootprintStore.swift")
     }
+    private var isSearchHistoryStore: Bool {
+        job.target == "MallData"
+            && job.path.hasSuffix(
+                "/Sources/MallData/SearchHistory/PersistentSearchHistoryStore.swift")
+    }
     private func isAccountAdapter(_ file: String) -> Bool {
         job.target == "MallData" && job.path.hasSuffix("/Sources/MallData/Authentication/" + file)
     }
@@ -40,11 +45,12 @@ final class BoundaryVisitor: SyntaxVisitor {
             fail("MOD-01", "forbidden import \(module) in \(job.target)")
         }
         if job.target == "MallData", module == "SwiftData", !isPersistentCartStore,
-            !isFootprintStore
+            !isFootprintStore, !isSearchHistoryStore
         {
             fail(
                 "MOD-01",
-                "SwiftData import is scoped to registered Cart/Footprints persistent adapters")
+                "SwiftData import is scoped to registered Cart/Footprints/SearchHistory persistent adapters"
+            )
         }
         if module == "Security", !isAccountAdapter("KeychainCredentialStore.swift") {
             fail("MOD-01", "Security import is scoped to KeychainCredentialStore.swift")
@@ -142,11 +148,12 @@ final class BoundaryVisitor: SyntaxVisitor {
             "ModelContext", "ModelContainer", "PersistentContainer", "NSPersistentContainer",
         ]
         if job.target == "MallData", swiftDataAPIs.contains(node.text), !isPersistentCartStore,
-            !isFootprintStore
+            !isFootprintStore, !isSearchHistoryStore
         {
             fail(
                 "MOD-05",
-                "SwiftData API is scoped to registered Cart/Footprints persistent adapters")
+                "SwiftData API is scoped to registered Cart/Footprints/SearchHistory persistent adapters"
+            )
         }
         if node.text == "unchecked" { fail("MOD-02", "unchecked concurrency conformance") }
         return .visitChildren
@@ -159,7 +166,8 @@ final class BoundaryVisitor: SyntaxVisitor {
     static let registeredFeatureEntries: [String: [String]] = [
         "CatalogFeature": [
             "CatalogEntryView", "HomeEntryView", "CategoryEntryView", "ProductDetailEntryView",
-            "ProductReviewsEntryView", "CouponProductsEntryView",
+            "ProductReviewsEntryView", "CouponProductsEntryView", "SearchEntryView",
+            "SearchResultsEntryView",
         ],
         "CartFeature": ["CartEntryView"],
         "OrdersFeature": ["OrderListEntryView", "OrderDetailEntryView"],

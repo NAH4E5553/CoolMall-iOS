@@ -26,6 +26,11 @@ final class AppDependencies {
     let home: any HomeLoading
     let productReviews: any ProductReviewsLoading
     let productDetails: any ProductDetailLoading
+    let searchKeywords: any SearchKeywordsLoading
+    let searchProducts: any ProductSearchLoading
+    private(set) var searchHistory: any SearchHistoryStoring
+    private let searchHistoryURL: URL
+    private var searchHistoryStores: [SearchHistoryScope: any SearchHistoryStoring] = [:]
     let category: any CategoryLoading
     let orderCounts: any OrderCountsLoading
     let orders: any OrdersLoading
@@ -40,6 +45,7 @@ final class AppDependencies {
     let imagePipeline: MallImagePipeline?
 
     #if DEBUG
+        let searchTesting = SearchUITestSupport.make(arguments: ProcessInfo.processInfo.arguments)
         let homeTesting = HomeUITestSupport()
         let productDetailTesting = ProductDetailUITestService.make(
             arguments: ProcessInfo.processInfo.arguments)
@@ -91,6 +97,18 @@ final class AppDependencies {
         return imagePipeline
     }
 
+    var searchCategories: any CategoryLoading {
+        #if DEBUG
+            if let searchTesting { return searchTesting }
+        #endif
+        return category
+    }
+    var searchImagePipeline: MallImagePipeline? {
+        #if DEBUG
+            if searchTesting != nil { return nil }
+        #endif
+        return imagePipeline
+    }
     var showsCategoryReadVerification: Bool {
         #if DEBUG
             categoryTesting.mode != nil
@@ -132,6 +150,13 @@ final class AppDependencies {
             imagePipeline = Self.makeProductionImages()
         #endif
         let environment = APIEnvironment(baseURL: Self.homeBaseURL)
+        let searchService = HTTPProductSearchService(environment: environment)
+        #if DEBUG
+            searchKeywords = searchTesting ?? searchService
+            searchProducts = searchTesting ?? searchService
+        #else
+            searchKeywords = searchService; searchProducts = searchService
+        #endif
         #if DEBUG
             if let index = ProcessInfo.processInfo.arguments.firstIndex(
                 of: "--ui-account-keychain"),
@@ -282,6 +307,23 @@ final class AppDependencies {
             environment: Self.homeBaseURL.absoluteString,
             accountID: initialAccountState.profile.map { String($0.id) })
         footprints = PersistentFootprintStore(scope: historyScope, url: historyURL)
+        let searchURL = URL.applicationSupportDirectory.appending(
+            path: "SearchHistory", directoryHint: .isDirectory
+        )
+        .appending(path: storageURL.lastPathComponent)
+        searchHistoryURL = searchURL
+        let searchScope = SearchHistoryScope(
+            environment: Self.homeBaseURL.absoluteString, accountID: historyScope.accountID)
+        let searchOwner = PersistentSearchHistoryStore(scope: searchScope, url: searchURL)
+        #if DEBUG
+            searchHistory =
+                SearchHistoryUITestSupport.make(
+                    owner: searchOwner, arguments: ProcessInfo.processInfo.arguments
+                ) ?? searchOwner
+        #else
+            searchHistory = searchOwner
+        #endif
+        searchHistoryStores[searchScope] = searchHistory
         #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-footprints-seed")
                 || ProcessInfo.processInfo.arguments.contains("--ui-footprints-failure")
@@ -321,6 +363,14 @@ final class AppDependencies {
                 footprintStores[historyScope]
                 ?? PersistentFootprintStore(scope: historyScope, url: footprintStorageURL)
             footprintStores[historyScope] = store; footprints = store
+        }
+        let searchScope = SearchHistoryScope(
+            environment: Self.homeBaseURL.absoluteString, accountID: scope.accountID)
+        if searchScope != searchHistory.scope {
+            let store =
+                searchHistoryStores[searchScope]
+                ?? PersistentSearchHistoryStore(scope: searchScope, url: searchHistoryURL)
+            searchHistoryStores[searchScope] = store; searchHistory = store
         }
         accountState = state
     }

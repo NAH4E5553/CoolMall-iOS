@@ -24,6 +24,7 @@ public struct HomeEntryView: View {
     private let onUnavailableAction: () -> Void
     private let onOpenProduct: ((Int64) -> Void)?
     private let onReceiveCoupons: (([CouponClaimOffer]) -> Void)?
+    private let onShowFeatured: (() -> Void)?
 
     public init(
         home: any HomeLoading, isActive: Bool, refreshRequest: UInt64 = 0,
@@ -31,7 +32,8 @@ public struct HomeEntryView: View {
         allowsBannerAutoplay: Bool = true,
         showsReadVerification: Bool = false, onUnavailableAction: @escaping () -> Void = {},
         onOpenProduct: ((Int64) -> Void)? = nil,
-        onReceiveCoupons: (([CouponClaimOffer]) -> Void)? = nil
+        onReceiveCoupons: (([CouponClaimOffer]) -> Void)? = nil,
+        onShowFeatured: (() -> Void)? = nil
     ) {
         self.home = home
         self.isActive = isActive
@@ -42,6 +44,7 @@ public struct HomeEntryView: View {
         self.onUnavailableAction = onUnavailableAction
         self.onOpenProduct = onOpenProduct
         self.onReceiveCoupons = onReceiveCoupons
+        self.onShowFeatured = onShowFeatured
     }
 
     public var body: some View {
@@ -73,7 +76,8 @@ public struct HomeEntryView: View {
                                 isActive: isActive, allowsBannerAutoplay: allowsBannerAutoplay,
                                 bannerViewport: bannerViewport, isUserDragging: isPullDragging,
                                 onUnavailableAction: onUnavailableAction,
-                                onOpenProduct: onOpenProduct, onReceiveCoupons: onReceiveCoupons
+                                onOpenProduct: onOpenProduct, onReceiveCoupons: onReceiveCoupons,
+                                onShowFeatured: onShowFeatured
                             )
 
                             // The H0 seven counts stay observable inside an

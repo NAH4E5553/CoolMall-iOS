@@ -14,6 +14,7 @@ struct HomeContentView: View {
     var onUnavailableAction: () -> Void = {}
     var onOpenProduct: ((Int64) -> Void)? = nil
     var onReceiveCoupons: (([CouponClaimOffer]) -> Void)? = nil
+    var onShowFeatured: (() -> Void)? = nil
     var body: some View {
         VStack(spacing: 16) {
             if !snapshot.banners.isEmpty {
@@ -44,7 +45,8 @@ struct HomeContentView: View {
             }
             HomeProductSectionsView(
                 snapshot: snapshot, pipeline: imagePipeline, isActive: isActive,
-                action: onUnavailableAction, onOpenProduct: onOpenProduct)
+                action: onUnavailableAction, onOpenProduct: onOpenProduct,
+                onShowFeatured: onShowFeatured)
         }
     }
     private var surface: Color { colorScheme == .dark ? Color(white: 0.12) : .white }

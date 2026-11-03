@@ -394,7 +394,9 @@ struct RootView: View {
                     ImageUITestMetricsView()
                 }
             #endif
-            Button(action: showUnavailable) {
+            Button {
+                guard router.homePath.isEmpty else { return }; router.append(.search, on: .home)
+            } label: {
                 Label("搜索商品", systemImage: "magnifyingglass")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -414,7 +416,13 @@ struct RootView: View {
                 showsReadVerification: dependencies.showsHomeReadVerification,
                 onUnavailableAction: showUnavailable,
                 onOpenProduct: { router.append(.productDetail(goodsID: $0), on: .home) },
-                onReceiveCoupons: beginClaims
+                onReceiveCoupons: beginClaims,
+                onShowFeatured: {
+                    guard router.homePath.isEmpty else { return }
+                    router.append(
+                        .searchResults(keyword: "", historySaveFailed: false, featuredOnly: true),
+                        on: .home)
+                }
             )
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -551,6 +559,28 @@ struct RootView: View {
     @ViewBuilder
     private func destination(for route: SceneRouter.Route, on tab: SceneRouter.Tab) -> some View {
         switch route {
+        case .search:
+            SearchEntryView(
+                loader: dependencies.searchKeywords, history: dependencies.searchHistory,
+                isActive: router.selectedTab == tab && router.path(on: tab).last == route,
+                onSearch: { keyword, historySaveFailed in
+                    guard router.path(on: tab).last == route else { return }
+                    router.append(
+                        .searchResults(keyword: keyword, historySaveFailed: historySaveFailed),
+                        on: tab)
+                }
+            )
+            .toolbar(.hidden, for: .tabBar).toolbar(.visible, for: .navigationBar)
+        case .searchResults(let keyword, let historySaveFailed, let featuredOnly):
+            SearchResultsEntryView(
+                keyword: keyword, loader: dependencies.searchProducts,
+                categories: dependencies.searchCategories, history: dependencies.searchHistory,
+                historySaveFailed: historySaveFailed, featuredOnly: featuredOnly,
+                imagePipeline: dependencies.searchImagePipeline,
+                isActive: router.selectedTab == tab && router.path(on: tab).last == route,
+                onOpenProduct: { router.append(.productDetail(goodsID: $0), on: tab) }
+            )
+            .toolbar(.hidden, for: .tabBar).toolbar(.visible, for: .navigationBar)
         case .login:
             LoginEntryView(
                 session: dependencies.accountSession, challenges: dependencies.loginChallenges,

@@ -8,13 +8,14 @@ struct HomeProductSectionsView: View {
     let isActive: Bool
     let action: () -> Void
     var onOpenProduct: ((Int64) -> Void)? = nil
+    var onShowFeatured: (() -> Void)? = nil
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .body) private var featuredWidth = 120.0
     var body: some View {
         VStack(spacing: 16) {
             if !snapshot.featured.isEmpty {
-                HomeSectionView(title: "限时精选", key: "flashSale", action: action) {
+                HomeSectionView(title: "限时精选", key: "flashSale", action: onShowFeatured ?? action) {
                     ScrollView(.horizontal) {
                         HStack(alignment: .top, spacing: 12) {
                             ForEach(snapshot.featured, id: \.id) { product in

@@ -113,6 +113,21 @@ class ProjectBoundariesTests(unittest.TestCase):
         data = plistlib.loads(p.read_bytes()); data['application-identifier'] = 'another.application'
         p.write_bytes(plistlib.dumps(data)); self.reject('MOD-06: simulator Keychain identity contents mismatch')
 
+    def test_search_exact_registered_entries_and_store(self):
+        GATE.check(self.root, BINARY)
+
+    def test_search_other_data_file_cannot_import_or_access_swiftdata(self):
+        self.append('import SwiftData\nlet leaked: ModelContext? = nil', target='MallData')
+        self.reject('MOD-01.*SwiftData import is scoped')
+
+    def test_search_unregistered_public_viewmodel_rejected(self):
+        self.append('public struct SearchViewModel {}')
+        self.reject('MOD-02.*implementation type must remain internal')
+
+    def test_search_unregistered_entry_rejected(self):
+        self.append('public struct SearchSettingsEntryView {}')
+        self.reject('MOD-02.*unregistered Feature public type')
+
     def test_footprint_registered_adapter_and_entry(self):
         GATE.check(self.root, BINARY)
 

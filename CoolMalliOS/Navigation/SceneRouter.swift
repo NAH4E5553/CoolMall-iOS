@@ -13,6 +13,8 @@ final class SceneRouter {
     enum Tab: Hashable { case home; case category; case cart; case me }
     enum Route: Hashable {
         case cart
+        case search
+        case searchResults(keyword: String, historySaveFailed: Bool, featuredOnly: Bool = false)
         case orders(filter: OrderFilter)
         case orderDetail(id: Int64)
         case cashier(orderID: Int64)

@@ -2,14 +2,16 @@ import XCTest
 
 final class SearchFlowTests: XCTestCase {
     @MainActor private func launch(
-        _ mode: String = "valid", large: Bool = false, login: Bool = false
+        _ mode: String = "valid", large: Bool = false, login: Bool = false,
+        homeMode: String = "valid", categoryFixture: Bool = false
     ) -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = [
-            "--ui-home-fixture", "valid", "--ui-banner-manual", "--ui-search-fixture", mode,
+            "--ui-home-fixture", homeMode, "--ui-banner-manual", "--ui-search-fixture", mode,
             "--ui-product-detail-fixture", "valid", "--ui-cart-store", UUID().uuidString,
         ]
+        if categoryFixture { app.launchArguments += ["--ui-category-fixture", "valid"] }
         if mode.hasPrefix("history-") { app.launchArguments += ["--ui-search-history-seed"] }
         if login {
             app.launchArguments += ["--ui-account-fixture", "success", "--ui-orders", "valid"]
@@ -48,6 +50,67 @@ final class SearchFlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["search.filter"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["限时精选"].exists)
     }
+    @MainActor func testAllTenHomeCategoriesOpenTheirOwnResultsAndReturnHome() {
+        let app = launch("entry-categories")
+        let firstChildren = [1, 8, 10, 14, 17, 20, 23, 27, 30, 32]
+        for index in 0..<10 {
+            let category = app.buttons["home.category.\(800001 + index)"]
+            XCTAssertTrue(category.waitForExistence(timeout: 10))
+            for _ in 0..<3 { if category.isHittable { break }; app.swipeUp() }
+            XCTAssertTrue(category.isHittable); category.tap()
+            XCTAssertTrue(
+                app.buttons["search.product.\(830000 + firstChildren[index])"].waitForExistence(
+                    timeout: 5))
+            let input = app.textFields["search.input"]
+            XCTAssertTrue(
+                (input.value as? String) == "" || (input.value as? String) == input.placeholderValue
+            )
+            back(app)
+            XCTAssertTrue(app.buttons["home.search"].waitForExistence(timeout: 5))
+        }
+        open(app)
+        XCTAssertFalse(app.buttons["search.history.手机"].exists)
+    }
+
+    @MainActor func testHomeAllGoodsLoadsBeyondPreviewAndKeepsProductsAfterDetailReturn() {
+        let app = launch()
+        XCTAssertFalse(app.buttons["home.goods.more"].exists)
+        let last = app.buttons["home.goods.830013.card"]
+        for _ in 0..<16 { if last.exists && last.isHittable { break }; app.swipeUp() }
+        for _ in 0..<6 { if last.exists && last.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(last.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["home.goods.end"].exists)
+        last.tap(); XCTAssertTrue(app.buttons["detail.back"].waitForExistence(timeout: 5))
+        app.buttons["detail.back"].tap()
+        XCTAssertTrue(last.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["home.goods.end"].exists)
+    }
+
+    @MainActor func testPagedHomeRetainsGoodsAcrossTabsAndRetapRefreshesSamePage() {
+        let app = launch(homeMode: "retap-sequence", categoryFixture: true)
+        XCTAssertFalse(app.buttons["home.goods.more"].exists)
+        let last = app.buttons["home.goods.830013.card"]
+        for _ in 0..<16 { if last.exists && last.isHittable { break }; app.swipeUp() }
+        for _ in 0..<6 { if last.exists && last.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(last.waitForExistence(timeout: 5))
+        let beforeY = last.frame.minY
+        app.tabBars.buttons["分类"].tap()
+        XCTAssertTrue(app.buttons["category.root.800001"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["首页"].tap()
+        XCTAssertTrue(last.waitForExistence(timeout: 5))
+        XCTAssertEqual(last.frame.minY, beforeY, accuracy: 1)
+        XCTAssertTrue(app.staticTexts["home.goods.end"].exists)
+        app.tabBars.buttons["首页"].tap()
+        // The controlled home source adds one item on the real refresh. This proves the
+        // refresh was consumed with a goods pager installed, not just a Tab switch.
+        let refreshedCount = expectation(
+            for: NSPredicate(format: "label == %@", "全部商品：11"),
+            evaluatedWith: app.staticTexts["home.count.goods"])
+        wait(for: [refreshedCount], timeout: 5)
+        XCTAssertTrue(app.buttons["home.category.800001"].isHittable)
+        XCTAssertFalse(app.staticTexts["home.goods.end"].exists)
+    }
+
     @MainActor func testHomeFeaturedUsesResultsPagingSortAndReturnsThroughSameSource() {
         let app = launch(); openFeatured(app)
         XCTAssertTrue(app.buttons["search.product.830001"].waitForExistence(timeout: 5))

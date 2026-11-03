@@ -5,22 +5,27 @@ public struct SearchQuery: Equatable, Sendable {
     public let keyword: String
     /// Home featured collection; false means no featured filter, never featured=false on the wire.
     public let featuredOnly: Bool
+    /// Explicit unfiltered catalogue browse, used by the home goods pager; not a wire field.
+    public let allProducts: Bool
     public let categoryIDs: [Int64]
     public let minimumPrice: Decimal?
     public let maximumPrice: Decimal?
     public let sort: SearchSort
     public init(
         keyword: String, categoryIDs: [Int64] = [], minimumPrice: Decimal? = nil,
-        maximumPrice: Decimal? = nil, sort: SearchSort = .comprehensive, featuredOnly: Bool = false
+        maximumPrice: Decimal? = nil, sort: SearchSort = .comprehensive, featuredOnly: Bool = false,
+        allProducts: Bool = false
     ) {
         self.keyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
         self.featuredOnly = featuredOnly
+        self.allProducts = allProducts
         self.categoryIDs = Array(Set(categoryIDs)).sorted()
         self.minimumPrice = minimumPrice; self.maximumPrice = maximumPrice; self.sort = sort
     }
     public var isValid: Bool {
         if let minimumPrice, let maximumPrice, minimumPrice > maximumPrice { return false }
-        return (!keyword.isEmpty || featuredOnly) && categoryIDs.allSatisfy { $0 > 0 }
+        return (!keyword.isEmpty || featuredOnly || allProducts || !categoryIDs.isEmpty)
+            && categoryIDs.allSatisfy { $0 > 0 }
             && [minimumPrice, maximumPrice].compactMap { $0 }.allSatisfy { !$0.isNaN && $0 >= 0 }
     }
 }

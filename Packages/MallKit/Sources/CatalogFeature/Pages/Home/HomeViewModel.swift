@@ -39,6 +39,7 @@ final class HomeViewModel {
     }
 
     private(set) var state: State = .idle
+    let goods: HomeGoodsViewModel?
     private let home: any HomeLoading
     private var generation = 0
     private var retainedState: State?
@@ -149,6 +150,7 @@ final class HomeViewModel {
     private func startOwnedRead(
         debounced: Bool, bumpsTicket: Bool, fullPageReload: Bool = false
     ) -> Task<Void, Never> {
+        goods?.setActive(false)
         generation += 1
         ownedTask?.cancel()
         finishRefresh(refreshTicket)
@@ -225,8 +227,9 @@ final class HomeViewModel {
         waiter.resume()
     }
 
-    init(home: any HomeLoading) {
+    init(home: any HomeLoading, goods: (any ProductSearchLoading)? = nil) {
         self.home = home
+        self.goods = goods.map { HomeGoodsViewModel(loader: $0) }
     }
 
     /// Single drive entry for the view's one `.task(id:)`, keyed by visibility
@@ -247,6 +250,7 @@ final class HomeViewModel {
         // running (R-HOME-02-R1-04): returning replays the visibility path
         // only and never auto-retries; a later explicit retry still can.
         isActive = active
+        goods?.setActive(active && !hasPendingOwnedRequest)
         guard active else {
             lastConsumedRetryToken = retryToken
             suspend()
@@ -265,6 +269,7 @@ final class HomeViewModel {
     /// indicator and clears an un-run accepted refresh (returning to the page
     /// never re-fires it), restoring the retained state (or idle).
     func handleVisibility(_ active: Bool) async {
+        goods?.setActive(active && !hasPendingOwnedRequest)
         if active {
             await loadIfNeeded()
         } else {
@@ -390,6 +395,7 @@ final class HomeViewModel {
                 isRefreshing = false
                 hasPendingOwnedRequest = false
                 ownedTask = nil
+                goods?.setActive(isActive)
             }
         }
         do {
@@ -434,6 +440,7 @@ final class HomeViewModel {
     }
 
     private func commitDisplayState(for snapshot: HomeSnapshot) {
+        goods?.reset()
         let displayEmpty =
             snapshot.banners.isEmpty
             && snapshot.categories.isEmpty
@@ -441,7 +448,7 @@ final class HomeViewModel {
             && snapshot.recommendations.isEmpty
             && snapshot.goods.isEmpty
             && snapshot.coupons.isEmpty
-        let next: State = displayEmpty ? .empty(snapshot) : .ready(snapshot)
+        let next: State = displayEmpty && goods == nil ? .empty(snapshot) : .ready(snapshot)
         state = next
         retainedState = next
     }
@@ -451,6 +458,7 @@ final class HomeViewModel {
     /// it), and restore the retained state (or idle); the cancelled task's
     /// stale commit is rejected by the generation guard.
     private func suspend() {
+        goods?.setActive(false)
         generation += 1
         ownedTask?.cancel()
         ownedTask = nil

@@ -9,6 +9,8 @@ struct HomeProductSectionsView: View {
     let action: () -> Void
     var onOpenProduct: ((Int64) -> Void)? = nil
     var onShowFeatured: (() -> Void)? = nil
+    var goodsModel: HomeGoodsViewModel? = nil
+    var viewport = CGRect.zero
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .body) private var featuredWidth = 120.0
@@ -40,28 +42,62 @@ struct HomeProductSectionsView: View {
                     }
                 }
             }
-            if !snapshot.goods.isEmpty {
+            if !goods.isEmpty || goodsModel != nil {
                 HomeSectionView(title: "全部商品", key: "goods") {
                     if typeSize.isAccessibilitySize {
                         // Measure these finite single-column rows together so
                         // Tab transitions retain the same content height.
                         VStack(alignment: .leading, spacing: 12) {
-                            ForEach(snapshot.goods, id: \.id) { product in
+                            ForEach(goods, id: \.id) { product in
                                 card(product, key: "goods", role: .goods)
                             }
                         }
                     } else {
                         HomeWaterfallLayout {
-                            ForEach(snapshot.goods, id: \.id) { product in
+                            ForEach(goods, id: \.id) { product in
                                 card(product, key: "goods", role: .goods)
                             }
                         }
                     }
+                    if let goodsModel { goodsFooter(goodsModel) }
                 }
             }
         }
     }
     private var surface: Color { colorScheme == .dark ? Color(white: 0.12) : .white }
+    private var goods: [HomeProductSummary] {
+        goodsModel?.products(fallback: snapshot.goods) ?? snapshot.goods
+    }
+
+    @ViewBuilder private func goodsFooter(_ model: HomeGoodsViewModel) -> some View {
+        if !model.state.hasLoaded || model.state.nextPage != nil {
+            VStack(spacing: 8) {
+                if model.state.failure != nil || model.state.appendFailure != nil {
+                    Text("加载失败，请重试").font(.footnote).foregroundStyle(.secondary)
+                }
+                if model.state.operation != nil { ProgressView() }
+                if model.state.failure != nil || model.state.appendFailure != nil {
+                    Button("重试加载") { model.loadMore() }
+                        .disabled(!isActive || model.state.operation != nil)
+                        .accessibilityIdentifier("home.goods.retry")
+                }
+            }.frame(maxWidth: .infinity, minHeight: 44).padding(.vertical, 8)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("home.goods.tail")
+                // VStack eagerly creates children; onAppear alone is not proof of reaching the tail.
+                .onGeometryChange(for: Bool.self) { geometry in
+                    isActive && viewport.height > 0
+                        && geometry.frame(in: .global).intersects(viewport)
+                } action: {
+                    model.tailVisibilityChanged($0)
+                }
+                .onDisappear { model.tailVisibilityChanged(false) }
+        } else {
+            Text(goods.isEmpty ? "暂无商品" : "没有更多商品了")
+                .font(.footnote).foregroundStyle(.secondary).padding()
+                .accessibilityIdentifier("home.goods.end")
+        }
+    }
 
     private func card(_ product: HomeProductSummary, key: String, role: HomeProductCardView.Role)
         -> some View
@@ -75,7 +111,7 @@ struct HomeProductSectionsView: View {
     }
 }
 
-/// Finite home first-page cards are measured together, preserving source order
+/// Loaded home cards are measured together, preserving source order
 /// and stable content height across Tab transitions. Each next item uses the
 /// shortest column; the first pair starts on the same top edge.
 private struct HomeWaterfallLayout: Layout {

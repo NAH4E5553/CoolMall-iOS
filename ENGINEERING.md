@@ -737,7 +737,7 @@ SwiftUI View 通常是值类型，公共 UI 以组合复用。计划组件如下
 
 采用 MainActor 管理 UI 协调器不代表 await 前后的状态不会变化；await 返回后仍检查 generation/requestID。去重策略明确：保留原有顺序，相同 ID 用最新实体更新。total 动态变化时不以去重后的条目数量随意推导下一页，优先服务端分页合同。
 
-触底事件可能因懒布局提前或重复发生，所以不能直接在每个 cell.onAppear 中执行 page += 1。首版自动触发每个有效尾部出现周期至多一次，并提供“加载更多”按钮；短内容如需自动补满一屏，必须有明确上限/无进展检测，防止自动拉完整个数据集。尾部失败后不因继续可见而无限自动重试。
+触底事件可能因懒布局提前或重复发生，所以不能直接在每个 cell.onAppear 中执行 page += 1。首版自动触发每个有效尾部出现周期至多一次，并提供“加载更多”按钮；2026-11-03用户明确覆盖首页这一处：正常态隐藏按钮，滑到底自动加载，失败只保留重试；首次预览校准page1后可为同次触底追加一次page2，不再连续递归。其他页面不随之改动。短内容如需自动补满一屏，必须有明确上限/无进展检测，防止自动拉完整个数据集。尾部失败后不因继续可见而无限自动重试。
 
 通用分页机制不包含商品筛选 UI、登录导航或统一 Toast。复用的是状态转换与一致性规则，不是强制所有页面采用同一种列表布局。
 
@@ -789,6 +789,7 @@ Alamofire 可在大量复杂上传/拦截等需求经评估后替换底层实现
 - 图片缓存 key 考虑尺寸与必要的账号范围；列表缩略图不解码完整超大图，配置内存/磁盘限额和清理策略。
 - 图片通常从 CDN 获取，不统一附加商城 Token；需要认证的图片通过单独受限配置处理，切换用户清理私有缓存。
 - 确认取消、复用、离屏、后台恢复和解码的性能行为。图片 URL 刷新后正确失效，不能每次渲染都生成随机缓存 key。
+- 2026-11-03用户明确要求push/pop保留来源页图片：isEnabled只控制请求活动，不销毁已成功的展示。RemoteImage内部沿用同一NukeUI.FetchImage所有者，失活/离屏cancel而非reset；URL/像素尺寸/模式/管线身份改变时才重建，禁止把旧资源图片带到新资源。无新公开接口、SDK或页面图片缓存副本。
 - MallImages 已按 SPLIT-03 独立为 Target；RemoteImage 与管线适配放其中，Feature 只用包装后的入口。App 配置共享管线，公开接口不泄漏三方类型。使用系统 AsyncImage 的轻量方案可先在 DesignSystem/Images；不能因图片加载例外允许 UI 调用业务 HTTP。
 
 系统 AsyncImage 适合简单场景或原型，但不能用它的存在推断项目已经具备完整可控的商品图片缓存策略。[Nuke 项目能力说明](https://github.com/kean/Nuke)
@@ -1207,6 +1208,8 @@ Apple 的 Xcode 27 支持表列出 iOS 17 及以上模拟器；但 Xcode 27 发�
 
 ### 7.5 例外与规则变更
 
+2026-11-03 HOME-CATALOG-NAV-PAGING-01 / CHANGE-02：用户要求首页10分类和分类Tab二级分类进入既有搜索结果页，并修正首页全部商品缺少后续加载。最小公开增量为HomeEntryView的可选onOpenCategory([Int64])和商品分页能力注入、SearchResultsEntryView的categoryIDs默认空数组、SearchQuery的allProducts默认false。首页分类按categoryAll取直接子ID，无子节点使用所点ID，二级分类传真实单ID；App类型化路由保留来源Tab。分类查询允许空词但必须有正数分类ID；全商品空词仅显式allProducts有效，不编码新服务端字段。首页分页复用ProductSearchLoading/NumberedPageCoordinator，首次触底从page1读取权威分页再追加，避免假设首页goods条数等于分页size；成功刷新重置、刷新开始/离页取消旧追加，失败保留旧商品。无新Target/SDK/依赖/存储/CI修改，不放宽既有断言或预算。2026-11-04用户确认分类跳转、首页自动续页及图片保留手动验收通过；Debug构建和Astra独立静态复验通过，原生自动化测试本轮未执行。
+
 2026-10-28 SEARCH-WIDTH-FEATURED-01 / CHANGE-02：用户明确要求搜索发现框填满原生返回右侧及首页精选查看全部复用搜索结果。增量公开合同仅SearchQuery.featuredOnly默认false、SearchResultsEntryView同默认参数及HomeEntryView可选onShowFeatured意图；App为实际消费者并以typed route保留来源。Core空词仅featuredOnly有效，Data精选编码true/普通省略、空词省略keyWord，结果VM排序/筛选/改词保留范围。无新Target/SDK/schema/写入权/规则放宽；固定Android cf5029b及本轮匿名1000/9项分页读取为合同证据。状态/取消/验证见本地Evidence/iOS/2026-10-28-SEARCH-WIDTH-FEATURED/scope.md。
 
 2026-10-27 SEARCH-V1 v0.2 / CHANGE-02：用户明确确认整卡并授权开发，历史采用环境+游客/账号独立最近10词、去重置顶、清空确认、无登录合并。CatalogFeature新增SearchEntryView/SearchResultsEntryView两个公开入口，Core新增不可变SearchQuery/SearchSort/SearchProductSummary及热词/搜索/历史窄能力和scope/snapshot；Data新增HTTPProductSearchService及唯一PersistentSearchHistoryStore，独立VersionedSchema v1、不迁移或复用Cart/Footprint库。SwiftData仅新增该适配器精确路径登记，Feature VM/DTO保持内部。App组装同scope唯一store、类型化来源导航；筛选草稿/排序/布局归结果VM，沿用Core分页协调器和既有CategoryLoading/MallImages。不新增Target/SDK/依赖/CI政策，不改订单工作树。批准规格与状态/取消/验收合同见本地Evidence/Specs/2026-10-27-SEARCH-V1/PLAN.md v0.2。
@@ -1292,6 +1295,8 @@ Apple 的 Xcode 27 支持表列出 iOS 17 及以上模拟器；但 Xcode 27 发�
 每项基础能力的完成定义：有真实使用场景、最小清晰 API、正确归属、失败/取消合同、自动化验证和必要的设备验证；不存在第二套页面私有实现绕过它；文档状态更新为实际结果。
 
 ### 8.3 当前实施状态
+
+2026-11-04 HOME-CATALOG-NAV-PAGING-01：首页/分类Tab到搜索结果路由、首页触底自动续页及来源页图片保留已由用户手动验收通过；Debug构建与Astra独立静态复验通过，原生自动化测试本轮未执行。公开合同及首页分页交互见7.5、4.5和4.7；CI保持关闭。
 
 首页、分类、商品详情与分页评价、购物车、账号/地址/优惠券/足迹、订单/结算和搜索的既有实现已合入main，维护者已完成本轮手动验收。App唯一组装依赖与跨Feature导航；模块边界和公开入口以第3章矩阵、7.5合同及源码检查器为准。
 

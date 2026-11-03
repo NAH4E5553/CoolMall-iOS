@@ -12,10 +12,16 @@ struct AppDependencies {
     let products = FixtureProductService()
     let cart = FakeCartStore(scope: CartScope(environment: "fixture", accountID: nil))
     let home: any HomeLoading
+    let productReviews: any ProductReviewsLoading
+    let productDetails: any ProductDetailLoading
+    let category: any CategoryLoading
     let imagePipeline: MallImagePipeline?
 
     #if DEBUG
         let homeTesting = HomeUITestSupport()
+        let productDetailTesting = ProductDetailUITestService.make(
+            arguments: ProcessInfo.processInfo.arguments)
+        let categoryTesting: CategoryUITestSupport
         private(set) var imageTesting: ImageUITestSupport?
     #endif
 
@@ -37,9 +43,35 @@ struct AppDependencies {
         return imagePipeline
     }
 
+    var detailImagePipeline: MallImagePipeline? {
+        #if DEBUG
+            if productDetailTesting != nil { return nil }
+        #endif
+        return imagePipeline
+    }
+
     var showsHomeReadVerification: Bool {
         #if DEBUG
             homeTesting.fixtureMode != nil
+        #else
+            false
+        #endif
+    }
+
+    /// Category fixtures stay offline-deterministic: only an explicit home
+    /// image fixture supplies a controlled pipeline; a category fixture alone
+    /// therefore renders the documented image placeholders. Normal Debug and
+    /// Release use the same production image pipeline as home.
+    var categoryImagePipeline: MallImagePipeline? {
+        #if DEBUG
+            if categoryTesting.mode != nil { return imageTesting?.pipeline }
+        #endif
+        return imagePipeline
+    }
+
+    var showsCategoryReadVerification: Bool {
+        #if DEBUG
+            categoryTesting.mode != nil
         #else
             false
         #endif
@@ -69,6 +101,8 @@ struct AppDependencies {
 
     init() {
         #if DEBUG
+            let categorySupport = CategoryUITestSupport()
+            categoryTesting = categorySupport
             let controlled = ImageUITestSupport(mode: homeTesting.fixtureMode)
             imageTesting = controlled
             imagePipeline = controlled != nil ? controlled?.pipeline : Self.makeProductionImages()
@@ -77,13 +111,31 @@ struct AppDependencies {
         #endif
         let environment = APIEnvironment(baseURL: Self.homeBaseURL)
         #if DEBUG
+            productReviews =
+                ProductReviewsUITestService.make(arguments: ProcessInfo.processInfo.arguments)
+                ?? HTTPProductReviewsService(environment: environment)
+            productDetails =
+                productDetailTesting ?? HTTPProductDetailService(environment: environment)
+        #else
+            productReviews = HTTPProductReviewsService(environment: environment)
+            productDetails = HTTPProductDetailService(environment: environment)
+        #endif
+        #if DEBUG
             if let testService = homeTesting.service {
                 home = testService
             } else {
                 home = HTTPHomeService(environment: environment)
             }
+            if categorySupport.configError {
+                category = ConfigErrorCategoryService()
+            } else if let testService = categorySupport.service {
+                category = testService
+            } else {
+                category = HTTPCategoryService(environment: environment)
+            }
         #else
             home = HTTPHomeService(environment: environment)
+            category = HTTPCategoryService(environment: environment)
         #endif
     }
 }

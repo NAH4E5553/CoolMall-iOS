@@ -12,6 +12,8 @@ struct RootView: View {
         @Environment(\.scenePhase) private var bannerAuditScenePhase
     #endif
     @State private var unavailableNotice: UUID?
+    @State private var categoryUnavailableNotice: UUID?
+    @State private var categoryRequestedChildID: Int64?
     #if DEBUG
         private let navTestControl: NavigationTestControl
     #endif
@@ -64,19 +66,10 @@ struct RootView: View {
             .tabItem { Label("首页", systemImage: "house") }
             .tag(SceneRouter.Tab.home)
             NavigationStack(path: $router.categoryPath) {
-                PendingTabView(
-                    marker: "category.pending",
-                    title: "分类",
-                    detail: "分类页面待接入 · 本入口为导航占位",
-                    pushProbe: { router.categoryPath.append(.fixturePathProbe(label: "category")) },
-                    // NAV-03: non-home source entry with the TC-NAV-05 fixture id.
-                    openProductDetail: {
-                        router.append(.productDetail(goodsID: 830001), on: .category)
+                categoryRoot
+                    .navigationDestination(for: SceneRouter.Route.self) { route in
+                        destination(for: route, on: .category)
                     }
-                )
-                .navigationDestination(for: SceneRouter.Route.self) { route in
-                    destination(for: route, on: .category)
-                }
             }
             .tabItem { Label("分类", systemImage: "square.grid.2x2") }
             .tag(SceneRouter.Tab.category)
@@ -120,6 +113,88 @@ struct RootView: View {
         #else
             return true
         #endif
+    }
+
+    /// Category tab root (CATEGORY-01). Normal Debug/Release show the real
+    /// read page; the existing DEBUG navigation-fixture launch keeps the
+    /// original engineering placeholder root so NAV-02/03 path/identity
+    /// assertions remain unchanged. A present-but-invalid category fixture flag
+    /// fails closed to an explicit configuration error.
+    @ViewBuilder
+    private var categoryRoot: some View {
+        #if DEBUG
+            if dependencies.categoryTesting.configError {
+                CategoryTestConfigErrorView()
+            } else if dependencies.categoryTesting.mode != nil {
+                categoryReadRoot
+            } else if dependencies.homeTesting.root == .catalogFixture {
+                categoryFixtureRoot
+            } else {
+                categoryReadRoot
+            }
+        #else
+            categoryReadRoot
+        #endif
+    }
+
+    private var categoryReadRoot: some View {
+        CategoryEntryView(
+            categories: dependencies.category,
+            isActive: router.selectedTab == .category && router.categoryPath.isEmpty,
+            imagePipeline: dependencies.categoryImagePipeline,
+            showsReadVerification: dependencies.showsCategoryReadVerification,
+            // F-CATEGORY-05 navigation INTENT only: the real direct-child id is
+            // handed to the App; the product list (LIST-01) does not exist yet,
+            // so no list page is faked. The explicit unavailable feedback is not
+            // evidence that F-CATEGORY-05 is implemented.
+            onOpenSubcategory: { id in
+                categoryRequestedChildID = id
+                categoryUnavailableNotice = UUID()
+            }
+        )
+        .overlay(alignment: .topTrailing) {
+            // Controlled DEBUG consumer marker for the approved Int64 callback
+            // contract (F-CATEGORY-05 design only): records the real direct-child
+            // id without asserting the unavailable placeholder or LIST-01.
+            if dependencies.showsCategoryReadVerification {
+                Text(verbatim: "请求子分类：\(categoryRequestedChildID.map { String($0) } ?? "无")")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(8)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("category.requestedChild")
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if categoryUnavailableNotice != nil {
+                Text("暂未开放").font(.body).padding(12)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding().accessibilityIdentifier("category.unavailable")
+            }
+        }
+        .task(id: categoryUnavailableNotice) {
+            guard let notice = categoryUnavailableNotice else { return }
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            if categoryUnavailableNotice == notice { categoryUnavailableNotice = nil }
+        }
+    }
+
+    /// NAV-02/NAV-03 engineering shell: same per-tab path probe and fixture
+    /// product entry as before the real category page. DEBUG navigation-fixture
+    /// launches only; never reachable in normal Debug/Release.
+    private var categoryFixtureRoot: some View {
+        PendingTabView(
+            marker: "category.pending",
+            title: "分类",
+            detail: "分类页面待接入 · 本入口为导航占位",
+            pushProbe: { router.categoryPath.append(.fixturePathProbe(label: "category")) },
+            // NAV-03: non-home source entry with the TC-NAV-05 fixture id.
+            openProductDetail: {
+                router.append(.productDetail(goodsID: 830001), on: .category)
+            }
+        )
     }
 
     /// HOME-01 root selection. Normal Debug/Release show the real read UI with
@@ -196,7 +271,8 @@ struct RootView: View {
                 imagePipeline: dependencies.homeImagePipeline,
                 allowsBannerAutoplay: allowsBannerAutoplay,
                 showsReadVerification: dependencies.showsHomeReadVerification,
-                onUnavailableAction: showUnavailable
+                onUnavailableAction: showUnavailable,
+                onOpenProduct: { router.append(.productDetail(goodsID: $0), on: .home) }
             )
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -218,6 +294,40 @@ struct RootView: View {
 
     private func showUnavailable() { unavailableNotice = UUID() }
 
+    @ViewBuilder
+    private func productDetail(goodsID: Int64, on tab: SceneRouter.Tab) -> some View {
+        #if DEBUG
+            if case .catalogFixture = dependencies.homeTesting.root {
+                // Only the pre-existing explicit navigation fixture retains its
+                // identity/cart probe. Normal Debug and Release use the real entry.
+                ProductDetailPlaceholderView(
+                    goodsID: goodsID,
+                    openCart: { router.append(.cart, on: tab) }
+                )
+                .toolbar(.visible, for: .navigationBar)
+            } else {
+                realProductDetail(goodsID: goodsID, on: tab)
+            }
+        #else
+            realProductDetail(goodsID: goodsID, on: tab)
+        #endif
+    }
+
+    private func realProductDetail(goodsID: Int64, on tab: SceneRouter.Tab) -> some View {
+        let path: [SceneRouter.Route]
+        switch tab {
+        case .home: path = router.homePath
+        case .category: path = router.categoryPath
+        case .cart: path = router.cartPath
+        case .me: path = router.mePath
+        }
+        return ProductDetailEntryView(
+            productID: goodsID, loader: dependencies.productDetails,
+            imagePipeline: dependencies.detailImagePipeline,
+            isActive: router.selectedTab == tab && path.last == .productDetail(goodsID: goodsID),
+            onShowAllReviews: { router.append(.productReviews(goodsID: $0), on: tab) })
+    }
+
     /// Pushed routes cover the tab bar (the PRD-016 pattern from NAV-01), so
     /// re-tapping the current tab stays reachable only at tab roots, where the
     /// system pop-to-root is a no-op (PRD-013/NAV-R02; iOS 18+ auto-pops on
@@ -232,15 +342,15 @@ struct RootView: View {
                 .toolbar(.hidden, for: .tabBar)
                 .toolbar(.visible, for: .navigationBar)
         case .productDetail(let goodsID):
-            // The cart intent from a detail pushes onto the SAME stack, so back
-            // restores this detail (same goodsId, same page identity) without
-            // touching the source tab (NAV-R03).
-            ProductDetailPlaceholderView(
-                goodsID: goodsID,
-                openCart: { router.append(.cart, on: tab) }
+            productDetail(goodsID: goodsID, on: tab)
+                .toolbar(.hidden, for: .tabBar)
+        case .productReviews(let goodsID):
+            ProductReviewsEntryView(
+                productID: goodsID, loader: dependencies.productReviews,
+                imagePipeline: dependencies.detailImagePipeline,
+                isActive: router.selectedTab == tab
             )
             .toolbar(.hidden, for: .tabBar)
-            .toolbar(.visible, for: .navigationBar)
         case .fixturePathProbe(let label):
             FixturePathProbeView(label: label)
                 .toolbar(.hidden, for: .tabBar)
@@ -286,29 +396,32 @@ private struct PendingTabView: View {
 /// received, page identity across an independent-cart round trip, and the cart
 /// intent staying on the source stack. No loading, no cart writes, no network,
 /// no persistence; superseded by the real detail task.
-private struct ProductDetailPlaceholderView: View {
-    let goodsID: Int64
-    let openCart: () -> Void
-    @State private var identityTicks = 0
-    var body: some View {
-        VStack(spacing: 20) {
-            FixtureNoticeView(
-                title: "商品详情（工程夹具）",
-                detail: "真实详情待接入 · 仅验证类型化导航与商品ID传递"
-            )
-            // verbatim: keep the raw goodsId (no localized digit grouping).
-            Text(verbatim: "商品ID：\(goodsID)")
-                .accessibilityIdentifier("detail.goodsID")
-            Text("详情身份：\(identityTicks)")
-                .accessibilityIdentifier("detail.identity")
-            Button("详情身份 +1") { identityTicks += 1 }
-                .accessibilityIdentifier("detail.tick")
-            Button("打开独立购物车", action: openCart)
-                .accessibilityIdentifier("detail.openCart")
+#if DEBUG
+    private struct ProductDetailPlaceholderView: View {
+        let goodsID: Int64
+        let openCart: () -> Void
+        @State private var identityTicks = 0
+        var body: some View {
+            VStack(spacing: 20) {
+                FixtureNoticeView(
+                    title: "商品详情（工程夹具）",
+                    detail: "真实详情待接入 · 仅验证类型化导航与商品ID传递"
+                )
+                // verbatim: keep the raw goodsId (no localized digit grouping).
+                Text(verbatim: "商品ID：\(goodsID)")
+                    .accessibilityIdentifier("detail.goodsID")
+                Text("详情身份：\(identityTicks)")
+                    .accessibilityIdentifier("detail.identity")
+                Button("详情身份 +1") { identityTicks += 1 }
+                    .accessibilityIdentifier("detail.tick")
+                Button("打开独立购物车", action: openCart)
+                    .accessibilityIdentifier("detail.openCart")
+            }
+            .navigationTitle("商品详情")
         }
-        .navigationTitle("商品详情")
     }
-}
+
+#endif
 
 /// NAV-02 engineering fixture: makes per-tab path push/pop and page identity
 /// observable before any real screen exists. No requests, no persistence, no

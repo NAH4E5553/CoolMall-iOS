@@ -12,9 +12,10 @@ final class SceneRouter {
     enum Tab: Hashable { case home; case category; case cart; case me }
     enum Route: Hashable {
         case cart
-        /// NAV-03 typed route. The placeholder destination only displays the
-        /// goodsId; it loads nothing and writes nothing.
+        /// Typed route into the real read-only detail entry. The explicit DEBUG
+        /// catalog fixture retains its original navigation-only probe.
         case productDetail(goodsID: Int64)
+        case productReviews(goodsID: Int64)
         /// Engineering fixture only: keeps per-tab path behavior observable until
         /// real typed routes replace it. Not a business destination.
         case fixturePathProbe(label: String)

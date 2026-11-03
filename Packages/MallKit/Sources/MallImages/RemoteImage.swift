@@ -10,24 +10,28 @@ public struct RemoteImage: View {
     private let contentMode: ContentMode
     private let pipeline: MallImagePipeline
     private let isEnabled: Bool
+    private let preservesIntrinsicAspectRatio: Bool
     @Environment(\.displayScale) private var displayScale
 
     public init(
         url: URL?, targetSize: CGSize, contentMode: ContentMode = .fill,
-        pipeline: MallImagePipeline, isEnabled: Bool = true
+        pipeline: MallImagePipeline, isEnabled: Bool = true,
+        preservesIntrinsicAspectRatio: Bool = false
     ) {
         self.url = url
         self.targetSize = targetSize
         self.contentMode = contentMode
         self.pipeline = pipeline
         self.isEnabled = isEnabled
+        self.preservesIntrinsicAspectRatio = preservesIntrinsicAspectRatio
     }
 
     public var body: some View {
         Group {
             if let request = pipeline.request(
                 url: url, targetSize: targetSize, scale: displayScale,
-                contentMode: contentMode, isEnabled: isEnabled)
+                contentMode: preservesIntrinsicAspectRatio ? .fill : contentMode,
+                isEnabled: isEnabled)
             {
                 LazyImage(request: request) { state in
                     if let image = state.image {
@@ -53,12 +57,16 @@ public struct RemoteImage: View {
                     ImageIdentity(
                         pipeline: ObjectIdentifier(pipeline), scale: displayScale, url: url,
                         width: ceil(targetSize.width * displayScale),
-                        height: ceil(targetSize.height * displayScale), mode: contentMode == .fill))
+                        height: ceil(targetSize.height * displayScale), mode: contentMode == .fill,
+                        natural: preservesIntrinsicAspectRatio))
             } else {
                 placeholder.accessibilityLabel("暂无图片").accessibilityIdentifier("home.image.missing")
             }
         }
-        .frame(width: validDimension(targetSize.width), height: validDimension(targetSize.height))
+        .frame(
+            width: validDimension(targetSize.width),
+            height: preservesIntrinsicAspectRatio ? nil : validDimension(targetSize.height)
+        )
         .clipped()
     }
 
@@ -67,6 +75,7 @@ public struct RemoteImage: View {
             .overlay {
                 Image(systemName: "photo").foregroundStyle(.secondary).accessibilityHidden(true)
             }
+            .frame(height: preservesIntrinsicAspectRatio ? validDimension(targetSize.width) : nil)
             .accessibilityElement(children: .ignore)
     }
 
@@ -82,4 +91,5 @@ private struct ImageIdentity: Hashable {
     let width: CGFloat
     let height: CGFloat
     let mode: Bool
+    let natural: Bool
 }

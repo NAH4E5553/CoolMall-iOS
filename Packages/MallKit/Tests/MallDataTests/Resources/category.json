@@ -1,0 +1,436 @@
+{
+  "code": 1000,
+  "data": [
+    {
+      "id": 800010,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "厨房个护",
+      "parentId": null,
+      "sortNum": 10,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/1bbeb41e0862ec2c21476ba94f6ba2e5.png",
+      "status": 1
+    },
+    {
+      "id": 800009,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "清洁电器",
+      "parentId": null,
+      "sortNum": 9,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/25d33be2da277d1a496108e26bd7dbd3.png",
+      "status": 1
+    },
+    {
+      "id": 800008,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "出行箱包",
+      "parentId": null,
+      "sortNum": 8,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/bc79b587f48b5fb0347b94e7a8d41c59.png",
+      "status": 1
+    },
+    {
+      "id": 800007,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "智能家居",
+      "parentId": null,
+      "sortNum": 7,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/8042622c171f6a496ac0d26fba7de806.png",
+      "status": 1
+    },
+    {
+      "id": 801007,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "数字系列",
+      "parentId": 800001,
+      "sortNum": 7,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/E20AE17ABD62C9488E7431DC6A2DC285_1781670189574.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 800006,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "生活家电",
+      "parentId": null,
+      "sortNum": 6,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-pub/202512041557_e9dd6dc9fb97d3647f7502f0375b48ae.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801006,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "Turbo系列",
+      "parentId": 800001,
+      "sortNum": 6,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/CEB7AFD0F29D6370A7F93189B6DEF3B4_1769590068861.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 800005,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "电视影音",
+      "parentId": null,
+      "sortNum": 5,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-pub/202604022141_0e6f130e2c3d2a6b12e691e809701cd0.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801005,
+      "createTime": "2026-07-15 21:23:55",
+      "updateTime": "2026-07-15 21:23:55",
+      "name": "Note系列",
+      "parentId": 800001,
+      "sortNum": 5,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/E20AE17ABD62C9488E7431DC6A2DC285_1783927134351.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801026,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "智能控制",
+      "parentId": 800007,
+      "sortNum": 4,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/54758fdc13ace36fccc72e95236d4242.png",
+      "status": 1
+    },
+    {
+      "id": 800004,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "电脑办公",
+      "parentId": null,
+      "sortNum": 4,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/C1572C948AF981FF1DE447A141DA50A1_1773816459525.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801013,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "其他穿戴",
+      "parentId": 800003,
+      "sortNum": 4,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/f33461327d8828ca796ccb24f98613a5.png",
+      "status": 1
+    },
+    {
+      "id": 801004,
+      "createTime": "2026-07-15 21:23:55",
+      "updateTime": "2026-07-15 21:23:55",
+      "name": "K系列",
+      "parentId": 800001,
+      "sortNum": 4,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/B63BA6D6C31982C1D444549CB04677CE_1782466391345.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801025,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "智能安防",
+      "parentId": 800007,
+      "sortNum": 3,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/5635f133feb2cb8cdedd79c9d026db50.png",
+      "status": 1
+    },
+    {
+      "id": 800003,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "穿戴",
+      "parentId": null,
+      "sortNum": 3,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/248eed6c3ef05b8db264bf35171c1d28.png",
+      "status": 1
+    },
+    {
+      "id": 801029,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "箱包",
+      "parentId": 800008,
+      "sortNum": 3,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/bc410b4a52a52e9b1e351d510694ac1e.png",
+      "status": 1
+    },
+    {
+      "id": 801012,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "智能耳机",
+      "parentId": 800003,
+      "sortNum": 3,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/D0E10BCEEBC7A9BA1F00DF89235F4167_1782465398226.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801016,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "办公配件",
+      "parentId": 800004,
+      "sortNum": 3,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/e8c74026176502da03d220b2656896f9.png",
+      "status": 1
+    },
+    {
+      "id": 801019,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "巨幕影院",
+      "parentId": 800005,
+      "sortNum": 3,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-pub/202604031142_aaa7f0dbc126288ccc677c0433a1294f.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801022,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "波轮洗衣机",
+      "parentId": 800006,
+      "sortNum": 3,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/B76B867CDF53BA981BA816815E25E9AA_1772020114988.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801003,
+      "createTime": "2026-07-15 21:23:55",
+      "updateTime": "2026-07-15 21:23:55",
+      "name": "Xiaomi Civi",
+      "parentId": 800001,
+      "sortNum": 3,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-pub/202505201429_30b6018560c07bc7670cc3ac79070a0c.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801024,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "路由器",
+      "parentId": 800007,
+      "sortNum": 2,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/41e7159c2942d1dd46b19d60fa414958.png",
+      "status": 1
+    },
+    {
+      "id": 800002,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "平板",
+      "parentId": null,
+      "sortNum": 2,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/5F57C13CC5760A1CE19BA7767AF14B91_1784013320765.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801028,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "运动健康",
+      "parentId": 800008,
+      "sortNum": 2,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/29c014a26bb3c369facb494396e0a79d.png",
+      "status": 1
+    },
+    {
+      "id": 801031,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "环境电器",
+      "parentId": 800009,
+      "sortNum": 2,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/eb4112f1419174555a2e569ce3127d82.png",
+      "status": 1
+    },
+    {
+      "id": 801033,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "个护电器",
+      "parentId": 800010,
+      "sortNum": 2,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/668a9413a4e3cee3cfad8c123023ad9e.png",
+      "status": 1
+    },
+    {
+      "id": 801009,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "Xiaomi平板",
+      "parentId": 800002,
+      "sortNum": 2,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-pub/202509191727_13ba499e402ae503600b06a349384c4f.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801011,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "智能手表",
+      "parentId": 800003,
+      "sortNum": 2,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/29aaa61a54326c95879064981df2e62f.png",
+      "status": 1
+    },
+    {
+      "id": 801015,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "显示器",
+      "parentId": 800004,
+      "sortNum": 2,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/7a982fc4a31c6df574046bca74414e63.png",
+      "status": 1
+    },
+    {
+      "id": 801018,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "性价比爆款",
+      "parentId": 800005,
+      "sortNum": 2,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-pub/202603270947_32e4fc813e45c1c261488f8a9fae8020.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801021,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "主推新品",
+      "parentId": 800006,
+      "sortNum": 2,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/214CD68B0E3CD65B3B9FD01DF834A6EF_1779162429339.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801002,
+      "createTime": "2026-07-15 21:23:55",
+      "updateTime": "2026-07-15 21:23:55",
+      "name": "Xiaomi MIX系列",
+      "parentId": 800001,
+      "sortNum": 2,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-pub/202506251658_d1ee9fc2e13ddad3cf6823ce4cbf45b5.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801027,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "户外出行",
+      "parentId": 800008,
+      "sortNum": 1,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/bc79b587f48b5fb0347b94e7a8d41c59.png",
+      "status": 1
+    },
+    {
+      "id": 801030,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "清洁电器",
+      "parentId": 800009,
+      "sortNum": 1,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/25d33be2da277d1a496108e26bd7dbd3.png",
+      "status": 1
+    },
+    {
+      "id": 801032,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "厨房小电",
+      "parentId": 800010,
+      "sortNum": 1,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/1bbeb41e0862ec2c21476ba94f6ba2e5.png",
+      "status": 1
+    },
+    {
+      "id": 801008,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "REDMI平板",
+      "parentId": 800002,
+      "sortNum": 1,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/5F57C13CC5760A1CE19BA7767AF14B91_1784013320765.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801010,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "智能手环",
+      "parentId": 800003,
+      "sortNum": 1,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/248eed6c3ef05b8db264bf35171c1d28.png",
+      "status": 1
+    },
+    {
+      "id": 801014,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "笔记本",
+      "parentId": 800004,
+      "sortNum": 1,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/C1572C948AF981FF1DE447A141DA50A1_1773816459525.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801017,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "旗舰系列",
+      "parentId": 800005,
+      "sortNum": 1,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-pub/202604022141_0e6f130e2c3d2a6b12e691e809701cd0.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801020,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "热销推荐",
+      "parentId": 800006,
+      "sortNum": 1,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-pub/202512041557_e9dd6dc9fb97d3647f7502f0375b48ae.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801023,
+      "createTime": "2026-07-15 21:23:56",
+      "updateTime": "2026-07-15 21:23:56",
+      "name": "小爱音箱",
+      "parentId": 800007,
+      "sortNum": 1,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/mi-mall/8042622c171f6a496ac0d26fba7de806.png",
+      "status": 1
+    },
+    {
+      "id": 800001,
+      "createTime": "2026-07-15 21:23:55",
+      "updateTime": "2026-07-15 21:23:55",
+      "name": "手机",
+      "parentId": null,
+      "sortNum": 1,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/1307CBB763CB478AF9F8ECBCD1CF909F_1780457006362.png?w=800&h=800",
+      "status": 1
+    },
+    {
+      "id": 801001,
+      "createTime": "2026-07-15 21:23:55",
+      "updateTime": "2026-07-15 21:23:55",
+      "name": "Xiaomi 数字旗舰",
+      "parentId": 800001,
+      "sortNum": 1,
+      "pic": "https://cdn.cnbj1.fds.api.mi-img.com/nr-upload-outer/1307CBB763CB478AF9F8ECBCD1CF909F_1780457006362.png?w=800&h=800",
+      "status": 1
+    }
+  ],
+  "message": "success"
+}

@@ -32,10 +32,21 @@ final class URLSessionTransport: HTTPTransport, Sendable {
         return configuration
     }
 
+    /// Detail request adapter shares the existing ephemeral session.
+    func sendProductRequest(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        try await session.data(for: request)
+    }
+
     func send(url: URL, timeout: TimeInterval) async throws -> (Data, URLResponse) {
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         return try await session.data(for: request)
+    }
+
+    /// Request-level entry for the category POST (CategoryHTTPTransport). Same
+    /// ephemeral session/configuration; the home GET method above is unchanged.
+    func send(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        try await session.data(for: request)
     }
 }

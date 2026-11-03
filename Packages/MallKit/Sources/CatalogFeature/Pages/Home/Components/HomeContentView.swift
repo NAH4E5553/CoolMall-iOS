@@ -12,6 +12,7 @@ struct HomeContentView: View {
     var isUserDragging = false
     @Environment(\.colorScheme) private var colorScheme
     var onUnavailableAction: () -> Void = {}
+    var onOpenProduct: ((Int64) -> Void)? = nil
     var body: some View {
         VStack(spacing: 16) {
             if !snapshot.banners.isEmpty {
@@ -36,7 +37,7 @@ struct HomeContentView: View {
             }
             HomeProductSectionsView(
                 snapshot: snapshot, pipeline: imagePipeline, isActive: isActive,
-                action: onUnavailableAction)
+                action: onUnavailableAction, onOpenProduct: onOpenProduct)
         }
     }
     private var surface: Color { colorScheme == .dark ? Color(white: 0.12) : .white }

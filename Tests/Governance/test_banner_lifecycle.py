@@ -139,12 +139,12 @@ class Transcript:
         self.mark('end', outcome='passed')
         return self
 
-    def audit(self, test_exit=0, status=None):
+    def audit(self, test_exit=0, status=None, native_passed=None):
         return AUDIT.audit([AUDIT.PREFIX + self.method + '()'],
                            '\n'.join('2026-10-21 17:49:16.867 Df CoolMalliOS[86305:24887a] (Foundation) BANNERAUDIT '
                                      + json.dumps(e) for e in self.events),
                            '\n'.join('BANNERTEST ' + json.dumps(m) for m in self.markers),
-                           STATUS if status is None else status, test_exit)
+                           STATUS if status is None else status, test_exit, native_passed=native_passed)
 
 
 class BannerLifecycleTests(unittest.TestCase):
@@ -152,6 +152,75 @@ class BannerLifecycleTests(unittest.TestCase):
         for kind in ['cycle', 'away', 'offscreen', 'push']:
             with self.subTest(kind=kind):
                 self.assertEqual(Transcript(kind).finish(kind).audit()['status'], 'passed')
+
+    def test_normal_post_end_autoplay_is_diagnostic_only(self):
+        for kind in ['push', 'offscreen']:
+            fixture = Transcript(kind).finish(kind)
+            fixture.commit()
+            result = fixture.audit(native_passed={fixture.method})
+            method = result['methods'][fixture.method]
+            self.assertEqual(method['status'], 'passed')
+            self.assertGreater(method['outsideWindowEventCount'], 0)
+            self.assertTrue(all(e['monotonicTime'] > method['observationWindow']['end']
+                                for e in method['outsideWindowEvents']))
+
+    def test_window_exclusion_does_not_excuse_unknown_or_malformed_records(self):
+        for field, value in [('event', 'unknownProductionEvent'), ('schemaVersion', 99),
+                             ('monotonicTime', float('nan')), ('processID', 'invalid')]:
+            fixture = Transcript('push').finish('push')
+            fixture.commit()
+            fixture.events[-1][field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                fixture.audit(native_passed={fixture.method})
+
+    def test_pre_begin_initial_cannot_supply_missing_window_initial(self):
+        fixture = Transcript('push').finish('push')
+        fixture.markers[0]['monotonicTime'] = fixture.events[1]['monotonicTime'] + .001
+        with self.assertRaisesRegex(ValueError, 'initial snapshot missing'):
+            fixture.audit(native_passed={fixture.method})
+
+    def test_no_end_failed_prefix_still_checks_events_after_last_marker(self):
+        fixture = Transcript('push').finish('push')
+        fixture.markers.pop()
+        fixture.commit()
+        next(e for e in reversed(fixture.events) if e['event'] == 'advanceCommit')['generation'] += 1
+        with self.assertRaisesRegex(ValueError, 'current arm'):
+            fixture.audit(test_exit=65, native_passed=set())
+
+    def test_post_end_commit_cannot_supply_missing_in_window_commit(self):
+        fixture = Transcript('push').finish('push')
+        first = next(e for e in fixture.events if e['event'] == 'advanceCommit')
+        boundary = first['monotonicTime'] - .001
+        fixture.markers = [m for m in fixture.markers if m['monotonicTime'] <= boundary]
+        fixture.t = boundary
+        fixture.mark('end', outcome='passed')
+        with self.assertRaisesRegex(ValueError, 'no subsequent|no actual'):
+            fixture.audit(native_passed={fixture.method})
+
+    def test_failed_native_result_ignores_advisory_passed_end(self):
+        fixture = Transcript('push')
+        fixture.mark('end', outcome='passed')
+        result = fixture.audit(test_exit=65, native_passed=set())
+        self.assertEqual(result['methods'][fixture.method]['status'], 'recorded-prefix')
+        self.assertIn('pop', result['methods'][fixture.method]['notReached'])
+
+    def test_native_passing_method_still_requires_full_checks_when_other_test_failed(self):
+        fixture = Transcript('push')
+        fixture.mark('end', outcome='passed')
+        with self.assertRaisesRegex(ValueError, 'missing pop'):
+            fixture.audit(test_exit=65, native_passed={fixture.method})
+
+    def test_native_pass_not_overridden_by_advisory_failed_marker(self):
+        fixture = Transcript('push').finish('push')
+        fixture.markers[-1]['outcome'] = 'failed'
+        self.assertEqual(fixture.audit(native_passed={fixture.method})['status'], 'passed')
+
+    def test_end_window_cannot_hide_in_window_wrong_generation(self):
+        fixture = Transcript('offscreen').finish('offscreen')
+        next(e for e in fixture.events if e['event'] == 'advanceCommit')['generation'] += 1
+        fixture.commit()
+        with self.assertRaisesRegex(ValueError, 'current arm'):
+            fixture.audit(native_passed={fixture.method})
 
     def test_none_selected_is_explicitly_not_required(self):
         result = AUDIT.audit(['CatalogFeatureTests/Other/test()'], '', '', {})

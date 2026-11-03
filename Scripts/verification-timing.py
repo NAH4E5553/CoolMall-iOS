@@ -77,13 +77,19 @@ def main(argv):
     elif command == 'end':
         if len(active) != 1:
             raise ValueError('expected exactly one active phase')
-        complete(active[0], 0, 'passed')
+        code = int(args[0]) if args else 0
+        complete(active[0], code, 'passed' if code == 0 else 'failed')
+    elif command == 'defer':
+        phase = next(p for p in data['phases'] if p['name'] == args[0])
+        if phase['name'] != 'test-execute-diagnostics' or phase.get('status') != 'failed' or phase.get('exitCode') != int(args[1]) or int(args[1]) != 65:
+            raise ValueError('invalid deferred native phase')
+        phase['status'] = 'deferred-unresolved'
     elif command == 'finalize':
         code = int(args[0])
         outcome = args[1]
         if outcome not in ('failed', 'cancelled'):
             raise ValueError('invalid final outcome')
-        if code == 0 and any(phase['status'] != 'passed' for phase in data['phases']):
+        if code == 0 and any(phase['status'] not in ('passed', 'deferred-unresolved') for phase in data['phases']):
             raise ValueError('successful exit with incomplete phases')
         for phase in active:
             complete(phase, code, outcome)

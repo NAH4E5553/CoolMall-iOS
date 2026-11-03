@@ -36,6 +36,24 @@
           "identifier" : "CatalogFeatureTests/HomeBannerAutoplayTests/pauseCancelsAndResumeDoesNotCatchUp()"
         },
         {
+          "identifier" : "CatalogFeatureTests/HomeBannerProductionTimingTests/P01DeadlineBeforeAndAtAdvanceActualSelection()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeBannerProductionTimingTests/P02PauseCancelsProductionWaitAndRejectsLateWake()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeBannerProductionTimingTests/P03ReturnArmsNewFullPeriodWithoutCatchup()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeBannerProductionTimingTests/P04RapidPauseReturnHasOneCurrentTaskAndNoDuplicateCommit()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeBannerProductionTimingTests/P05RealHostRemovalCancelsAutoplayWait()"
+        },
+        {
+          "identifier" : "CatalogFeatureTests/HomeBannerProductionTimingTests/P06HiddenFullCycleStillFailsAudit()"
+        },
+        {
           "identifier" : "CatalogFeatureTests/HomeBannerSelectionTests/boundariesNeverWrapAndSingleHasNoNeighbor()"
         },
         {
@@ -271,6 +289,15 @@
         },
         {
           "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBannerManualPagingBoundariesFailureAndMissing()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBannerObservationBudgetCorrectValueReturnedLateStillFails()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBannerObservationBudgetLocalCapCannotEnlargeOrResetTheBudget()"
+        },
+        {
+          "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBannerObservationBudgetRetriesConsumeTheOriginalDeadline()"
         },
         {
           "identifier" : "CoolMalliOSUITests/HomeLoadTests/testBannerPendingPageCancellationAndTabRetention()"

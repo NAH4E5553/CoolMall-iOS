@@ -31,6 +31,10 @@ OPERATIONS = {
 }
 EVENTS = {'initial', 'rawInput', 'taskEntry', 'arm', 'wake', 'cancel', 'reject',
           'advanceAttempt', 'advanceCommit', 'selectionCommit'}
+class EvidenceGap(ValueError):
+    """Only a missing positive, ordered event sequence; other faults stay blocking."""
+
+
 FLAGS = {'homeActive', 'sceneActive', 'drag', 'visible', 'allowed', 'reduceMotion', 'voiceOver'}
 
 
@@ -63,36 +67,60 @@ def records(text, prefix):
     return result
 
 
+def validate_record(event):
+    require(event.get('schemaVersion') == 1, 'unsupported schema')
+    require(event.get('origin') in {'app', 'carousel'}, 'unknown origin')
+    require(isinstance(event.get('runID'), str) and event['runID'], 'missing runID')
+    require(type(event.get('processID')) is int and event['processID'] > 0, 'invalid processID')
+    require(isinstance(event.get('instanceID'), str) and event['instanceID'], 'invalid instanceID')
+    require(type(event.get('eventSequence')) is int, 'invalid eventSequence')
+    require(number(event.get('monotonicTime')), 'invalid monotonicTime')
+    if event['origin'] == 'carousel':
+        validate_event_shape(event)
+    else:
+        require(event.get('event') in {'initial', 'routeInput', 'sceneInput'}, 'unknown app event')
+        require(all(type(event.get(k)) is bool for k in ['homeActive', 'sceneActive']), 'app activity missing')
+
+
 def validate_stream(events):
     require(events, 'missing source events')
     groups = {}
     for event in events:
-        require(event.get('schemaVersion') == 1, 'unsupported schema')
-        require(event.get('origin') in {'app', 'carousel'}, 'unknown origin')
-        require(isinstance(event.get('runID'), str) and event['runID'], 'missing runID')
-        require(type(event.get('processID')) is int and event['processID'] > 0, 'invalid processID')
-        require(isinstance(event.get('instanceID'), str) and event['instanceID'], 'invalid instanceID')
-        require(type(event.get('eventSequence')) is int, 'invalid eventSequence')
-        require(number(event.get('monotonicTime')), 'invalid monotonicTime')
+        validate_record(event)
         key = (event['origin'], event['instanceID'])
         groups.setdefault(key, []).append(event)
     require(len({e['processID'] for e in events}) == 1, 'process replaced during method')
     for origin in ['app', 'carousel']:
         require(len({key[1] for key in groups if key[0] == origin}) == 1,
                 origin + ' missing or instance replaced/reset')
+    # Validate every group's schema and deterministic faults before allowing a
+    # missing sequence anywhere to classify this method as incomplete evidence.
+    # Otherwise an App gap could hide a malformed/invalid carousel record.
+    gaps = []
+    complete_carousels = []
     for (origin, _), group in groups.items():
-        # Preserve stream order. Sorting would conceal duplicates/reordering.
-        require([e['eventSequence'] for e in group] == list(range(1, len(group) + 1)),
-                origin + ' sequence gap/duplicate/reordering')
-        require(all(a['monotonicTime'] <= b['monotonicTime'] for a, b in zip(group, group[1:])),
-                origin + ' time regressed')
-        require(any(e['event'] == 'initial' for e in group), origin + ' initial snapshot missing')
-        if origin == 'app':
+        if origin == 'carousel':
+            for e in group: validate_event_shape(e)
+        else:
             for e in group:
                 require(e.get('event') in {'initial', 'routeInput', 'sceneInput'}, 'unknown app event')
                 require(all(type(e.get(k)) is bool for k in ['homeActive', 'sceneActive']), 'app activity missing')
-        else:
-            validate_carousel(group)
+        require(all(a['monotonicTime'] <= b['monotonicTime'] for a, b in zip(group, group[1:])),
+                origin + ' time regressed')
+        require(any(e['event'] == 'initial' for e in group), origin + ' initial snapshot missing')
+        sequences = [e['eventSequence'] for e in group]
+        contiguous = sequences == list(range(1, len(group) + 1))
+        if not contiguous:
+            require(all(v > 0 for v in sequences) and all(a < b for a, b in zip(sequences, sequences[1:])),
+                    origin + ' sequence duplicate/reordering')
+            gaps.append(origin)
+        elif origin == 'carousel':
+            complete_carousels.append(group)
+    # A complete group's observed business violation stays blocking even when
+    # a different group's evidence has a gap.
+    for group in complete_carousels: validate_carousel(group)
+    if gaps:
+        raise EvidenceGap('BANNER-AUDIT: ' + ','.join(gaps) + ' sequence gap')
     return sorted(events, key=lambda e: (e['monotonicTime'], e['origin'], e['eventSequence']))
 
 
@@ -101,6 +129,18 @@ def eligible(gate):
             and gate['allowed'] and not gate['drag'] and not gate['reduceMotion']
             and not gate['voiceOver'] and gate['count'] > 1)
 
+
+def validate_event_shape(e):
+    require(e.get('event') in EVENTS, 'unknown carousel event')
+    for key in ['inputRevision', 'generation', 'selectionRevision', 'advanceSequence']:
+        require(type(e.get(key)) is int and e[key] >= 0, 'invalid ' + key)
+    gate = e.get('gate')
+    require(isinstance(gate, dict) and all(type(gate.get(k)) is bool for k in FLAGS), 'incomplete gate')
+    require(type(gate.get('count')) is int and gate['count'] >= 0, 'invalid gate count')
+    for key in ['frame', 'viewport']:
+        require(isinstance(gate.get(key), list) and len(gate[key]) == 4
+            and all(number(v) for v in gate[key]), 'invalid gate ' + key)
+    require(e.get('selectedID') is None or type(e['selectedID']) is int, 'invalid selectedID')
 
 def validate_carousel(group):
     previous = None
@@ -111,16 +151,8 @@ def validate_carousel(group):
     current_arm = None
     committed_tasks = set()
     for e in group:
-        require(e.get('event') in EVENTS, 'unknown carousel event')
-        for key in ['inputRevision', 'generation', 'selectionRevision', 'advanceSequence']:
-            require(type(e.get(key)) is int and e[key] >= 0, 'invalid ' + key)
-        gate = e.get('gate')
-        require(isinstance(gate, dict) and all(type(gate.get(k)) is bool for k in FLAGS), 'incomplete gate')
-        require(type(gate.get('count')) is int and gate['count'] >= 0, 'invalid gate count')
-        for key in ['frame', 'viewport']:
-            require(isinstance(gate.get(key), list) and len(gate[key]) == 4
-                    and all(number(v) for v in gate[key]), 'invalid gate ' + key)
-        require(e.get('selectedID') is None or type(e['selectedID']) is int, 'invalid selectedID')
+        validate_event_shape(e)
+        gate = e['gate']
         if previous is None:
             require(e['advanceSequence'] == 0 and e['selectionRevision'] <= 1,
                     'initial snapshot has unrecorded commits')
@@ -261,8 +293,17 @@ def audit_method(events, marks, kind, complete, collector=None):
         require(event not in index, 'duplicate operation marker: ' + event)
         index[event] = mark
     require(dragging is None or not complete, 'marked drag never released')
-    require(all(e['monotonicTime'] >= marks[0]['monotonicTime'] for e in events), 'source event before method begin')
-    events = validate_stream(events)
+    start = marks[0]['monotonicTime']
+    ends = [m for m in marks if m['event'] == 'end']
+    require(len(ends) <= 1 and (not ends or marks[-1] is ends[0]), 'end must be unique final marker')
+    end_time = ends[0]['monotonicTime'] if ends else marks[-1]['monotonicTime']
+    # Without an end, audit every recorded event as a failed prefix; do not
+    # invent a shorter window that could hide an in-flight violation.
+    if not ends:
+        end_time = max([end_time, *[e['monotonicTime'] for e in events]])
+    for event in events: validate_record(event)
+    outside = [e for e in events if not start <= e['monotonicTime'] <= end_time]
+    events = validate_stream([e for e in events if start <= e['monotonicTime'] <= end_time])
     car = [e for e in events if e['origin'] == 'carousel']
     app = [e for e in events if e['origin'] == 'app']
     checks, not_reached = [], []
@@ -467,7 +508,6 @@ def audit_method(events, marks, kind, complete, collector=None):
             checks.append({'operation': 'drag-release', 'status': 'passed', 'startedAt': drag_start, 'releasedAt': drag_end})
     if complete:
         require(marks[-1]['event'] == 'end', 'method end missing')
-        require(all(e['monotonicTime'] <= marks[-1]['monotonicTime'] for e in events), 'source event after method end')
         require(any(e['event'] == 'advanceCommit' for e in car), 'method has no actual autoplay commit')
         if kind == 'cycle':
             require(sum(e['event'] == 'advanceCommit' for e in car) >= 4, 'cycle missing genuine advances/full wrap')
@@ -503,10 +543,12 @@ def audit_method(events, marks, kind, complete, collector=None):
                 selected = commit['selectedID']
             require(selected == baseline['selectedID'] == wrapped['selectedID'], 'cycle did not wrap to AX baseline')
     return {'status': 'passed' if complete else 'recorded-prefix', 'checks': checks,
-            'notReached': not_reached, 'sourceEventCount': len(events)}
+            'notReached': not_reached, 'sourceEventCount': len(events),
+            'observationWindow': {'begin': start, 'end': end_time, 'boundedByEnd': bool(ends)},
+            'outsideWindowEventCount': len(outside), 'outsideWindowEvents': outside}
 
 
-def audit(expected, trace_text, tests_text, collector, test_exit=0):
+def audit(expected, trace_text, tests_text, collector, test_exit=0, defer_cycle=False, native_passed=None):
     selected = {method_name(m) for m in expected if m.startswith(PREFIX)} & METHODS.keys()
     if not selected:
         return {'status': 'not-required', 'reason': 'No selected carousel lifecycle UI methods', 'methods': {}}
@@ -531,10 +573,13 @@ def audit(expected, trace_text, tests_text, collector, test_exit=0):
         marker['method'] = method_name(marker.get('method', run_methods[marker['runID']]))
         require(marker['method'] == run_methods[marker['runID']], 'runID method changed')
         require(marker['method'] in selected, 'unexpected executed carousel method')
-    result, used_runs = {}, set()
+    result, used_runs, deferred = {}, set(), []
     for method in sorted(selected):
         marks = [m for m in markers if m['method'] == method]
         if not marks:
+            if native_passed is not None and method in native_passed:
+                result[method] = {'status': 'failed', 'error': 'Native passing method has no audit begin'}
+                continue
             require(test_exit != 0, 'selected method was not executed: ' + method)
             result[method] = {'status': 'not-reached', 'notReached': ['begin']}
             continue
@@ -544,30 +589,71 @@ def audit(expected, trace_text, tests_text, collector, test_exit=0):
         end = next((m for m in marks if m['event'] == 'end'), None)
         if end:
             require(end.get('outcome') in {'passed', 'failed'}, 'end outcome missing')
-        complete = bool(end and end['outcome'] == 'passed')
+        # Native final result is authoritative. defer markers can say passed
+        # before XCTest records a thrown error/timeout. Parser-only controls
+        # may omit native_passed; the formal CLI always supplies the inventory.
+        complete = (method in native_passed if native_passed is not None
+                    else bool(end and end['outcome'] == 'passed'))
+        if native_passed is not None and method in native_passed and not end:
+            result[method] = {'status': 'failed', 'error': 'Native passing method lacks audit end'}
+            continue
         require(complete or test_exit != 0, 'successful UI run lacks passing end')
         events = [e for e in source if e.get('runID') in runs]
-        result[method] = audit_method(events, marks, METHODS[method], complete, collector)
+        try:
+            result[method] = audit_method(events, marks, METHODS[method], complete, collector)
+        except ValueError as error:
+            if not defer_cycle:
+                raise
+            if METHODS[method] == 'cycle' and isinstance(error, EvidenceGap):
+                result[method] = {'status': 'deferred-unresolved', 'error': str(error),
+                                  'kind': 'sequence-gap', 'tailCompleteness': 'unproven'}
+                deferred.append({'id': 'CI-DEFER-CYCLE-EVIDENCE-01', 'state': 'deferred-unresolved',
+                                 'method': PREFIX + method + '()', 'reason': str(error)})
+            else:
+                result[method] = {'status': 'failed', 'error': str(error)}
+        # No terminal source watermark exists. Do not certify an intact-looking
+        # prefix as complete, and do not fabricate a production end event.
+        if defer_cycle and METHODS[method] == 'cycle':
+            result[method]['tailCompleteness'] = 'unproven'
+            deferred.append({'id': 'CI-DEFER-CYCLE-EVIDENCE-01', 'state': 'deferred-unresolved',
+                             'method': PREFIX + method + '()',
+                             'reason': 'Terminal source completeness is unproven; lifecycle acceptance remains partial'})
     require(all(e.get('runID') in used_runs for e in source), 'source runID has no selected execution marker')
-    return {'status': 'passed' if test_exit == 0 else 'recorded-prefix', 'methods': result}
+    status = 'passed' if test_exit == 0 else 'recorded-prefix'
+    if any(v['status'] == 'failed' for v in result.values()): status = 'failed'
+    elif deferred: status = 'core-passed-with-deferred'
+    return {'status': status, 'methods': result, 'deferred': deferred}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for flag in ['scope', 'trace', 'tests-log', 'collector-status', 'output']:
         parser.add_argument('--' + flag, required=True, type=Path)
+    parser.add_argument('--native-results', type=Path)
     parser.add_argument('--test-exit', type=int, required=True)
     args = parser.parse_args()
     try:
+        spec = importlib.util.spec_from_file_location('ci_defer', Path(__file__).with_name('ci-deferred-policy.py'))
+        policy = importlib.util.module_from_spec(spec); spec.loader.exec_module(policy)
+        policy.load(active=False)
         scope = json.loads(args.scope.read_text())
         expected = scope['expected']
+        selected = {method_name(m) for m in expected if m.startswith(PREFIX)} & METHODS.keys()
+        if any(METHODS[m] == 'cycle' for m in selected): policy.load()
+        native_passed = None
+        if args.native_results and args.native_results.exists():
+            native = json.loads(args.native_results.read_text())
+            require(set(native.get('methodResults', {})) == set(expected), 'native method inventory mismatch')
+            native_passed = {method_name(m) for m,v in native['methodResults'].items()
+                             if m.startswith(PREFIX) and v == 'Passed'}
+        require(not selected or native_passed is not None, 'final native method results unavailable')
         # None selected is a truthful exclusion and needs no collector files.
         if not ({method_name(m) for m in expected if m.startswith(PREFIX)} & METHODS.keys()):
             result = audit(expected, '', '', {}, args.test_exit)
         else:
             result = audit(expected, args.trace.read_text(), args.tests_log.read_text(),
-                           json.loads(args.collector_status.read_text()), args.test_exit)
-        code = 0
+                           json.loads(args.collector_status.read_text()), args.test_exit, defer_cycle=True, native_passed=native_passed)
+        code = 1 if result['status'] == 'failed' else 0
     except (ValueError, OSError, KeyError, TypeError) as error:
         result, code = {'status': 'failed', 'error': str(error)}, 1
     try:

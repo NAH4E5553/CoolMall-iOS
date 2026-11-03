@@ -3,6 +3,9 @@ import importlib.util
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
+import tempfile
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location('test_results', ROOT / 'Scripts/check-test-results.py')
@@ -99,3 +102,52 @@ class NativeResultInventoryTests(unittest.TestCase):
                 else: self.arguments[0]['result'] = state
                 with self.assertRaisesRegex(ValueError, 'failed/skipped/duplicate arguments'):
                     self.check()
+
+
+class FailedNativeDisclosureTests(unittest.TestCase):
+    def test_cli_keeps_all_final_methods_when_five_native_failures_block(self):
+        spec = importlib.util.spec_from_file_location('scope_fixture', ROOT / 'Scripts/select-test-scope.py')
+        selector = importlib.util.module_from_spec(spec); spec.loader.exec_module(selector)
+        raw = json.loads((ROOT/'Tests/Governance/Fixtures/test-enumeration.json').read_text())
+        targets = {x['identifier'].split('/')[0] for x in raw['values'][0]['enabledTests']}
+        scope = selector.resolve(dict(mode='full', targets=[], mappingSHA256=selector.MAPPING_HASH,
+                                     testPlan='CoolMalliOS', configuration='Debug'), raw, targets)
+        cases = {}
+        for identifier in scope['expected']:
+            bundle, case = identifier.split('/', 1)
+            cases.setdefault(bundle, []).append(dict(nodeType='Test Case', nodeIdentifier=case, result='Passed'))
+        failed = [x for x in cases['CoolMalliOSUITests'] if x['nodeIdentifier'].startswith('HomeLoadTests/')][:5]
+        for node in failed: node['result'] = 'Failed'
+        tree = {'testNodes': [dict(name=name, nodeType='UI test bundle' if name == 'CoolMalliOSUITests' else 'Unit test bundle',
+                                  children=nodes) for name, nodes in cases.items()]}
+        summary = dict(result='Failed', failedTests=5, passedTests=len(scope['expected'])-5,
+                       skippedTests=0, expectedFailures=0, totalTestCount=len(scope['expected']),
+                       testFailures=[dict(testIdentifierString=n['nodeIdentifier']) for n in failed])
+        def native(command, **kwargs):
+            value = summary if 'summary' in command else tree if 'tests' in command else {}
+            return SimpleNamespace(stdout=json.dumps(value))
+        with tempfile.TemporaryDirectory() as td:
+            directory = Path(td)
+            for name, data in [('scope.json',scope),('execution.json',dict(commandExitCode=65,exitCode=65,
+                           state='stream-stopped-by-owner',diagnosticErrors=[]))]:
+                (directory/name).write_text(json.dumps(data))
+            (directory/'tests.log').write_text('original failing command')
+            output=directory/'native.json'
+            argv=['check-test-results.py', str(directory/'Tests.xcresult'), '--scope',str(directory/'scope.json'),
+                  '--execution-status',str(directory/'execution.json'),'--tests-log',str(directory/'tests.log'),
+                  '--output',str(output)]
+            with patch('sys.argv',argv), patch.object(CHECK.subprocess,'run',side_effect=native):
+                self.assertEqual(CHECK.main(),1)
+            report=json.loads(output.read_text())
+            self.assertEqual(report['status'],'failed')
+            self.assertEqual(set(report['methodResults']),set(scope['expected']))
+            self.assertEqual(sum(v=='Failed' for v in report['methodResults'].values()),5)
+            self.assertEqual(report['deferred'],[])
+            self.assertEqual(report['nativeCounts']['failedTests'],5)
+
+    def test_duplicate_native_method_never_overwrites_a_failure(self):
+        case=dict(nodeType='Test Case',nodeIdentifier='Suite/test()',result='Failed')
+        tree={'testNodes':[dict(nodeType='UI test bundle',name='CoolMalliOSUITests',
+                               children=[case,dict(case,result='Passed')])]}
+        with self.assertRaisesRegex(ValueError,'duplicate native'):
+            CHECK.method_inventory(tree)

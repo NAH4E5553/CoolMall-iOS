@@ -27,6 +27,7 @@ class InventoryTests(unittest.TestCase):
         self.assertTrue(any(x.startswith(S.CATALOG + '/') for x in selected['expected']))
         self.assertTrue(any(x.startswith(S.HOME + '/') for x in selected['expected']))
         self.assertFalse(any(x.startswith(S.NAVIGATION + '/') for x in selected['expected']))
+        self.assertTrue(all(m in selected['expected'] for m in methods if not m.startswith('CoolMalliOSUITests/')))
         self.assertEqual(len(selected['expected']) + len(selected['omitted']), len(methods))
 
     def test_invalid_enumeration_never_becomes_full_success(self):
@@ -67,6 +68,9 @@ class SelectionTests(unittest.TestCase):
         for path in S.PATH_TARGETS:
             self.write(path, 'existingBody\n')
         self.write('README.md','docs\n')
+        self.write('.github/workflows/ios.yml','name: legacy\n')
+        self.write('Tests/Governance/host-sensitive-advisory.json',
+                   (S.ROOT / 'Tests/Governance/host-sensitive-advisory.json').read_text())
         self.base = self.commit()
 
     def git(self, *args):
@@ -86,14 +90,14 @@ class SelectionTests(unittest.TestCase):
         self.write('CoolMalliOSUITests/HomeLoadTests.swift','changedBody\n'); self.commit()
         self.write('CoolMalliOSUITests/NavigationSmokeTests.swift','changedBody\n'); self.commit()
         result = self.plan()
-        self.assertEqual(result['targets'], sorted([S.HOME,S.NAVIGATION]))
+        self.assertEqual(result['targets'], sorted([S.HOME,S.NAVIGATION,*S.PR_SMOKE]))
         self.assertEqual(len(result['paths']), 2)
         self.write('Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeBannerCarouselView.swift','changedBody\n'); self.commit()
-        self.assertEqual(self.plan()['targets'], sorted([S.CATALOG,S.HOME,S.NAVIGATION]))
+        self.assertEqual(self.plan()['targets'], sorted([S.CATALOG,S.HOME,S.NAVIGATION,*S.LIFECYCLE,*S.PR_SMOKE]))
 
-    def test_unknown_api_structural_and_missing_history_full(self):
+    def test_unknown_api_structural_full_but_history_is_irrelevant(self):
         self.write('CoolMalliOSUITests/HomeLoadTests.swift','changedBody\n'); self.commit()
-        self.assertEqual(self.plan(good=False)['mode'], 'full')
+        self.assertEqual(self.plan(good=False)['mode'], 'selected')
         self.write('CoolMalliOSUITests/HomeLoadTests.swift','func renamed() {}\n'); self.commit()
         self.assertEqual(self.plan()['mode'], 'full')
         self.write('Unknown.swift','changedBody\n'); self.commit()
@@ -102,12 +106,12 @@ class SelectionTests(unittest.TestCase):
     def test_banner_timing_map_unions_real_consumers(self):
         timing = 'Packages/MallKit/Sources/CatalogFeature/Pages/Home/Components/HomeBannerTiming.swift'
         hosted = 'Packages/MallKit/Tests/CatalogFeatureTests/Home/HomeBannerProductionTimingTests.swift'
-        self.assertEqual(S.PATH_TARGETS[timing], [S.CATALOG, S.HOME])
+        self.assertEqual(S.PATH_TARGETS[timing], [S.CATALOG, *S.LIFECYCLE])
         self.assertEqual(S.PATH_TARGETS[hosted], [S.CATALOG])
         self.write(hosted, 'changedBody\n'); self.commit()
-        self.assertEqual(self.plan()['targets'], [S.CATALOG])
+        self.assertEqual(self.plan()['targets'], sorted([S.CATALOG,*S.PR_SMOKE]))
         self.write(timing, 'changedBody\n'); self.commit()
-        self.assertEqual(self.plan()['targets'], sorted([S.CATALOG, S.HOME]))
+        self.assertEqual(self.plan()['targets'], sorted(set([S.CATALOG,*S.LIFECYCLE,*S.PR_SMOKE])))
 
     def test_new_mapped_timing_files_and_declarations_still_require_full(self):
         paths = [
@@ -124,6 +128,37 @@ class SelectionTests(unittest.TestCase):
                 self.assertEqual(self.plan()['mode'], 'full')
                 self.assertEqual(self.plan()['reason'], 'declaration-api-or-test-discovery-change')
 
+    def test_local_function_declaration_change_keeps_conservative_fallback(self):
+        path = 'CoolMalliOSUITests/HomeLoadTests.swift'
+        self.write(path, '''final class HomeLoadTests: XCTestCase {
+    func testOuter() {
+        func local() -> Int { 1 }
+        _ = local()
+    }
+}
+''')
+        self.base = self.commit()
+        self.write(path, '''final class HomeLoadTests: XCTestCase {
+    func testOuter() {
+        func local() -> Int { 2 }
+        _ = local()
+    }
+}
+''')
+        self.commit()
+        result = self.plan()
+        self.assertEqual(result['mode'], 'full')
+        self.assertEqual(result['reason'], 'declaration-api-or-test-discovery-change')
+
+    def test_added_catalog_file_selects_scoped_targets(self):
+        self.write('Packages/MallKit/Sources/CatalogFeature/Pages/Category/NewView.swift',
+                   'struct NewView {}\n'); self.commit()
+        result = self.plan()
+        self.assertEqual(result['mode'], 'selected')
+        self.assertIn(S.CATEGORY, result['targets'])
+        self.assertIn(S.CATALOG, result['targets'])
+        self.assertNotIn(S.HOME, result['targets'])
+
     def test_new_file_delete_and_non_pr_full(self):
         (self.root/'CoolMalliOSUITests/HomeLoadTests.swift').unlink(); self.commit()
         self.assertEqual(self.plan()['mode'], 'full')
@@ -137,28 +172,227 @@ class SelectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'clean exact head'):
             S.plan(self.root, dict(GITHUB_EVENT_NAME='pull_request',MALL_DIFF_HEAD=self.base))
 
-    def test_history_latest_success_closes_older_failure(self):
-        run = dict(id=2, workflow_id=10, head_branch='feature')
-        prior = dict(id=1, created_at='2026-01-01', status='completed',conclusion='success',head_sha=self.base,
-                     head_branch='feature',pull_requests=[{'number':13}])
-        data = {'total_count':2,'workflow_runs':[dict(prior,id=0,created_at='2025-01-01',conclusion='failure'),prior]}
-        jobs = {'total_count':2,'jobs':[{'name':name,'status':'completed','conclusion':'success'} for name in ['F0 verification','required-checks']]}
-        env = dict(GITHUB_RUN_ID='2', MALL_PR_NUMBER='13', MALL_DIFF_HEAD=self.base)
-        def fetch(path, env):
-            if '/jobs?' in path: return jobs
-            if '/workflows/' in path: return data
-            return run
-        self.assertTrue(S.prior_verification(self.root,env,fetch)[0])
-        for state in ['failure','cancelled',None]:
-            prior['conclusion']=state
-            self.assertFalse(S.prior_verification(self.root,env,fetch)[0])
-        prior['conclusion']='success'; jobs['jobs'][0]['conclusion']='skipped'
-        self.assertFalse(S.prior_verification(self.root,env,fetch)[0])
-        run['run_attempt']=2
-        self.assertFalse(S.prior_verification(self.root,env,fetch)[0])
-        run['run_attempt']=1
-        data['total_count']=999
-        self.assertFalse(S.prior_verification(self.root,env,fetch)[0])
+    def test_prior_failure_deferred_or_missing_history_never_expands_scope(self):
+        self.write('CoolMalliOSUITests/HomeLoadTests.swift','changedBody\n'); self.commit()
+        def forbidden(*args):
+            self.fail('history must not be queried')
+        for prior in ['failure', 'deferred', 'missing']:
+            env = dict(GITHUB_EVENT_NAME='pull_request', MALL_DIFF_BASE=self.base,
+                       MALL_DIFF_HEAD=self.git('rev-parse','HEAD'), PRIOR_RUN=prior)
+            result = S.plan(self.root, env, forbidden)
+            self.assertEqual(result['mode'], 'selected')
+            self.assertNotIn('history', result)
+
+    def test_required_baseline_and_full_only_chains(self):
+        self.write('Scripts/check-test-results.py', '# tooling change\n'); self.commit()
+        scope = self.plan()
+        self.assertEqual(scope['mode'], 'selected')
+        required = S.resolve(scope, RAW, TARGETS)
+        self.assertTrue(set(S.PR_SMOKE) <= set(required['expected']))
+        self.assertNotIn(S.HOME + '/testBannerAutoplayArmsAfterPushedRoutePopsBack()', required['expected'])
+        self.assertNotIn(S.HOME + '/testApprovedHomeDisplayAtAccessibilitySize()', required['expected'])
+        self.assertNotIn(S.HOME + '/testBannerAutoplayCyclesAndRestartsAfterUnchangedDrag()', required['expected'])
+        self.assertGreater(sum('HomeBannerProductionTimingTests/' in x for x in required['expected']), 0)
+        S.validate_manifest(required)
+        for event in ['push', 'schedule', 'workflow_dispatch']:
+            full = S.resolve(self.plan(event), RAW, TARGETS)
+            self.assertEqual(full['expected'], full['discovered'])
+
+    def test_category_test_body_change_keeps_whole_category_without_unrelated_home_full(self):
+        self.write('CoolMalliOSUITests/CategoryLoadTests.swift', 'changedAssertionBody\n'); self.commit()
+        scope = self.plan()
+        self.assertEqual(scope['mode'], 'selected')
+        self.assertIn(S.CATEGORY, scope['targets'])
+        raw = copy.deepcopy(RAW)
+        method = S.CATEGORY + '/testTabReturnRetainsSelectionAndDoesNotReRead()'
+        raw['values'][0]['enabledTests'].append({'identifier': method})
+        resolved = S.resolve(scope, raw, TARGETS)
+        self.assertIn(method, resolved['expected'])
+        self.assertNotIn(S.HOME + '/testApprovedHomeDisplayAtAccessibilitySize()', resolved['expected'])
+
+    def test_required_methods_missing_from_enumeration_block(self):
+        scope = self.plan()
+        raw = copy.deepcopy(RAW)
+        raw['values'][0]['enabledTests'] = [x for x in raw['values'][0]['enabledTests'] if x['identifier'] != S.PR_SMOKE[0]]
+        with self.assertRaisesRegex(ValueError, 'missing'):
+            S.resolve(scope, raw, TARGETS)
+
+    def test_push_required_tier_is_allowed_while_schedule_remains_full(self):
+        self.write('CoolMalliOSUITests/HomeLoadTests.swift', 'changedBody\n')
+        head = self.commit()
+        push = S.plan(
+            self.root,
+            dict(GITHUB_EVENT_NAME='push', MALL_VERIFICATION_TIER='required',
+                 MALL_DIFF_BASE=self.base, MALL_DIFF_HEAD=head))
+        self.assertEqual((push['tier'], push['mode']), ('required', 'selected'))
+        with self.assertRaisesRegex(ValueError, 'scheduled/manual'):
+            S.plan(
+                self.root,
+                dict(GITHUB_EVENT_NAME='schedule', MALL_VERIFICATION_TIER='required',
+                     MALL_DIFF_HEAD=head))
+
+    def test_changed_ui_test_method_selects_only_that_method(self):
+        path = 'CoolMalliOSUITests/HomeLoadTests.swift'
+        source = (
+            'import XCTest\n'
+            'final class HomeLoadTests: XCTestCase {\n'
+            '    func testA() {\n'
+            '        let value = 1\n'
+            '    }\n'
+            '    func testB() {\n'
+            '        let value = 2\n'
+            '    }\n'
+            '}\n'
+        )
+        self.write(path, source)
+        base = self.commit()
+        self.write(path, source.replace('let value = 1', 'let value = 3'))
+        head = self.commit()
+        result = S.plan(
+            self.root,
+            dict(GITHUB_EVENT_NAME='pull_request', MALL_VERIFICATION_TIER='required',
+                 MALL_DIFF_BASE=base, MALL_DIFF_HEAD=head))
+        self.assertEqual(result['reason'], 'test-method-impact')
+        self.assertEqual(result['testMethods'], ['CoolMalliOSUITests/HomeLoadTests/testA()'])
+        self.assertIn('CoolMalliOSUITests/HomeLoadTests/testA()', result['targets'])
+        self.assertIn(S.PR_SMOKE[0], result['targets'])
+        self.assertNotIn(S.HOME, result['targets'])
+
+    def test_changed_ui_test_helper_falls_back_to_whole_target(self):
+        path = 'CoolMalliOSUITests/HomeLoadTests.swift'
+        source = (
+            'import XCTest\n'
+            'final class HomeLoadTests: XCTestCase {\n'
+            '    @MainActor private func helper() -> Int {\n'
+            '        return 1\n'
+            '    }\n'
+            '    func testA() {\n'
+            '        _ = helper()\n'
+            '    }\n'
+            '}\n'
+        )
+        self.write(path, source)
+        base = self.commit()
+        self.write(path, source.replace('return 1', 'return 2'))
+        head = self.commit()
+        result = S.plan(
+            self.root,
+            dict(GITHUB_EVENT_NAME='pull_request', MALL_VERIFICATION_TIER='required',
+                 MALL_DIFF_BASE=base, MALL_DIFF_HEAD=head))
+        self.assertEqual(result['reason'], 'required-baseline-plus-current-impact')
+        self.assertIn(S.HOME, result['targets'])
+        self.assertNotIn('testMethods', result)
+
+    def test_changed_comment_above_helper_falls_back_to_whole_target(self):
+        path = 'CoolMalliOSUITests/HomeLoadTests.swift'
+        source = (
+            'import XCTest\n'
+            'final class HomeLoadTests: XCTestCase {\n'
+            '    func testA() {\n'
+            '    }\n'
+            '    // helper documentation\n'
+            '    @MainActor private func helper() {\n'
+            '    }\n'
+            '}\n'
+        )
+        self.write(path, source)
+        base = self.commit()
+        self.write(path, source.replace('// helper documentation', '// helper documentation changed'))
+        head = self.commit()
+        result = S.plan(
+            self.root,
+            dict(GITHUB_EVENT_NAME='pull_request', MALL_VERIFICATION_TIER='required',
+                 MALL_DIFF_BASE=base, MALL_DIFF_HEAD=head))
+        self.assertEqual(result['reason'], 'required-baseline-plus-current-impact')
+        self.assertIn(S.HOME, result['targets'])
+        self.assertNotIn('testMethods', result)
+
+    def test_direct_home_impact_and_full_fallback_keep_advisory_consumers(self):
+        blocked = S.advisory_methods(ROOT)
+        self.assertTrue(blocked)
+        for scope in [
+            {'mode': 'selected', 'tier': 'required', 'targets': [S.HOME],
+             'advisoryMethods': sorted(blocked)},
+            {'mode': 'full', 'tier': 'required', 'targets': [],
+             'advisoryMethods': sorted(blocked)},
+        ]:
+            selected = S.selected_methods(scope, S.inventory(RAW, TARGETS))
+            self.assertTrue(blocked <= set(selected))
+            if scope['mode'] == 'selected':
+                self.assertTrue(any(m.startswith(S.HOME + '/') for m in selected))
+
+    def test_test_support_helper_selects_manifest_methods_and_smoke(self):
+        path = 'CoolMalliOSUITests/HomeLoadTests.swift'
+        source = (
+            'import XCTest\n'
+            'final class HomeLoadTests: XCTestCase {\n'
+            '    func testA() { _ = helper() }\n'
+            '    func testB() { _ = helper() }\n'
+            '    @MainActor private func helper() -> Int {\n'
+            '        return 1\n'
+            '    }\n'
+            '}\n'
+        )
+        self.write(path, source)
+        self.write('Tests/Governance/test-support-impact.json', json.dumps({
+            'schemaVersion': 1,
+            'files': {
+                path: {
+                    'owner': '@owner',
+                    'expires': '2099-12-31',
+                    'methods': [
+                        'CoolMalliOSUITests/HomeLoadTests/testA()',
+                        'CoolMalliOSUITests/HomeLoadTests/testB()',
+                    ],
+                }
+            },
+        }))
+        base = self.commit()
+        self.write(path, source.replace('return 1', 'return 2'))
+        head = self.commit()
+        result = S.plan(
+            self.root,
+            dict(GITHUB_EVENT_NAME='pull_request', MALL_VERIFICATION_TIER='required',
+                 MALL_DIFF_BASE=base, MALL_DIFF_HEAD=head))
+        self.assertEqual(result['reason'], 'test-support-targeted')
+        self.assertEqual(result['testSupportMethods'],
+                         ['CoolMalliOSUITests/HomeLoadTests/testA()',
+                          'CoolMalliOSUITests/HomeLoadTests/testB()'])
+        self.assertIn(S.PR_SMOKE[0], result['targets'])
+
+    def test_expired_test_support_manifest_does_not_apply(self):
+        path = 'CoolMalliOSUITests/HomeLoadTests.swift'
+        source = (
+            'import XCTest\n'
+            'final class HomeLoadTests: XCTestCase {\n'
+            '    func testA() { _ = helper() }\n'
+            '    func helper() -> Int { return 1 }\n'
+            '}\n'
+        )
+        self.write(path, source)
+        self.write('Tests/Governance/test-support-impact.json', json.dumps({
+            'schemaVersion': 1,
+            'files': {path: {'owner': '@owner', 'expires': '2000-01-01',
+                             'methods': ['CoolMalliOSUITests/HomeLoadTests/testA()']}},
+        }))
+        base = self.commit()
+        self.write(path, source.replace('return 1', 'return 2'))
+        head = self.commit()
+        result = S.plan(
+            self.root,
+            dict(GITHUB_EVENT_NAME='pull_request', MALL_VERIFICATION_TIER='required',
+                 MALL_DIFF_BASE=base, MALL_DIFF_HEAD=head))
+        self.assertNotEqual(result['reason'], 'test-support-targeted')
+
+    def test_local_dirty_required_captures_actual_source_and_unknown_falls_back(self):
+        env = dict(MALL_VERIFICATION_TIER='required')
+        self.write('Scripts/check-test-results.py', '# untracked tooling\n')
+        required = S.plan(self.root, env)
+        self.assertEqual(required['mode'], 'selected')
+        self.assertTrue(required['source']['dirty'])
+        self.write('UnknownProduction.swift', 'new product\n')
+        self.assertEqual(S.plan(self.root, env)['mode'], 'full')
+
 
 
 if __name__ == '__main__': unittest.main()

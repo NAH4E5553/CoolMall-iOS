@@ -11,7 +11,7 @@
         private var lastQuery: SearchQuery?
         private var pageReads: [Int: Int] = [:]
         private let supported: Set<String> = [
-            "valid", "empty", "retry", "hot-error", "hot-empty", "hot-retry",
+            "valid", "entry-categories", "empty", "retry", "hot-error", "hot-empty", "hot-retry",
             "category-retry", "long", "refresh-retry", "append-retry",
             "history-read-retry", "history-write-retry", "history-clear-retry",
         ]
@@ -70,7 +70,9 @@
             if mode == "append-retry" && page == 2 && pageReads[page] == 1 {
                 throw PageReadFailure.timeout
             }
-            let count = mode == "long" ? 60 : (mode == "append-retry" ? 23 : 13)
+            let count =
+                mode == "long"
+                ? 60 : (mode == "entry-categories" ? 33 : (mode == "append-retry" ? 23 : 13))
             let suffix = mode == "refresh-retry" && (pageReads[1] ?? 0) >= 3 ? " · 已刷新" : ""
             var items: [SearchProductSummary] = (1...count).map { index in
                 let productID = Int64(830000 + index)
@@ -80,6 +82,11 @@
                     id: productID, title: "Xiaomi 17 \(index)" + suffix,
                     subtitle: "徕卡光学 · 旗舰性能", imageURL: nil,
                     priceYuan: price, sold: sold)
+            }
+            if mode == "entry-categories", !query.categoryIDs.isEmpty {
+                // Distinct products prove real direct-child IDs reach the result query.
+                let productIDs = Set(query.categoryIDs.map { $0 + 29000 })
+                items = items.filter { productIDs.contains($0.id) }
             }
             if query.featuredOnly { items = items.filter { $0.id <= 830011 } }
             if mode == "empty" || query.keyword == "无结果" { items = [] }

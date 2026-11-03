@@ -29,8 +29,6 @@ struct RootView: View {
     @State private var addressSelection: AddressSelection?
     @State private var cartCleanupNotice: UUID?
     @State private var unavailableNotice: UUID?
-    @State private var categoryUnavailableNotice: UUID?
-    @State private var categoryRequestedChildID: Int64?
     #if DEBUG
         private let navTestControl: NavigationTestControl
     #endif
@@ -281,42 +279,13 @@ struct RootView: View {
             isActive: router.selectedTab == .category && router.categoryPath.isEmpty,
             imagePipeline: dependencies.categoryImagePipeline,
             showsReadVerification: dependencies.showsCategoryReadVerification,
-            // F-CATEGORY-05 navigation INTENT only: the real direct-child id is
-            // handed to the App; the product list (LIST-01) does not exist yet,
-            // so no list page is faked. The explicit unavailable feedback is not
-            // evidence that F-CATEGORY-05 is implemented.
             onOpenSubcategory: { id in
-                categoryRequestedChildID = id
-                categoryUnavailableNotice = UUID()
+                guard router.categoryPath.isEmpty, id > 0 else { return }
+                router.append(
+                    .searchResults(keyword: "", historySaveFailed: false, categoryIDs: [id]),
+                    on: .category)
             }
         )
-        .overlay(alignment: .topTrailing) {
-            // Controlled DEBUG consumer marker for the approved Int64 callback
-            // contract (F-CATEGORY-05 design only): records the real direct-child
-            // id without asserting the unavailable placeholder or LIST-01.
-            if dependencies.showsCategoryReadVerification {
-                Text(verbatim: "请求子分类：\(categoryRequestedChildID.map { String($0) } ?? "无")")
-                    .font(.caption2)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(.regularMaterial, in: Capsule())
-                    .padding(8)
-                    .allowsHitTesting(false)
-                    .accessibilityIdentifier("category.requestedChild")
-            }
-        }
-        .overlay(alignment: .bottom) {
-            if categoryUnavailableNotice != nil {
-                Text("暂未开放").font(.body).padding(12)
-                    .background(.regularMaterial, in: Capsule())
-                    .padding().accessibilityIdentifier("category.unavailable")
-            }
-        }
-        .task(id: categoryUnavailableNotice) {
-            guard let notice = categoryUnavailableNotice else { return }
-            do { try await Task.sleep(for: .seconds(2)) } catch { return }
-            if categoryUnavailableNotice == notice { categoryUnavailableNotice = nil }
-        }
     }
 
     /// NAV-02/NAV-03 engineering shell: same per-tab path probe and fixture
@@ -422,7 +391,16 @@ struct RootView: View {
                     router.append(
                         .searchResults(keyword: "", historySaveFailed: false, featuredOnly: true),
                         on: .home)
-                }
+                },
+                onOpenCategory: { ids in
+                    guard router.homePath.isEmpty, !ids.isEmpty, ids.allSatisfy({ $0 > 0 }) else {
+                        return
+                    }
+                    router.append(
+                        .searchResults(keyword: "", historySaveFailed: false, categoryIDs: ids),
+                        on: .home)
+                },
+                goods: dependencies.homeProducts
             )
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -571,11 +549,12 @@ struct RootView: View {
                 }
             )
             .toolbar(.hidden, for: .tabBar).toolbar(.visible, for: .navigationBar)
-        case .searchResults(let keyword, let historySaveFailed, let featuredOnly):
+        case .searchResults(let keyword, let historySaveFailed, let featuredOnly, let categoryIDs):
             SearchResultsEntryView(
                 keyword: keyword, loader: dependencies.searchProducts,
                 categories: dependencies.searchCategories, history: dependencies.searchHistory,
                 historySaveFailed: historySaveFailed, featuredOnly: featuredOnly,
+                categoryIDs: categoryIDs,
                 imagePipeline: dependencies.searchImagePipeline,
                 isActive: router.selectedTab == tab && router.path(on: tab).last == route,
                 onOpenProduct: { router.append(.productDetail(goodsID: $0), on: tab) }

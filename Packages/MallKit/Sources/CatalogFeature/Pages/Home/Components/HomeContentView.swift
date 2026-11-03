@@ -15,6 +15,8 @@ struct HomeContentView: View {
     var onOpenProduct: ((Int64) -> Void)? = nil
     var onReceiveCoupons: (([CouponClaimOffer]) -> Void)? = nil
     var onShowFeatured: (() -> Void)? = nil
+    var onOpenCategory: (([Int64]) -> Void)? = nil
+    var goodsModel: HomeGoodsViewModel? = nil
     var body: some View {
         VStack(spacing: 16) {
             if !snapshot.banners.isEmpty {
@@ -38,7 +40,15 @@ struct HomeContentView: View {
             if !snapshot.categories.isEmpty {
                 HomeCategorySectionView(
                     categories: snapshot.categories, pipeline: imagePipeline, isActive: isActive,
-                    action: onUnavailableAction
+                    action: { id in
+                        if let onOpenCategory {
+                            onOpenCategory(
+                                HomeCategorySearchSelection.ids(for: id, in: snapshot.allCategories)
+                            )
+                        } else {
+                            onUnavailableAction()
+                        }
+                    }
                 )
                 .padding(.vertical, 12)
                 .background(surface, in: RoundedRectangle(cornerRadius: 12))
@@ -46,7 +56,7 @@ struct HomeContentView: View {
             HomeProductSectionsView(
                 snapshot: snapshot, pipeline: imagePipeline, isActive: isActive,
                 action: onUnavailableAction, onOpenProduct: onOpenProduct,
-                onShowFeatured: onShowFeatured)
+                onShowFeatured: onShowFeatured, goodsModel: goodsModel, viewport: bannerViewport)
         }
     }
     private var surface: Color { colorScheme == .dark ? Color(white: 0.12) : .white }

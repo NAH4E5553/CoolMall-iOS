@@ -10,12 +10,15 @@ final class CategoryLoadTests: XCTestCase {
         800_001, 800_002, 800_003, 800_004, 800_005, 800_006, 800_099,
     ]
 
-    @MainActor private func launch(categoryFixture: String) -> XCUIApplication {
+    @MainActor private func launch(categoryFixture: String, searchFixture: Bool = false)
+        -> XCUIApplication
+    {
         let app = XCUIApplication()
         app.launchArguments += [
             "--ui-home-fixture", "valid",
             "--ui-category-fixture", categoryFixture,
         ]
+        if searchFixture { app.launchArguments += ["--ui-search-fixture", "entry-categories"] }
         app.launch()
         return app
     }
@@ -90,7 +93,7 @@ final class CategoryLoadTests: XCTestCase {
     /// right pane scrolls. Starts from the same valid fixture and establishes
     /// the first root before the interaction chain.
     @MainActor func testLeftTapScrollsRightAndSyncsSelection() {
-        let app = launch(categoryFixture: "valid")
+        let app = launch(categoryFixture: "valid", searchFixture: true)
         openCategory(app)
         XCTAssertTrue(app.buttons["category.root.800001"].waitForExistence(timeout: 15))
 
@@ -200,17 +203,13 @@ final class CategoryLoadTests: XCTestCase {
         XCTAssertTrue(backwardRoot.isSelected)
         XCTAssertEqual(selectedRoot(app), 800_002)
 
-        // F-CATEGORY-05 navigation contract only, checked LAST so the
-        // placeholder feedback's transient timer cannot disturb any scroll
-        // assertion: the controlled DEBUG consumer records the real
-        // direct-child id passed to the approved Int64 callback. The
-        // unavailable placeholder and LIST-01 are NOT asserted (DEC-014).
+        // The real direct-child ID drives a distinct result set on the source Tab stack.
         backwardChild.tap()
-        XCTAssertTrue(
-            wait(
-                { app.staticTexts["category.requestedChild"].label == "请求子分类：801008" },
-                timeout: 5),
-            "the Int64 callback receives the real direct-child id")
+        XCTAssertTrue(app.buttons["search.product.830008"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["search.product.830001"].exists)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(backwardChild.waitForExistence(timeout: 5))
+        XCTAssertEqual(selectedRoot(app), 800_002)
     }
 
     /// The real Entry/Tab wiring: a normal Tab return keeps the retained

@@ -32,9 +32,10 @@ import Observation
     init(
         keyword: String, loader: any ProductSearchLoading, categories: any CategoryLoading,
         history: any SearchHistoryRecording, historySaveFailed: Bool = false,
-        featuredOnly: Bool = false
+        featuredOnly: Bool = false, categoryIDs: [Int64] = []
     ) {
-        let query = SearchQuery(keyword: keyword, featuredOnly: featuredOnly)
+        let query = SearchQuery(
+            keyword: keyword, categoryIDs: categoryIDs, featuredOnly: featuredOnly)
         self.query = query; draft = query.keyword; self.loader = loader
         categoryLoader = categories; self.history = history
         let pages = Self.makePages(query, loader: loader)
@@ -96,7 +97,9 @@ import Observation
     }
     func submitKeyword() async {
         let word = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard active, (!word.isEmpty || query.featuredOnly), !submitting else { return }
+        guard active, (!word.isEmpty || query.featuredOnly || !query.categoryIDs.isEmpty),
+            !submitting
+        else { return }
         submitting = true; notice = nil; let current = epoch
         do { if !word.isEmpty { try await history.record(word) } } catch {
             guard active, epoch == current else { return }

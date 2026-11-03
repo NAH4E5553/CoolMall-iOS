@@ -6,7 +6,7 @@ struct HomeCategorySectionView: View {
     let categories: [HomeCategory]
     let pipeline: MallImagePipeline?
     let isActive: Bool
-    let action: () -> Void
+    let action: (Int64) -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -17,7 +17,9 @@ struct HomeCategorySectionView: View {
                     count: typeSize.isAccessibilitySize ? 2 : 5), spacing: 16
             ) {
                 ForEach(categories, id: \.id) { category in
-                    Button(action: action) {
+                    Button {
+                        action(category.id)
+                    } label: {
                         VStack(spacing: 8) {
                             HomeCardImage(
                                 url: category.imageURL, pipeline: pipeline, isActive: isActive,
@@ -29,6 +31,7 @@ struct HomeCategorySectionView: View {
                                 .accessibilityIdentifier("home.category.\(category.id).name")
                         }.frame(maxWidth: .infinity)
                     }.buttonStyle(.plain)
+                        .accessibilityIdentifier("home.category.\(category.id)")
                 }
             }
         }

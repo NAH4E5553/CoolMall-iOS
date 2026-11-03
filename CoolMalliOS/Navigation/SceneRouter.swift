@@ -14,7 +14,9 @@ final class SceneRouter {
     enum Route: Hashable {
         case cart
         case search
-        case searchResults(keyword: String, historySaveFailed: Bool, featuredOnly: Bool = false)
+        case searchResults(
+            keyword: String, historySaveFailed: Bool, featuredOnly: Bool = false,
+            categoryIDs: [Int64] = [])
         case orders(filter: OrderFilter)
         case orderDetail(id: Int64)
         case cashier(orderID: Int64)

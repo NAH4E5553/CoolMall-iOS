@@ -4,6 +4,28 @@ import Testing
 @testable import CatalogFeature
 
 @MainActor struct SearchResultsViewModelTests {
+    @Test func categoryEntryKeepsIDsThroughSortPagingAndClearedKeywordWithoutHistory() async {
+        let loader = SearchPageGate(); let history = SearchHistoryFake()
+        let model = SearchResultsViewModel(
+            keyword: "", loader: loader, categories: SearchCategoryFake(), history: history,
+            categoryIDs: [801008])
+        let initial = Task { await model.activate(true) }; await loader.wait(1)
+        await loader.succeed(0, total: 11); await initial.value
+        model.more(); await loader.wait(2); await loader.succeed(1, id: 11, total: 11)
+        for _ in 0..<1000 { if model.state.operation == nil { break }; await Task.yield() }
+        model.sort("price"); await loader.wait(3); await loader.succeed(2)
+        for _ in 0..<1000 { if model.state.operation == nil { break }; await Task.yield() }
+        model.draft = " "; await model.submitKeyword()
+        #expect(await history.recorded.isEmpty)
+        let queries = await loader.queries
+        #expect(queries.count == 3)
+        #expect(
+            queries.allSatisfy {
+                $0.0.categoryIDs == [801008] && $0.0.keyword.isEmpty && !$0.0.featuredOnly
+            })
+        #expect(queries.map { $0.1 } == [1, 2, 1])
+        model.stop()
+    }
     private func model(_ loader: SearchPageGate) -> SearchResultsViewModel {
         SearchResultsViewModel(
             keyword: "手机", loader: loader, categories: SearchCategoryFake(),

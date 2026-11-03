@@ -18,14 +18,14 @@ import SwiftUI
     public init(
         keyword: String, loader: any ProductSearchLoading, categories: any CategoryLoading,
         history: any SearchHistoryRecording, historySaveFailed: Bool = false,
-        featuredOnly: Bool = false,
+        featuredOnly: Bool = false, categoryIDs: [Int64] = [],
         imagePipeline: MallImagePipeline?, isActive: Bool, onOpenProduct: @escaping (Int64) -> Void
     ) {
         _model = State(
             initialValue: SearchResultsViewModel(
                 keyword: keyword, loader: loader,
                 categories: categories, history: history, historySaveFailed: historySaveFailed,
-                featuredOnly: featuredOnly))
+                featuredOnly: featuredOnly, categoryIDs: categoryIDs))
         self.history = history
         pipeline = imagePipeline; self.isActive = isActive; self.onOpenProduct = onOpenProduct
     }
@@ -126,7 +126,7 @@ import SwiftUI
     private func submitKeyword() {
         guard submission == nil, !model.submitting,
             (!model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || model.query.featuredOnly)
+                || model.query.featuredOnly || !model.query.categoryIDs.isEmpty)
         else { return }
         searchFocused = false
         editingRevision &+= 1

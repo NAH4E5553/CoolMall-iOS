@@ -25,6 +25,8 @@ public struct HomeEntryView: View {
     private let onOpenProduct: ((Int64) -> Void)?
     private let onReceiveCoupons: (([CouponClaimOffer]) -> Void)?
     private let onShowFeatured: (() -> Void)?
+    private let onOpenCategory: (([Int64]) -> Void)?
+    private let goods: (any ProductSearchLoading)?
 
     public init(
         home: any HomeLoading, isActive: Bool, refreshRequest: UInt64 = 0,
@@ -33,7 +35,9 @@ public struct HomeEntryView: View {
         showsReadVerification: Bool = false, onUnavailableAction: @escaping () -> Void = {},
         onOpenProduct: ((Int64) -> Void)? = nil,
         onReceiveCoupons: (([CouponClaimOffer]) -> Void)? = nil,
-        onShowFeatured: (() -> Void)? = nil
+        onShowFeatured: (() -> Void)? = nil,
+        onOpenCategory: (([Int64]) -> Void)? = nil,
+        goods: (any ProductSearchLoading)? = nil
     ) {
         self.home = home
         self.isActive = isActive
@@ -45,6 +49,8 @@ public struct HomeEntryView: View {
         self.onOpenProduct = onOpenProduct
         self.onReceiveCoupons = onReceiveCoupons
         self.onShowFeatured = onShowFeatured
+        self.onOpenCategory = onOpenCategory
+        self.goods = goods
     }
 
     public var body: some View {
@@ -77,7 +83,8 @@ public struct HomeEntryView: View {
                                 bannerViewport: bannerViewport, isUserDragging: isPullDragging,
                                 onUnavailableAction: onUnavailableAction,
                                 onOpenProduct: onOpenProduct, onReceiveCoupons: onReceiveCoupons,
-                                onShowFeatured: onShowFeatured
+                                onShowFeatured: onShowFeatured, onOpenCategory: onOpenCategory,
+                                goodsModel: viewModel.goods
                             )
 
                             // The H0 seven counts stay observable inside an
@@ -158,7 +165,7 @@ public struct HomeEntryView: View {
             }
             .task(id: driveKey) { @MainActor in
                 if viewModel == nil {
-                    viewModel = HomeViewModel(home: home)
+                    viewModel = HomeViewModel(home: home, goods: goods)
                 }
                 await viewModel?.drive(active: isActive, retryToken: 0)
             }

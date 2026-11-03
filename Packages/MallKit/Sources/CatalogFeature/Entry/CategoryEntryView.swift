@@ -6,7 +6,7 @@ import SwiftUI
 /// the App owns the injected read capability and image pipeline. The entry
 /// creates one internal page model, drives the single read through
 /// `.task(id:)` and tears it down when the page disappears. `onOpenSubcategory`
-/// carries the real direct-child category id for the future LIST-01 route; no
+/// carries the real direct-child category id for the App's search-results route; no
 /// navigation destination is provided by this view.
 @MainActor
 public struct CategoryEntryView: View {

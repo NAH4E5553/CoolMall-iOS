@@ -2,7 +2,8 @@ import Foundation
 import NukeUI
 import SwiftUI
 
-/// Public, decorative HTTPS image. Sizes are points; missing/inactive images send no request.
+/// Public, decorative HTTPS image. Sizes are points. Inactive views pause requests while retaining
+/// the same resource's loaded presentation; a changed resource/size/pipeline gets a new owner.
 @MainActor
 public struct RemoteImage: View {
     private let url: URL?
@@ -31,34 +32,19 @@ public struct RemoteImage: View {
             if let request = pipeline.request(
                 url: url, targetSize: targetSize, scale: displayScale,
                 contentMode: preservesIntrinsicAspectRatio ? .fill : contentMode,
-                isEnabled: isEnabled)
+                // Request construction validates identity only; the leaf starts work when enabled.
+                isEnabled: true)
             {
-                LazyImage(request: request) { state in
-                    if let image = state.image {
-                        image.resizable().aspectRatio(contentMode: contentMode)
-                            .accessibilityIdentifier("home.image.success")
-                    } else {
-                        placeholder
-                            .accessibilityLabel(state.error == nil ? "正在加载图片" : "图片加载失败")
-                            .accessibilityIdentifier(
-                                state.error == nil ? "home.image.placeholder" : "home.image.failure"
-                            )
-                            .overlay {
-                                if state.isLoading {
-                                    ProgressView().accessibilityIdentifier("home.image.loading")
-                                }
-                            }
-                    }
-                }
-                .pipeline(pipeline.pipeline)
-                // Identity belongs only to the leaf subscription. A superseded
-                // SDK observer cannot deliver to the new URL/size/mode's view.
-                .id(
-                    ImageIdentity(
-                        pipeline: ObjectIdentifier(pipeline), scale: displayScale, url: url,
-                        width: ceil(targetSize.width * displayScale),
-                        height: ceil(targetSize.height * displayScale), mode: contentMode == .fill,
-                        natural: preservesIntrinsicAspectRatio))
+                ImagePresentation(configuration: self, request: request)
+                    // Identity belongs only to the leaf subscription. A superseded
+                    // SDK observer cannot deliver to the new URL/size/mode's view.
+                    .id(
+                        ImageIdentity(
+                            pipeline: ObjectIdentifier(pipeline), scale: displayScale, url: url,
+                            width: ceil(targetSize.width * displayScale),
+                            height: ceil(targetSize.height * displayScale),
+                            mode: contentMode == .fill,
+                            natural: preservesIntrinsicAspectRatio))
             } else {
                 placeholder.accessibilityLabel("暂无图片").accessibilityIdentifier("home.image.missing")
             }
@@ -68,6 +54,60 @@ public struct RemoteImage: View {
             height: preservesIntrinsicAspectRatio ? nil : validDimension(targetSize.height)
         )
         .clipped()
+    }
+
+    /// FetchImage.cancel() preserves the SDK's imageContainer. Keeping this leaf mounted also
+    /// preserves that presentation through push/pop, even if the shared memory cache is evicted.
+    private struct ImagePresentation: View {
+        let configuration: RemoteImage
+        let request: ImageRequest
+        @StateObject private var loader = FetchImage()
+        @State private var visible = false
+        @State private var suspended = true
+
+        var body: some View {
+            Group {
+                if let image = loader.image {
+                    image.resizable().aspectRatio(contentMode: configuration.contentMode)
+                        .accessibilityIdentifier("home.image.success")
+                } else if !configuration.isEnabled {
+                    configuration.placeholder.accessibilityLabel("暂无图片")
+                        .accessibilityIdentifier("home.image.missing")
+                } else {
+                    configuration.placeholder
+                        .accessibilityLabel(failed ? "图片加载失败" : "正在加载图片")
+                        .accessibilityIdentifier(
+                            failed ? "home.image.failure" : "home.image.placeholder"
+                        )
+                        .overlay {
+                            if !suspended && loader.isLoading {
+                                ProgressView().accessibilityIdentifier("home.image.loading")
+                            }
+                        }
+                }
+            }
+            .onAppear {
+                visible = true; reconcile()
+            }
+            .onChange(of: configuration.isEnabled) { _, _ in reconcile() }
+            .onDisappear {
+                visible = false; reconcile()
+            }
+        }
+        private var failed: Bool {
+            if case .failure? = loader.result { return true }
+            return false
+        }
+        private func reconcile() {
+            guard visible && configuration.isEnabled else {
+                suspended = true; loader.cancel(); return
+            }
+            guard suspended else { return }
+            suspended = false
+            guard loader.image == nil else { return }
+            loader.pipeline = configuration.pipeline.pipeline
+            loader.load(request)
+        }
     }
 
     private var placeholder: some View {

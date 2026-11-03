@@ -97,6 +97,14 @@ final class AppDependencies {
         return imagePipeline
     }
 
+    /// Retained home-only UI fixtures do not start an unrelated real catalogue read.
+    var homeProducts: (any ProductSearchLoading)? {
+        #if DEBUG
+            if homeTesting.service != nil && searchTesting == nil { return nil }
+        #endif
+        return searchProducts
+    }
+
     var searchCategories: any CategoryLoading {
         #if DEBUG
             if let searchTesting { return searchTesting }

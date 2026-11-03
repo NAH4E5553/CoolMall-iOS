@@ -4,6 +4,27 @@ import Testing
 @testable import MallData
 
 struct HTTPProductSearchServiceTests {
+    @Test func categoryOnlyAndExplicitAllProductsEncodeRealPagingWithoutKeyword() async throws {
+        let transport = SearchTransport(); let service = service(transport)
+        _ = try await service.search(
+            .init(keyword: "", categoryIDs: [801008]), page: 1, pageSize: 10)
+        _ = try await service.search(.init(keyword: "", allProducts: true), page: 1, pageSize: 10)
+        let requests = await transport.requests
+        let bodies = try requests.map { request in
+            try #require(
+                JSONSerialization.jsonObject(with: #require(request.httpBody)) as? [String: Any])
+        }
+        #expect(bodies[0]["typeId"] as? [Int] == [801008])
+        #expect(bodies[1]["typeId"] == nil)
+        #expect(
+            bodies.allSatisfy {
+                $0["keyWord"] == nil && $0["featured"] == nil && $0["allProducts"] == nil
+            })
+        #expect(SearchQuery(keyword: "", categoryIDs: [801008]).isValid)
+        #expect(!SearchQuery(keyword: "", categoryIDs: [0]).isValid)
+        #expect(!SearchQuery(keyword: "", categoryIDs: [-1]).isValid)
+        #expect(!SearchQuery(keyword: "").isValid)
+    }
     private func service(_ transport: SearchTransport) -> HTTPProductSearchService {
         guard let url = URL(string: "https://search.invalid/app/") else {
             preconditionFailure("fixture URL")

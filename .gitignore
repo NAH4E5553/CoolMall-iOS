@@ -11,3 +11,22 @@ __pycache__/
 /Evidence/
 /IMPLEMENTATION_PLAN.md
 /PRODUCT_SPEC.md
+
+# Local workspaces and agent state are not project deliverables.
+/.worktrees/
+/.mimosa/
+/probe.txt
+
+# Retired experiments and their dedicated self-tests remain local-only.
+/.github/actionlint.yaml
+/Scripts/create-simulator.py
+/Scripts/prepare-isolation-experiment.sh
+/Scripts/run-isolation-shard.sh
+/Scripts/report-isolation-experiment.py
+/Scripts/split-test-shards.py
+/Scripts/test-duration-summary.py
+/Tests/Governance/test_test_shards.py
+/Tests/Governance/test_test_duration_summary.py
+/docs/ci-delivery-records.md
+/docs/ci-isolation-experiment.md
+/docs/ci-main-gate-bootstrap.md

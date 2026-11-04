@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -25,14 +26,35 @@ AUDIT = load('deferred_audit', ROOT/'Scripts/check-banner-lifecycle.py')
 FINAL = load('deferred_final', ROOT/'Scripts/finalize-verification.py')
 FIXTURES = load('deferred_transcripts', ROOT/'Tests/Governance/test_banner_lifecycle.py')
 
+# Child processes need their own test clock. No production environment switch
+# or policy date is added; run the unchanged script with a fixture-only date.
+FIXTURE_CLOCK_RUNNER = '''
+import datetime, runpy, sys
+day = datetime.date.fromisoformat(sys.argv[1])
+class FixtureDate(datetime.date):
+    @classmethod
+    def today(cls):
+        return cls(day.year, day.month, day.day)
+datetime.date = FixtureDate
+sys.argv = sys.argv[2:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+'''
+
 
 class NativeDeferralTests(unittest.TestCase):
     def setUp(self):
         self.data = json.loads((ROOT/'Tests/Governance/Fixtures/deferred-home-timeout.json').read_text())
 
-    def check(self):
-        return NATIVE.native_result(**{key:self.data[key] for key in
-                                     ['summary','tree','scope','execution','details','issues','log']})
+    def check(self, today=date(2026, 11, 3)):
+        with mock.patch.object(NATIVE.DEFER, 'date', wraps=date) as clock:
+            clock.today.return_value = today
+            return NATIVE.native_result(**{key:self.data[key] for key in
+                                         ['summary','tree','scope','execution','details','issues','log']})
+
+    def test_expired_exact_native_timeout_still_blocks(self):
+        for today in [date(2026, 11, 4), date(2026, 11, 5)]:
+            with self.subTest(today=today), self.assertRaisesRegex(ValueError, 'expired'):
+                self.check(today=today)
 
     def rewrite_single(self, method):
         short = method.split('/', 1)[1]
@@ -303,7 +325,9 @@ class VerdictPolicyTests(unittest.TestCase):
                 p.write_text(json.dumps(bad))
                 with self.assertRaises(ValueError): POLICY.load(p,today=date(2026,10,21))
 
-    def test_core_warning_is_explicit_and_unknowns_block(self):
+    @mock.patch.object(FINAL.POLICY, 'date', wraps=date)
+    def test_core_warning_is_explicit_and_unknowns_block(self, clock):
+        clock.today.return_value = date(2026, 11, 3)
         native={'status':'core-passed-with-deferred','nativeExitCode':65,'wrapperExitCode':65,
                 'deferred':[POLICY.warning('CI-DEFER-HOME-TIMEOUT-01','original timeout',method=POLICY.TIMEOUT_METHOD)]}
         result=FINAL.verdict(native,{'status':'not-required'},0)
@@ -334,14 +358,15 @@ class SummaryDisclosureTests(unittest.TestCase):
             'banner-trace.status.log': {'commandExitCode': 65, 'exitCode': 65},
         }
 
-    def publish(self, reports, prior=65):
+    def publish(self, reports, prior=65, today=date(2026, 11, 3)):
         with tempfile.TemporaryDirectory() as td:
             directory = Path(td)
             for name, value in reports.items():
                 (directory/name).write_text(value if isinstance(value, str) else json.dumps(value))
             originals = {name: (directory/name).read_bytes() for name in reports}
             output = directory/'github-output.txt'
-            result = subprocess.run([sys.executable, str(ROOT/'Scripts/finalize-verification.py'), str(directory),
+            result = subprocess.run([sys.executable, '-c', FIXTURE_CLOCK_RUNNER, today.isoformat(),
+                                     str(ROOT/'Scripts/finalize-verification.py'), str(directory),
                                      '--prior-exit', str(prior)], capture_output=True, text=True,
                                     env=dict(os.environ, GITHUB_OUTPUT=str(output), PYTHONDONTWRITEBYTECODE='1'))
             self.assertEqual({name: (directory/name).read_bytes() for name in reports}, originals)
@@ -462,6 +487,20 @@ class SummaryDisclosureTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(data['status'], 'core-passed-with-deferred' if deferred else 'core-passed')
                 self.assertEqual('核心检查通过，但存在延期问题' in markdown, deferred)
+
+    def test_expired_warning_cannot_publish_success(self):
+        reports = self.reports()
+        reports['native-results.json'] = {'status': 'passed', 'nativeExitCode': 0,
+                                         'wrapperExitCode': 0, 'deferred': []}
+        reports['banner-trace.status.log'] = {'commandExitCode': 0, 'exitCode': 0}
+        reports['banner-audit.json'].update(status='core-passed-with-deferred', methods={})
+        for today in [date(2026, 11, 4), date(2026, 11, 5)]:
+            with self.subTest(today=today):
+                result, data, markdown, output = self.publish(reports, prior=0, today=today)
+                self.assertEqual((result.returncode, data['status']), (65, 'failed'))
+                self.assertIn('expired', ' '.join(data['disclosureErrors']))
+                self.assertNotIn('核心检查通过', markdown)
+                self.assertIn('verification_status=failed', output)
 
 
 if __name__=='__main__': unittest.main()

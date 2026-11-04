@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -103,6 +104,7 @@ class VerificationDriverTests(unittest.TestCase):
         (self.root / '.github/workflows/ios.yml').write_text('name: legacy fixture\\n')
         for name in ['verify-local.sh', 'verification-timing.py', 'select-test-scope.py', 'classify-ci-changes.py', 'check-boundaries.py', 'with-banner-trace.py', 'finalize-verification.py', 'ci-deferred-policy.py', 'ci-deferred-checks.json', 'check-test-support-scope.py', 'check-test-support-execution.py']:
             shutil.copy2(ROOT / 'Scripts' / name, self.root / 'Scripts' / name)
+        self.freeze_policy_date(date(2026, 11, 3))
         for name in ['check-toolchain.sh', 'check-format.sh', 'check-boundary-negative.sh',
                      'check-test-results.py', 'check-banner-lifecycle.py']:
             self.stub(self.root / 'Scripts' / name)
@@ -125,6 +127,19 @@ class VerificationDriverTests(unittest.TestCase):
     def stub(self, path):
         path.write_text(STUB)
         path.chmod(0o755)
+
+    def freeze_policy_date(self, today):
+        # Only the temporary copy receives a clock seam. Production policy,
+        # approved dates and the expiry comparison stay unchanged.
+        source = (ROOT / 'Scripts/ci-deferred-policy.py').read_text()
+        marker = 'from datetime import date\n'
+        self.assertEqual(source.count(marker), 1)
+        clock = ('\nclass FixtureDate(date):\n'
+                 '    @classmethod\n'
+                 '    def today(cls):\n'
+                 f'        return cls({today.year}, {today.month}, {today.day})\n'
+                 'date = FixtureDate\n')
+        (self.root / 'Scripts/ci-deferred-policy.py').write_text(source.replace(marker, marker + clock, 1))
 
     def run_entry(self, **env):
         # Hosted public runners are slower than the local host; this is a
@@ -308,6 +323,25 @@ class VerificationDriverTests(unittest.TestCase):
         self.assertIn('TEST-SCOPE:',result.stdout)
         verdict = json.loads((self.ledger()[0].parent/'verification-verdict.json').read_text())
         self.assertEqual(verdict['status'],'failed')
+
+    def test_expired_deferred_native_failure_still_blocks(self):
+        for today in [date(2026, 11, 4), date(2026, 11, 5)]:
+            with self.subTest(today=today):
+                self.freeze_policy_date(today)
+                for args in [('add', 'Scripts/ci-deferred-policy.py'),
+                             ('commit', '-qm', 'fixture clock ' + today.isoformat())]:
+                    subprocess.run(['git', *args], cwd=self.root, check=True, capture_output=True)
+                previous = set((self.root / '.build/verification').glob('*/stage-timings.json'))
+                result = self.run_entry(STUB_FAIL='xcodebuild:test-without-building', STUB_RC='65',
+                                        STUB_NATIVE_DEFER='1', STUB_AUDIT_DEFER='1')
+                self.assertEqual(result.returncode, 65, result.stdout + result.stderr)
+                current = set((self.root / '.build/verification').glob('*/stage-timings.json')) - previous
+                self.assertEqual(len(current), 1, result.stdout + result.stderr)
+                verdict = json.loads((current.pop().parent/'verification-verdict.json').read_text())
+                self.assertEqual(verdict['status'], 'failed')
+                self.assertEqual((verdict['nativeExitCode'], verdict['wrapperExitCode']), (65, 65))
+                self.assertIn('expired', ' '.join(verdict['disclosureErrors']))
+                self.assertNotIn('核心检查通过', result.stdout)
 
     def test_deferred_native_cannot_hide_other_gate_failure(self):
         result = self.run_entry(STUB_FAIL='check-format.sh', STUB_RC='23', STUB_NATIVE_DEFER='1')

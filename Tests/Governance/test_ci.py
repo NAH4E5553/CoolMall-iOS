@@ -1,7 +1,9 @@
 import importlib.util
 import json
 import unittest
+from datetime import date
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -51,6 +53,12 @@ class CIRuntimeTests(unittest.TestCase):
 
 
 class CIResultTests(unittest.TestCase):
+    def validate_on(self, data, today):
+        # Only this fixture's clock changes; the real expiry guard still runs.
+        with mock.patch.object(RESULTS.POLICY, 'date', wraps=date) as clock:
+            clock.today.return_value = today
+            return RESULTS.validate(data)
+
     def needs(self, required='true', result='success', reason='implementation-rules-or-unknown'):
         return {'classify': {'result': 'success', 'outputs': {'run_verification': required, 'reason': reason}},
                 'verify': {'result': result, 'outputs': {'verification_status': 'core-passed', 'deferred_count': '0', 'deferred_ids': '[]'}}}
@@ -62,7 +70,17 @@ class CIResultTests(unittest.TestCase):
     def test_deferred_core_success_is_explicit_warning(self):
         data = self.needs()
         data['verify']['outputs'] = {'verification_status':'core-passed-with-deferred', 'deferred_count':'2', 'deferred_ids': json.dumps(list(RESULTS.POLICY.IDS)[:2])}
-        self.assertIn('核心检查通过，但存在延期问题', RESULTS.validate(data))
+        self.assertIn('核心检查通过，但存在延期问题',
+                      self.validate_on(data, date(2026, 11, 3)))
+
+    def test_expired_deferred_success_still_blocks(self):
+        data = self.needs()
+        data['verify']['outputs'] = {'verification_status': 'core-passed-with-deferred',
+                                    'deferred_count': '1',
+                                    'deferred_ids': json.dumps([next(iter(RESULTS.POLICY.IDS))])}
+        for today in [date(2026, 11, 4), date(2026, 11, 5)]:
+            with self.subTest(today=today), self.assertRaisesRegex(ValueError, 'expired'):
+                self.validate_on(data, today)
 
     def test_success_without_valid_structured_result_blocks(self):
         for outputs in [{}, {'verification_status':'all-passed','deferred_count':'0'},

@@ -1,10 +1,10 @@
 # CoolMall iOS 项目工程手册
 
-更新日期：2026-11-03。适用范围：以 CoolMallKotlin 的业务和接口为参考的原生 iOS 客户端。
+更新日期：2026-11-04。适用范围：以 CoolMallKotlin 的业务和接口为参考的原生 iOS 客户端。
 
 本手册是架构决策、基础能力选型、代码规约、开发流程和验收要求的统一维护入口。
 
-**当前状态：首页、分类/详情/评价、购物车、账号相关页面、订单/结算和搜索的既有代码已合入main，维护者已完成本轮手动验收。共享工程、Scheme/Test Plan、依赖锁及本地工程检查入口随仓库保留。远端CI关闭，停用实验与执行流水仅本地留档；iOS17、真机和发布覆盖仍按第8章保留实际限制。** 新成员入口见README；当前策略见7.4，实际交付范围见第8章。
+**当前状态：首页、分类/详情/评价、购物车、账号相关页面、订单/结算和搜索的既有代码已合入main，维护者已完成本轮手动验收。共享工程、Scheme/Test Plan、依赖锁及本地工程检查入口随仓库保留。远端CI关闭；Evidence及旧备份已于2026-11-04按维护者决定删除，不能再依赖其中资料；iOS17、真机和发布覆盖仍按第8章保留实际限制。** 新成员入口见README；当前策略见7.4，实际交付范围见第8章。
 
 先阅读第 1—3 章理解方向与边界；实现页面先查 [2.5 MVVM 合同](#25-feature-内部的-mvvm-合同)；开发基础能力时查第 4—6 章；执行构建与检查时查第 7 章；具体开工顺序见 [8.4](#84-接下来如何开工)。
 
@@ -593,12 +593,12 @@ F0 系统模块允许列表如下；项目模块依赖仍只读取上方精确�
 ```sh
 # 检查器自身：正例及故意违规的清单夹具。
 Scripts/check-source-boundaries.sh # 先建立 SwiftSyntax 检查器，治理测试依赖它
-python3 -m unittest discover -s Tests/Governance -p 'test_*.py' -v
+python3 Scripts/check-governance.py # 共享治理入口，核对选中清单、实际数量和零跳过
 # 真实 Package 清单检查；无 Package 时必须失败，不返回虚假的“通过”。
 python3 Scripts/check-boundaries.py
 ```
 
-检查器读取 ENGINEERING.md 的矩阵并调用 `swift package dump-package`，解析结构而非搜索 Swift 文本。它仍只执行清单层检查。F0 新增 `Scripts/check-source-boundaries.sh`，编译工具链自带 SwiftSyntax/SwiftParser 检查器，随后运行源码与 Xcode 工程检查；检查器不是动态语义或状态一致性的证明。真实 dump、App 编译和负向记录见 8.3。
+检查器读取 ENGINEERING.md 的矩阵并调用 `swift package dump-package`，解析结构而非搜索 Swift 文本。它仍只执行清单层检查。F0 新增 `Scripts/check-source-boundaries.sh`，编译工具链自带 SwiftSyntax/SwiftParser 检查器，随后运行源码与 Xcode 工程检查；检查器不是动态语义或状态一致性的证明。当前交付及历史验证限制见8.3；原本地dump、编译和负向记录已删除，不能据此重新核验。
 
 `dump-package` 保留原60秒截止及失败判定；详细模式只补内部编译/链接日志，超时时保留已捕获的stdout/stderr尾部。等待到50秒时，由同一控制流程对该命令进程树做一次进程快照（最多2秒）及最深进程的1秒栈采样（命令最多3秒）；所有等待消费同一原60秒绝对截止，不再使用后台Timer。采样进程有独立进程组和临时输出文件，命令完成/采样窗口结束均取消并在剩余预算内回收，记录complete/interrupted/unavailable/incomplete-unreaped及原退出状态；不得无界join或因采样结果放行清单失败。进程表/栈/部分stdout/stderr的有界输出标明原长度、计量单位、保留范围和truncated状态；临时栈文件通过文件元数据取长度，仅读取限定字节，采样中断也保留可取得的部分输出。日志沿现有入口留存，不重试、不增加预算、不改清单断言；采样是定位线索，不证明远端超时根因或App行为。
 
@@ -1071,15 +1071,15 @@ Keychain 适配的真实读写另用独立测试 service/account 标识验证，
 
 ### 7.2 自动验证：准确的触发与失败规则
 
-本节及7.3中保留的远端触发、必需门禁和调度表述，是验证工具的接入合同；当前没有启用这些远端入口，以7.4的停用状态为准。本地只按任务授权手动调用7.3和README中的命令。
+本节及7.3中保留的远端触发、必需门禁和调度表述仅为历史接入记录；当前远端状态以7.4为准，本地有效选测规则以下方“保留的验证规则”为准。本地只按任务授权手动调用7.3和README中的命令。
 
-当前交付策略：GitHub仅保留App/Package源码、正式资源、工程与依赖锁文件、业务测试和本地工程验证所需工具。Actions关闭、工作流入口删除、远端保护停用；不自动运行或恢复CI。停用实验、独立耗时诊断、自身专用测试和执行流水在维护者本地归档，不参与同事检出后的依赖装配。本次仓库整理不构建、不测试、不恢复原29项driver诊断；不改变业务断言、测试预算或延期日期。
+当前交付策略：GitHub仅保留App/Package源码、正式资源、工程与依赖锁文件、业务测试和本地工程验证所需工具。Actions关闭、工作流入口删除、远端保护停用；不自动运行或恢复CI。Evidence及旧备份已按维护者决定删除，停用实验、独立耗时诊断和执行流水不再保证本地留存，也不是同事检出后的装配输入。必要治理测试随仓库保留；本次仅执行获批的定向离线正反例，不构建App、不跑全套测试、不恢复原29项driver超时诊断；不改变业务断言、测试预算或延期日期。
 
 保留的验证规则：普通required保留Debug/Release、完整发现、全部Package测试、冷启动与路由返回两条全局UI冒烟；首页、分类按消费者追加，未知/共享/发现变化完整回退。直接影响及完整回退优先于advisory排除，替代方法仍必须发现且通过。治理仍由verify单一入口执行；仅可证明driver输入未变的干净精确PR/main required diff可省略driver整模块，其余治理保留；缺历史、脏树、本地或full均包含driver，零项、重复、缺模块不得通过。未来重新启用远端调度前需维护者另行安排，不采用Linux迁移或任意环境变量排除。
 
 UI方法级缩窄仅在Swift6对变更前后语法解析均成功，且所有替换行严格位于同一组既有测试方法体内部时成立；初始化器、属性、类型/extension边界、纯插入删除锚点、边界不可靠或解析工具不可用均保守回退。治理driver省略使用明确无关路径允许清单，未知路径保留driver。该语法步骤仅dump-parse；不执行App，也不放宽预算。
 
-2026-10-21 最新维护者决定 DEC-016 / APPROVAL-CI-DEFERRED-01：为继续已明确的分类→购物车→我的功能开发，将 `CI-DEFER-HOME-TIMEOUT-01` 和 `CI-DEFER-CYCLE-EVIDENCE-01` 登记为有期限的延期修复、未闭环项；范围和到期/复核见7.5的CI专用登记及 `Scripts/ci-deferred-checks.json`。本段仅覆盖以下两类CI结果，优先于本节旧“任意非零/审计缺失即阻塞”表述的对应部分，不批准模块/权限豁免、跳过测试或扩大失败白名单。
+历史维护者决定 DEC-016 / APPROVAL-CI-DEFERRED-01（2026-10-21；2026-11-04起已到期，不自动续期）：为继续已明确的分类→购物车→我的功能开发，将 `CI-DEFER-HOME-TIMEOUT-01` 和 `CI-DEFER-CYCLE-EVIDENCE-01` 登记为有期限的延期修复、未闭环项；范围和到期/复核见7.5的CI专用登记及 `Scripts/ci-deferred-checks.json`。本段仅覆盖以下两类CI结果，优先于本节旧“任意非零/审计缺失即阻塞”表述的对应部分，不批准模块/权限豁免、跳过测试或扩大失败白名单。
 
 2026-10-24 用户明确批准 DEC-016 精确扩展：在上述两项之外，新增 `CI-DEFER-HOME-OFFSCREEN-01`、`CI-DEFER-HOME-PENDING-01`、`CI-DEFER-HOME-RECONCILIATION-01` 三个整条60秒超时方法；到期仍为2026-11-04，证据为CI 40100669526。扩展只覆盖这三个精确方法、整条执行预算超时且无额外断言/崩溃/业务失败的情况；其他未登记方法超时、同方法混合失败、未知失败仍阻塞，断言/时限/测试选择不变，修复后撤销对应项。
 
@@ -1102,26 +1102,26 @@ UI观察预算保留原数值并统一绝对截止点：Tab点击/activate/短�
 正式入口在测试执行后（包括原测试失败）运行最小轮播生命周期离线审计；只审实际选中并执行的四方法，无该范围明确not-required，部分失败仅recorded-prefix/未到达。审计缺失/失败拒绝成功，保留先前非零测试退出码。共享TestPlan真实发现及exact-set核对、现有PR累计范围选测/完整回退与required-checks不变，不重构项目CI分层。性能/线程诊断单独记录，不以新合同通过倒推旧away或晚唤醒根因闭环。
 
 
-2026-10-23 DEC-017 / 用户本轮明确授权 CI 修正与分层，替换 DEC-015 的历史成功前提及本节旧“每个实现 PR 全套 UI”要求。范围由当前累计 diff 影响决定，历史失败、延期、取消、重跑次数和历史查询不可用本身不再触发全套，也不查询远端历史。未知路径、共享影响、声明/API/发现集合变化、无法界定的新删改和资源影响仍保守完整覆盖。纯文档/可确认占位沿 DEC-014 分类；当前失败不作为通用豁免。
+历史分层决定（2026-10-23）DEC-017 / 用户当时明确授权 CI 修正与分层，替换 DEC-015 的历史成功前提及本节旧“每个实现 PR 全套 UI”要求。范围由当前累计 diff 影响决定，历史失败、延期、取消、重跑次数和历史查询不可用本身不再触发全套，也不查询远端历史。未知路径、共享影响、声明/API/发现集合变化、无法界定的新删改和资源影响仍保守完整覆盖。纯文档/可确认占位沿 DEC-014 分类；当前失败不作为通用豁免。
 
-- `MALL_VERIFICATION_TIER=required`：PR 必需层。保留全部 policy/format/boundary/治理正负例、Debug 与 Release 构建、真实完整发现、全部 Package 单元/集成测试（含 HomeBannerProductionTimingTests 六条真实宿主计时路径）、关键 UI：四 Tab 冷启动、路由隐藏/返回、首页加载/错误重试、重按刷新、push 返回轮播恢复、三条绝对预算 helper 反例。有 CategoryLoadTests 时整类进入基线，分类源码和测试由 DeepSeek 维护。
+- `MALL_VERIFICATION_TIER=required`：当前本地工具的必需层，范围以本节“保留的验证规则”及实际消费者映射为准。历史的首页/分类无条件整类基线已被后续CI修正规则替代；不再沿用旧模型分工。
 - 改动直接影响的 UI 追加到必需层：轮播内部计时/组件实现变化追加 cycle、away、offscreen、push、快速往返；HomeLoadTests 私有 helper/类体变化保守整类，NavigationSmoke 变化整类，CategoryLoadTests 既有测试体变化整类；既有首页 VM/布局/入口沿实际消费者整类 union。声明/新删改/未知/共享影响无法界定时完整执行。正式入口仍由实际编译枚举生成确切 stable method ID，使用相同 Debug/TestPlan/DerivedData 执行；缺失/零/重复/disabled/skip/崩溃/业务失败/参数子记录异常和源码漂移拒绝成功。
-- `MALL_VERIFICATION_TIER=full`：完整回归，执行全部实际发现方法，包含长轮播回环、Tab/后台、离屏、快速往返、完整生命周期、重展示/大字号/滚动/长 pending/busy 链。main 推送、定时、手动必为 full；阶段交付显式 full。本地默认 full，可对冻结的当前影响运行 required。不存在全局 continue-on-error 或自动重跑。
+- `MALL_VERIFICATION_TIER=full`：完整回归，执行全部实际发现方法，包含长轮播回环、Tab/后台、离屏、快速往返、完整生命周期、重展示/大字号/滚动/长 pending/busy 链。历史远端调度曾将main推送、定时和手动工作流设为full，现已停用。本地入口默认full，可按任务授权对冻结的当前影响运行required；不因本段自动启动验证。不存在全局 continue-on-error 或自动重跑。
 - 取舍：未受当前改动影响的长 UI 检查延至完整回归，失去对同一 PR 的部分提前拦截。PR 关键业务检查仍阻塞；完整回归发现明确业务回归继续阻止发布并处理受影响改动。五个历史原生失败全部保留为阻塞失败，cycle 原生 60 秒超时不在证据延期范围；旧返回静止、晚唤醒及 cycle 证据风险均未闭环。新范围通过不能改写旧失败或声称根因解决。DEC-016 白名单、到期、9/14 和 60/120 秒及 job120 分钟均不变。
 
 原生方法最终结果必须在整体失败时仍导出到 native-results.json.methodResults；分类器失败不能清空这些结果。生命周期完整/前缀状态以原生逐方法结果为准，defer 中 outcome 仅诊断，不是成功证明。begin/end（同一 system uptime）限定审计窗口；end 是最终唯一操作 marker。窗口外源事件逐项保留为诊断，不因正常结束后自动推进报错，也不能补齐窗口内缺失的初始记录、代次/arm/推进或可见检查。无 end 的失败方法按全部可取得前缀审计，不伪造短窗口。窗口内隐藏推进、错误代次、缺必要记录和完整来源中的业务违规继续阻塞；只沿原 cycle 两项精确证据延期。不引入生产日志封存平台，不改首页生产逻辑。
 
-每次仍完整 build/enumerate TestPlan，之后仅执行本次 expected stable IDs。scope 记录 tier、source/tree/worktree、merge-base、mapping、选择/排除理由和 hashes；结果汇总显示实际层级、完整/selected 模式、expected/omitted 数。required-checks 作业名和分支保护不变；只读权限、不依赖历史 Actions token、不触发额外远端运行。真实枚举 → 本次精确 Runner 准备 → 正式执行顺序保持，不清理 App/data 或其他设备。
+每次仍完整 build/enumerate TestPlan，之后仅执行本次 expected stable IDs。scope 记录 tier、source/tree/worktree、merge-base、mapping、选择/排除理由和 hashes；结果汇总显示实际层级、完整/selected 模式、expected/omitted 数。原required-checks汇总接线属于历史实现；当前工作流及远端保护均已停用，不自动恢复，也不触发额外远端运行。真实枚举 → 本次精确 Runner 准备 → 正式执行顺序保持，不清理 App/data 或其他设备。
 
 2026-10-21 earlier approved CI diagnostics/timing policy (selection proposal status below is historical; the later approval above controls): `Scripts/verify-local.sh` defaults to `MALL_TEST_DIAGNOSTICS=never` both locally and in ordinary CI; only `never` and `on-failure` are accepted, before build/device commands. Manual `workflow_dispatch.collect_diagnostics=true` selects `on-failure`; no automatic rerun. Raw logs, xcresult/attachments, original failure codes, full TestPlan, 60/120-second test allowances and 120-minute CI limit remain. Stage durations use system-wide CLOCK_MONOTONIC; UTC timestamps are separate. Atomic per-stage records retain failed/cancelled/not-run states; an unfinished hard-killed stage is incomplete, never passed. The test stage includes build, execution and optional diagnostics. Recording failures preserve a prior gate failure; recording failure after successful gates makes the entry fail and reports gate/entry codes separately. The always summary and upload retain available records. This authorizes only diagnostics and timing; business-diff test selection is still a proposal, separate from existing DEC-014 classification. CI-DIAG-01 remains paused.
 
 2026-10-19最新用户决定（DEC-014）：**未具体实现的功能不纳入CI功能行为测试；有具体实现后，才随实现加入对应CI覆盖。** 适用于所有功能，不只优惠券。仅有入口、空回调、占位页或“暂未开放”提示，不视为对应搜索、领取、交易或目标页业务已实现，不为这些占位行为新增/保留业务验收断言；已有占位专用用例移除，混合用例只去掉占位操作及其反馈断言。部分实现按能力区分：已实现的读取、展示、价格、图片、选择/切换、刷新、导航状态及取消错误合同继续验证；用夹具验证真实能力仍有效，不能因夹具或标识包含pending就删除真实导航/状态检查。实现功能时在同一变更中补齐正常及必要失败/取消测试。旧失败证据保留，移出范围不改报为历史通过。
 
-本决定覆盖旧记录中要求保留“所有断言”的占位行为部分；已实现功能断言、默认/最大时限、结果真实性与门禁保护不变。用户随后明确“同时让纯占位/文档改动跳过流水线”：PR按merge-base到head、main push按before到head的完整diff分类。纯说明文档和可确认纯占位改动不启动构建/测试；保留轻量classify及required-checks回报“不需要运行”，不伪称测试通过。schedule/manual验证已有实现；未知路径/无法确认的源码、真实实现、测试、工程/规则/工作流变动仍验证。分类失败/缺失/取消拒绝通过；只有分类成功、明确docs-or-placeholder-only且verify确实skipped时允许范围排除，其他skip仍失败。
+本决定覆盖旧记录中要求保留“所有断言”的占位行为部分；已实现功能断言、默认/最大时限及结果真实性不变。以下为已停用流水线的分类接线历史，本地分类器仍保留相同判定；不代表远端保护有效。用户当时明确“同时让纯占位/文档改动跳过流水线”：PR按merge-base到head、main push按before到head的完整diff分类。纯说明文档和可确认纯占位改动不启动构建/测试；保留轻量classify及required-checks回报“不需要运行”，不伪称测试通过。schedule/manual验证已有实现；未知路径/无法确认的源码、真实实现、测试、工程/规则/工作流变动仍验证。分类失败/缺失/取消拒绝通过；只有分类成功、明确docs-or-placeholder-only且verify确实skipped时允许范围排除，其他skip仍失败。
 
 实现入口Scripts/classify-ci-changes.py：纯文档为README/CHANGELOG/PRODUCT_SPEC/IMPLEMENTATION_PLAN及docs/Docs普通Markdown、文本和图片；ENGINEERING/AGENTS/SKILL等有效规则不作为纯文档。纯占位包括严格匹配的无状态无动作SwiftUI Text占位页：新增仅限private且名称以PlaceholderView结尾，既有类型仅同名同访问级别文案修改，以及已登记混合源码文件中的待接入/暂未开放显示字面量变化（其余字节必须相同）。布局/时限/回调/标识/导航/类型删除改名/未知形状仍走验证；不按文件含placeholder/pending关键词整文件豁免。此分类是保守的可执行范围判断，不是通用业务实现状态推理。
 
-F0 后所有 PR 均启动流水线。先分类完整 diff：新增/删除/改名、工程文件、规则、脚本、锁文件、资源和测试都算；**未知路径按代码变更处理**。为避免条件遗漏，首期不做按单个 Feature 智能裁剪测试。下列为 CI 检查合同，当前实际落地范围及最低系统缺口见 8.3。
+以下为F0时期的远端检查设计与触发历史，当前不自动执行；旧“所有PR启动流水线、首期不裁剪”已被后续分类/影响选测和7.4停用决定覆盖。检查内容与禁止误判原则保留，本地执行范围按当前7.2及任务授权选择，实际交付与最低系统缺口见8.3。
 
 | 检查/触发 | 必须执行的内容 | 不允许作为通过 |
 | --- | --- | --- |
@@ -1136,9 +1136,9 @@ F0 后所有 PR 均启动流水线。先分类完整 diff：新增/删除/改名
 
 “纯说明文档”限定为普通 Markdown 文案，且不修改 ENGINEERING 的规则矩阵、状态/接口合同、AGENTS、可执行代码模板或治理脚本。规则/合同修改按代码变更处理；是否触及约束由维护者复核，不能由 AI 自行声称纯文案而跳过。仓库初始化 F0 的 Bootstrap PR 按尚可执行的检查验收，必须明确标记未建立的完整门禁；该特殊状态不能延续到 F1。
 
-建立一个始终返回状态的 `required-checks` 汇总作业，由它核对本次类别要求的所有检查都成功；路径过滤/上游失败导致的 skipped、cancelled、无状态不等于成功。主分支将该汇总设为必需检查。每周检查是 CI 的 cron 配置要求，不表示已创建桌面定时任务。
+历史工作流使用`required-checks`汇总核对本次所需结果，并曾配置主分支必需检查及每周cron；这些远端入口和保护当前均已停用，不按本段重建。本地保留的结果校验仍拒绝未经明确分类排除的skipped、cancelled、缺失或失败，不将CI关闭称为检查通过。
 
-失败即停止合并并修复原因；无法复现的波动测试保留首次日志，可重跑一次诊断，但不能只展示最后一次绿灯。隔离某条不稳定测试必须走有范围和期限的 7.5 例外；金额、会话隔离、持久化回滚等关键合同不得因波动停测。工具/模拟器不可用时标记“未验证”，修复环境或补等价设备证据；不能把环境问题改成 PASS。
+获批检查的失败必须如实报告，不能只展示最后一次绿灯。历史CI启用时要求失败停止合并并保留首次日志、最多重跑一次诊断；当前交付与是否复跑由维护者安排，本段不授权恢复暂停的诊断。隔离某条不稳定测试必须走有范围和期限的 7.5 例外；金额、会话隔离、持久化回滚等关键合同不得因波动停测。工具/模拟器不可用时标记“未验证”，修复环境或补等价设备证据；不能把环境问题改成 PASS。
 
 每次运行保留提交 SHA、工具链、模拟器 OS/UDID、命令与退出码、用例数量、xcresult/失败日志。构建/行为测试成功才说明对应范围通过，不等同于架构永远正确。使用 Swift Testing 写单元/集成测试，XCTest/XCUIAutomation 写 UI 测试；不对 getter/间距写镜像测试，也不设空泛的覆盖率目标。[Apple 测试指导](https://developer.apple.com/documentation/xcode/testing)
 
@@ -1182,7 +1182,7 @@ xcodebuild test \
   CODE_SIGNING_ALLOWED=NO
 ```
 
-本地完整验收使用 `MALL_SIMULATOR_ID=<实际UDID> MALL_VERIFICATION_TIER=full Scripts/verify-local.sh`；当前必需层使用同入口 `MALL_VERIFICATION_TIER=required`（本地需记录 MALL_DIFF_BASE，默认 HEAD，包含未提交/未跟踪的实际源码影响）。PR 由工作流选择 required，main/定时/手动 full。该入口在计时 UI 测试前启动选定模拟器、安装并预启动 Debug App，然后以 `-parallel-testing-enabled NO` 串行执行测试进程，避免冷启动和模拟器克隆竞争影响 UI 的原定时限。Swift Testing 用例内部的 Task 并发竞争仍照常验证；共享 Test Plan 的 60 秒默认/120 秒最大时限、全部 Target 和断言保持不变。上面的独立 xcodebuild 命令用于排查，不能替代完整入口的环境准备与结果计数检查。
+本地完整验收使用 `MALL_SIMULATOR_ID=<实际UDID> MALL_VERIFICATION_TIER=full Scripts/verify-local.sh`；当前必需层使用同入口 `MALL_VERIFICATION_TIER=required`（本地需记录 MALL_DIFF_BASE，默认 HEAD，包含未提交/未跟踪的实际源码影响）。历史工作流曾为PR选择required、main/定时/手动选择full，现已删除，不再自动触发。该入口在计时 UI 测试前启动选定模拟器、安装并预启动 Debug App，然后以 `-parallel-testing-enabled NO` 串行执行测试进程，避免冷启动和模拟器克隆竞争影响 UI 的原定时限。Swift Testing 用例内部的 Task 并发竞争仍照常验证；共享 Test Plan 的 60 秒默认/120 秒最大时限、全部 Target 和断言保持不变。上面的独立 xcodebuild 命令用于排查，不能替代完整入口的环境准备与结果计数检查。
 
 结果目录必须不存在；重复运行改用新的结果路径，CI 使用每次运行唯一目录。确认 Test Plan 真正包含清单中已登记的全部 Package 测试 Target 和 App UI 测试；只显示 build succeeded 不代表测试运行，零测试也不能算验收通过。
 
@@ -1190,7 +1190,7 @@ xcodebuild test \
 
 #### 补验最低 iOS 17 系统
 
-2026-10-07 用户明确安排：iOS 17 兼容性留待后续真机验证，当前保留最低版本 **17.0**，本地继续使用 iOS 26.2 模拟器。该项保持“未验证”；下述模拟器安装方法仅作为可选补验路径保留。后续真机记录设备型号、准确 iOS 版本、提交 SHA、工具链、签名/执行命令、测试数量和结果，并按 6.2/7.2 验证必要行为；若真机版本高于 17.0，仍如实注明 17.0 的覆盖缺口。
+2026-10-07用户曾安排iOS17兼容性留待后续真机验证，并使用当时的iOS26.2模拟器。当前最低版本仍为 **17.0**，现用工具链/模拟器基线见README；历史设备版本不作为当前执行指令。该项保持“未验证”；下述模拟器安装方法仅作为可选补验路径保留。后续真机记录设备型号、准确 iOS 版本、提交 SHA、工具链、签名/执行命令、测试数量和结果，并按 6.2/7.2 验证必要行为；若真机版本高于 17.0，仍如实注明 17.0 的覆盖缺口。
 
 先在 Xcode → Settings → Components → Other Installed Platforms → Add Platforms 中查找并安装 iOS 17 runtime，再创建使用该 runtime 的模拟器。优先验证最低版本 **17.0**；若 Apple 当前仅提供较新的 17.x，记录确切版本及 17.0 仍未覆盖的缺口，不能把它写成最低版本已验证。[Apple 安装说明](https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components)
 
@@ -1208,25 +1208,27 @@ Apple 的 Xcode 27 支持表列出 iOS 17 及以上模拟器；但 Xcode 27 发�
 
 ### 7.5 例外与规则变更
 
+以下批准ID及合同正文保留。原Evidence内任务卡、scope附件和原始验收资料已于2026-11-04经用户同意删除，故移除失效路径；不能再据本节声称附件可读或重算旧验收。未在正文或现有源码/测试中留存的细节需维护者提供或重新取证，不重建Evidence；已提交实现和规则演进仍可查Git历史。
+
 2026-11-03 HOME-CATALOG-NAV-PAGING-01 / CHANGE-02：用户要求首页10分类和分类Tab二级分类进入既有搜索结果页，并修正首页全部商品缺少后续加载。最小公开增量为HomeEntryView的可选onOpenCategory([Int64])和商品分页能力注入、SearchResultsEntryView的categoryIDs默认空数组、SearchQuery的allProducts默认false。首页分类按categoryAll取直接子ID，无子节点使用所点ID，二级分类传真实单ID；App类型化路由保留来源Tab。分类查询允许空词但必须有正数分类ID；全商品空词仅显式allProducts有效，不编码新服务端字段。首页分页复用ProductSearchLoading/NumberedPageCoordinator，首次触底从page1读取权威分页再追加，避免假设首页goods条数等于分页size；成功刷新重置、刷新开始/离页取消旧追加，失败保留旧商品。无新Target/SDK/依赖/存储/CI修改，不放宽既有断言或预算。2026-11-04用户确认分类跳转、首页自动续页及图片保留手动验收通过；Debug构建和Astra独立静态复验通过，原生自动化测试本轮未执行。
 
-2026-10-28 SEARCH-WIDTH-FEATURED-01 / CHANGE-02：用户明确要求搜索发现框填满原生返回右侧及首页精选查看全部复用搜索结果。增量公开合同仅SearchQuery.featuredOnly默认false、SearchResultsEntryView同默认参数及HomeEntryView可选onShowFeatured意图；App为实际消费者并以typed route保留来源。Core空词仅featuredOnly有效，Data精选编码true/普通省略、空词省略keyWord，结果VM排序/筛选/改词保留范围。无新Target/SDK/schema/写入权/规则放宽；固定Android cf5029b及本轮匿名1000/9项分页读取为合同证据。状态/取消/验证见本地Evidence/iOS/2026-10-28-SEARCH-WIDTH-FEATURED/scope.md。
+2026-10-28 SEARCH-WIDTH-FEATURED-01 / CHANGE-02：用户明确要求搜索发现框填满原生返回右侧及首页精选查看全部复用搜索结果。增量公开合同仅SearchQuery.featuredOnly默认false、SearchResultsEntryView同默认参数及HomeEntryView可选onShowFeatured意图；App为实际消费者并以typed route保留来源。Core空词仅featuredOnly有效，Data精选编码true/普通省略、空词省略keyWord，结果VM排序/筛选/改词保留范围。无新Target/SDK/schema/写入权/规则放宽；固定Android cf5029b及本轮匿名1000/9项分页读取为合同证据。
 
-2026-10-27 SEARCH-V1 v0.2 / CHANGE-02：用户明确确认整卡并授权开发，历史采用环境+游客/账号独立最近10词、去重置顶、清空确认、无登录合并。CatalogFeature新增SearchEntryView/SearchResultsEntryView两个公开入口，Core新增不可变SearchQuery/SearchSort/SearchProductSummary及热词/搜索/历史窄能力和scope/snapshot；Data新增HTTPProductSearchService及唯一PersistentSearchHistoryStore，独立VersionedSchema v1、不迁移或复用Cart/Footprint库。SwiftData仅新增该适配器精确路径登记，Feature VM/DTO保持内部。App组装同scope唯一store、类型化来源导航；筛选草稿/排序/布局归结果VM，沿用Core分页协调器和既有CategoryLoading/MallImages。不新增Target/SDK/依赖/CI政策，不改订单工作树。批准规格与状态/取消/验收合同见本地Evidence/Specs/2026-10-27-SEARCH-V1/PLAN.md v0.2。
+2026-10-27 SEARCH-V1 v0.2 / CHANGE-02：用户明确确认整卡并授权开发，历史采用环境+游客/账号独立最近10词、去重置顶、清空确认、无登录合并。CatalogFeature新增SearchEntryView/SearchResultsEntryView两个公开入口，Core新增不可变SearchQuery/SearchSort/SearchProductSummary及热词/搜索/历史窄能力和scope/snapshot；Data新增HTTPProductSearchService及唯一PersistentSearchHistoryStore，独立VersionedSchema v1、不迁移或复用Cart/Footprint库。SwiftData仅新增该适配器精确路径登记，Feature VM/DTO保持内部。App组装同scope唯一store、类型化来源导航；筛选草稿/排序/布局归结果VM，沿用Core分页协调器和既有CategoryLoading/MallImages。不新增Target/SDK/依赖/CI政策，不改订单工作树。
 
-2026-10-27 ORDER-BADGES-PAGING-01 / CHANGE-02、REVIEW-02：用户明确我的订单角标、列表左右分页、详情购物车角标三项，按三个可独立构建提交。Core新增UserOrderCounts/OrderCountsLoading只读值与能力，Data复用HTTPOrderService的GET order/info/userCount与现有鉴权；App同实例注入Me入口，Account私有VM拥有账号页面投影。Orders各filter持原分页协调器、原生page与header同步。Catalog入口仅新增App原CartBadge同scope件数值，不新建存储或投影owner。两个Feature的纯视觉CountBadge共享于DesignSystem，不泄漏Core/业务状态。三Feature分别对应用户三项必要消费者，无互相依赖；不新Target/SDK/schema/CI/预算。状态/取消/接口/验证合同唯一见本地Evidence/iOS/2026-10-27-ORDER-BADGES-PAGING/scope.md。
+2026-10-27 ORDER-BADGES-PAGING-01 / CHANGE-02、REVIEW-02：用户明确我的订单角标、列表左右分页、详情购物车角标三项，按三个可独立构建提交。Core新增UserOrderCounts/OrderCountsLoading只读值与能力，Data复用HTTPOrderService的GET order/info/userCount与现有鉴权；App同实例注入Me入口，Account私有VM拥有账号页面投影。Orders各filter持原分页协调器、原生page与header同步。Catalog入口仅新增App原CartBadge同scope件数值，不新建存储或投影owner。两个Feature的纯视觉CountBadge共享于DesignSystem，不泄漏Core/业务状态。三Feature分别对应用户三项必要消费者，无互相依赖；不新Target/SDK/schema/CI/预算。
 
-2026-10-26 ORDER-TRANSACTIONS-02：用户7张截图及明确提交/取消订单请求覆盖ORDER-V1只读范围。既有Checkout/Orders分别增加创建确认/收银台展示和待付款取消意图，Data通过新窄Core协议执行已证create/cancel，服务端仍为订单状态/金额事实；无支付SDK/新Target/存储副本/CI变化。App使用CashierEntryView与既有详情回调，Feature VM不公开。纯视觉固定高度弹框由DesignSystem供两个新场景使用，旧Account动态领券高度/请求/登录合同不改；不复制业务卡模型，不跨Feature import。创建/取消未确认不重放、账号/旧回调失效、字段/金额和来源导航合同见本地Evidence/iOS/2026-10-26-ORDER-TRANSACTIONS/scope.txt；用户已确认来源返回规则。该条为用户明确业务范围所需最小公开合同/写入能力登记，不放宽依赖或检查器。
+2026-10-26 ORDER-TRANSACTIONS-02：用户7张截图及明确提交/取消订单请求覆盖ORDER-V1只读范围。既有Checkout/Orders分别增加创建确认/收银台展示和待付款取消意图，Data通过新窄Core协议执行已证create/cancel，服务端仍为订单状态/金额事实；无支付SDK/新Target/存储副本/CI变化。App使用CashierEntryView与既有详情回调，Feature VM不公开。纯视觉固定高度弹框由DesignSystem供两个新场景使用，旧Account动态领券高度/请求/登录合同不改；不复制业务卡模型，不跨Feature import。创建/取消未确认不重放、账号/旧回调失效；用户已确认来源返回规则。字段/金额及导航的原任务附件已删除，不将其缺失记为重新验收通过。该条为用户明确业务范围所需最小公开合同/写入能力登记，不放宽依赖或检查器。
 
-2026-10-26 ORDER-V1：用户明确批准新增OrdersFeature/CheckoutFeature两个业务Target及对应测试，覆盖原任务“不新增Target”限制，沿SPLIT-01登记既有机器矩阵，不变CI政策。App唯一组装/路由，两个Feature仅依赖Core/DesignSystem/Images，不互相导入。最小公开入口OrderListEntryView、OrderDetailEntryView、CheckoutEntryView；Core只读订单/确认页能力及一次性购买意图；不开放Feature VM/DTO。仅order/info/page、order/info/info、page/confirmOrder读取；不调用名字含confirm的确认收货写接口。无创建/支付/订单修改或存储副本。金额/取消/账号切换及验收合同见本地Evidence/iOS/2026-10-26-ORDER-V1/scope.txt及PRODUCT_SPEC本卡。
+2026-10-26 ORDER-V1：用户明确批准新增OrdersFeature/CheckoutFeature两个业务Target及对应测试，覆盖原任务“不新增Target”限制，沿SPLIT-01登记既有机器矩阵，不变CI政策。App唯一组装/路由，两个Feature仅依赖Core/DesignSystem/Images，不互相导入。最小公开入口OrderListEntryView、OrderDetailEntryView、CheckoutEntryView；Core只读订单/确认页能力及一次性购买意图；不开放Feature VM/DTO。仅order/info/page、order/info/info、page/confirmOrder读取；不调用名字含confirm的确认收货写接口。无创建/支付/订单修改或存储副本。金额/取消/账号切换及验收规格可查本地PRODUCT_SPEC对应任务；原任务附件已删除。
 
-2026-10-25 ADDRESS-01：用户地址截图及iOS风格/不新增按钮授权既有AccountFeature内地址管理；精确新增AddressEntryView、AddressEditorEntryView两个入口，Core地址值/输入/读写失败/能力与地区只读合同，Data HTTPAddressService供App组装；不新增Target/SDK/系统import/禁止依赖/存储副本。SourceBoundaries同步精确入口正反例，无CI政策更改。状态、取消、未知写与待定地区来源见Evidence/iOS/2026-10-25-ADDRESS/scope.md；默认唯一/自动默认无证据，不自行实现。
+2026-10-25 ADDRESS-01：用户地址截图及iOS风格/不新增按钮授权既有AccountFeature内地址管理；精确新增AddressEntryView、AddressEditorEntryView两个入口，Core地址值/输入/读写失败/能力与地区只读合同，Data HTTPAddressService供App组装；不新增Target/SDK/系统import/禁止依赖/存储副本。SourceBoundaries同步精确入口正反例，无CI政策更改。原状态、取消、未知写与待定地区来源附件已删除；默认唯一/自动默认无证据，不自行实现。
 
-2026-10-25 COUPON-FEEDBACK-03：用户明确移除领券卡片状态/查看我的券，采用稳定立即领取按钮与toast，并支持仅顶部下滑关闭。必要移除现有CouponReceiveEntryView.init的onShowCoupons参数及App无用路由闭包；无新public类型/Target/SDK/依赖/存储或规则例外。状态/失败/取消与实际接口取证范围见本轮scope.md，不因toast擅改成功合同或自动重放。 最新用户指定toast读取接口message，覆盖先前500精确ack候选：现有CouponReceiving返回String?成功message，既有CouponClaimFailure增加rejectedMessage(code,String)保留拒绝文案；所有非1000仍拒绝，不据message改判成功。1000原非空String data合同、会话/取消校验不变，缺失/空/错型message兜底；仅同步既有适配/替身/测试，无新增public类型。
+2026-10-25 COUPON-FEEDBACK-03：用户明确移除领券卡片状态/查看我的券，采用稳定立即领取按钮与toast，并支持仅顶部下滑关闭。必要移除现有CouponReceiveEntryView.init的onShowCoupons参数及App无用路由闭包；无新public类型/Target/SDK/依赖/存储或规则例外。原状态/失败/取消与接口取证附件已删除，不因toast擅改成功合同或自动重放。 最新用户指定toast读取接口message，覆盖先前500精确ack候选：现有CouponReceiving返回String?成功message，既有CouponClaimFailure增加rejectedMessage(code,String)保留拒绝文案；所有非1000仍拒绝，不据message改判成功。1000原非空String data合同、会话/取消校验不变，缺失/空/错型message兜底；仅同步既有适配/替身/测试，无新增public类型。
 
-2026-10-25 COUPON-SHEET-02：用户明确要求全部接口券的列表弹层与完整卡片，授权现有CouponClaimOffer/HomeCouponSummary及HomeEntryView/CouponReceiveEntryView的必要字段和数组参数演进，具体差异与消费者见本轮scope.md。公开类型/Target集合不扩大，无新增依赖/SDK/存储/禁止项例外，既有SourceBoundaries精确入口登记与CI政策保持。
+2026-10-25 COUPON-SHEET-02：用户明确要求全部接口券的列表弹层与完整卡片，授权现有CouponClaimOffer/HomeCouponSummary及HomeEntryView/CouponReceiveEntryView的必要字段和数组参数演进，原差异与消费者附件已删除，当前须核对既有源码及消费者测试。公开类型/Target集合不扩大，无新增依赖/SDK/存储/禁止项例外，既有SourceBoundaries精确入口登记与CI政策保持。
 
-2026-10-25 COUPON-01 v0.2（用户截图请求及明确追加“同时接通首页和商品详情领券”）：在既有 Target 内精确增加 AccountFeature.CouponEntryView、AccountFeature.CouponReceiveEntryView、CatalogFeature.CouponProductsEntryView；SourceBoundaries 与对应正反例同步登记。Core 仅增加实际消费的券/商品摘要、读/领取窄合同及 NumberedPageCoordinator；两个页面各自 VM 持有实例与只读投影，协调器唯一拥有该实例分页状态。Data 复用 APIClient，SessionCoordinator 内部绑定 account/generation/environment 的瞬时授权，Token 不公开；App 组装一个 HTTPCouponReceiver actor，按 account/coupon 单飞。登录不自动领取，未知写结果不重放/不假报失败或回滚，转已领列表核验；未确认服务端幂等、时区/失效业务码不编造合同。只做门槛价格浏览，不代表 SKU 资格或结算抵扣。本次没有新增 Target/SDK/import/持久副本/依赖或 CI 政策豁免，其他禁止项保持。具体状态/取消/验证见8.3与 COUPON 证据 scope.md。
+2026-10-25 COUPON-01 v0.2（用户截图请求及明确追加“同时接通首页和商品详情领券”）：在既有 Target 内精确增加 AccountFeature.CouponEntryView、AccountFeature.CouponReceiveEntryView、CatalogFeature.CouponProductsEntryView；SourceBoundaries 与对应正反例同步登记。Core 仅增加实际消费的券/商品摘要、读/领取窄合同及 NumberedPageCoordinator；两个页面各自 VM 持有实例与只读投影，协调器唯一拥有该实例分页状态。Data 复用 APIClient，SessionCoordinator 内部绑定 account/generation/environment 的瞬时授权，Token 不公开；App 组装一个 HTTPCouponReceiver actor，按 account/coupon 单飞。登录不自动领取，未知写结果不重放/不假报失败或回滚，转已领列表核验；未确认服务端幂等、时区/失效业务码不编造合同。只做门槛价格浏览，不代表 SKU 资格或结算抵扣。本次没有新增 Target/SDK/import/持久副本/依赖或 CI 政策豁免，其他禁止项保持。当前交付状态见8.3；原COUPON状态/取消/验证附件已删除。
 
 2026-10-25 APPROVAL-ACCOUNT-LOGIN-20261025：用户截图和本轮明确范围授权 AccountFeature（MallCore/MallDesignSystem/MallImages）及 AccountFeatureTests（AccountFeature/MallCore），MeEntryView/LoginEntryView/ProfileEntryView 为该轮批准的公开 Feature 入口；后续入口以各自明确任务登记为准。Core AccountProfile/AccountState/AccountFailure/LoginCredential/LoginCaptcha、AccountSession/LoginChallenges/VerificationCodeDelivering/LoginValidation 是实际 App/Feature/Data 消费的值和窄合同；Data SessionCoordinator 与 LocalVerificationCodeNotifier 供 App 组装。Keychain 仅 Authentication/KeychainCredentialStore.swift，UserNotifications 仅 Authentication/LocalVerificationCodeNotifier.swift，ImageIO/CoreGraphics 仅 AccountFeature/Components/CaptchaImage.swift。所有其他 Feature 副作用禁令保留，新 Target 并非例外；用户另明确批准本任务完成登记及正反例。
 
@@ -1235,7 +1237,7 @@ Apple 的 Xcode 27 支持表列出 iOS 17 及以上模拟器；但 Xcode 27 发�
 
 #### CI专用延期登记（DEC-016，2026-10-21）
 
-此表登记CI结果判定的六项临时范围（2026-10-21原始两项 + 2026-10-24批准扩展三项 + 2026-10-25批准扩展一项）；上方由MOD-06检查的模块/权限例外表仍为“无”，不因此开放任何import、public API、依赖或架构豁免。精确机器策略为 `Scripts/ci-deferred-checks.json`，未知策略/范围或到期不得默认放行。默认14自然日，2026-11-04到期；如下一次对外发布更早，以发布前复核为准。未复核不得将这些已知失败继续自动非阻塞；修复后从机器策略撤销对应项并保留历史记录。
+此表登记CI结果判定的六项临时范围（2026-10-21原始两项 + 2026-10-24批准扩展三项 + 2026-10-25批准扩展一项）；上方由MOD-06检查的模块/权限例外表仍为“无”，不因此开放任何import、public API、依赖或架构豁免。精确机器策略为 `Scripts/ci-deferred-checks.json`，未知策略/范围或到期不得默认放行。原有效期为14自然日，2026-11-04为不包含的到期边界；截至本次维护已到期，未续期。历史正例仅在测试夹具中固定到期前时钟，到期日及之后的负例必须拒绝延期成功；生产脚本仍使用真实日期。若更早发布，原规则要求发布前复核。未复核不得将这些已知失败继续自动非阻塞；修复后从机器策略撤销对应项并保留历史记录。
 
 | 延期ID / 原规则 | 精确范围 / 状态 | 证据、影响与关闭条件 | 负责人 / 批准 | 复核、到期与撤销 |
 | --- | --- | --- | --- | --- |
@@ -1246,7 +1248,7 @@ Apple 的 Xcode 27 支持表列出 iOS 17 及以上模拟器；但 Xcode 27 发�
 | CI-DEFER-HOME-RECONCILIATION-01 / 7.2测试执行预算 | CoolMalliOSUITests/HomeLoadTests/testBannerReconciliationInOneRefreshSequence()；仅整条60秒执行超时；延期修复、未闭环 | [CI 40100669526](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/40100669526) 该run未完成最终断言；实际App/自动化延迟未区分。关闭：定位、最小修正、保留完整链/全部断言/60秒并定向验证；发现真实卡顿/状态丢失/崩溃立即提级 | 项目维护者（Codex落实、Astra复核）/ 用户2026-10-24明确批准 | 2026-11-04或发布前，以更早者；修复后删精确延期项并复核分类 |
 | CI-DEFER-HOME-A11Y-SIZE-01 / 7.2测试执行预算 | CoolMalliOSUITests/HomeLoadTests/testApprovedHomeDisplayAtAccessibilitySize()；仅整条60秒执行超时；延期修复、未闭环 | [CI 40115432871](https://github.com/NAH4E5553/CoolMall-iOS/actions/runs/40115432871) 该run未完成最终断言；实际App/自动化延迟未区分。关闭：定位、最小修正、保留完整链/全部断言/60秒并定向验证；发现真实卡顿/状态丢失/崩溃立即提级 | 项目维护者（Codex落实、Astra复核）/ 用户2026-10-25明确批准 | 2026-11-04或发布前，以更早者；修复后删精确延期项并复核分类 |
 
-历史H2返回第2页静止、H3晚唤醒继续沿原跟踪及复发条件，不纳入“已解决”或扩充本表范围；历史H1测量缺陷的关闭结论不改。项目待办/原始证据链接维护于IMPLEMENTATION_PLAN9.12.9与Evidence/iOS/2026-10-21-CI-DEFERRED-01；本地实现未推送前不宣称远端配置已生效。
+历史H2返回第2页静止、H3晚唤醒继续沿原跟踪及复发条件，不纳入“已解决”或扩充本表范围；历史H1测量缺陷的关闭结论不改。本地IMPLEMENTATION_PLAN9.12.9保留原跟踪文字；原始Evidence已删除，无法重新核对。历史规则实现已随PR41合入，后续工作流被移除，当前远端CI仍关闭；延期已到期，不自动续期。
 
 2026-10-24 approved read-only catalog contracts: APPROVAL-CATEGORY-01-PUBLIC-20261021 authorizes CategoryNode/CategoryLoading/CategoryLoadFailure, HTTPCategoryService and CategoryEntryView. APPROVAL-GOODS-DETAIL-READ-SPEC-20261023 authorizes ProductDetailSnapshot/ProductSpecification/ProductDetailLoading/ProductDetailLoadFailure, HTTPProductDetailService, ProductDetailEntryView, HomeEntryView product-ID intents and RemoteImage.preservesIntrinsicAspectRatio default false. APPROVAL-GOODS-DETAIL-ANDROID-PARITY-20261023 adds read-only coupon/review mapping and detail overlays; deferred share/claim/cart/purchase actions remain entries only. APPROVAL-GOODS-REVIEWS-READ-20261023 authorizes ProductReviewPage/ProductReviewsLoading, HTTPProductReviewsService, ProductReviewsEntryView, optional createdAt and detail view-all product-ID callback. Only exact approved Feature entries are registered; no new Target/SDK/system import exception.
 
@@ -1266,20 +1268,23 @@ Apple 的 Xcode 27 支持表列出 iOS 17 及以上模拟器；但 Xcode 27 发�
 
 | 决策 | 日期 | 结论与理由 | 生效阶段 |
 | --- | --- | --- | --- |
+| APPROVAL-LOCAL-RULES-MAINTENANCE-20261104 | 2026-11-04 | 用户同意删除Evidence及旧备份后，批准本地修正文档和治理测试的失效引用、停用CI合同与历史时钟；保留批准ID、Git历史、生产失败判定及原延期日期，补离线正反例。 | 仅本地七文件修正与定向自检；CI关闭，不构建App、不跑全套、不提交推送、不重建Evidence、不恢复诊断 |
 | APPROVAL-CI-ENTRY-REMOVAL-20261103 | 2026-11-03 | 用户要求先保全全部已开发代码，并在业务合并前移除CI规则。删除GitHub Actions工作流入口，保留测试及检查脚本；仓库Actions关闭、main保护移除，完整历史/未提交文件备份留存。业务整合按37→19→30→31→40保留来源和冲突取舍，未执行不冒称通过。 | 本轮代码整合阶段；完成后逐模块单独测试，恢复CI/保护须用户安排；原延期日期不续期 |
-| DEC-017 | 2026-10-23 | 用户授权 required/full 两层；历史红灯/延期不扩大当前选测；保留关键 PR 行为、全部单测与生产计时路径、未知/共享保守覆盖；明确完整层延后风险。原生逐方法最终结果独立保存，生命周期审计限 begin/end，窗口外仅诊断；不改业务/预算/延期范围。 | 本地实施及必要验证；独立复核/集成状态见本轮 Evidence，未推送不称远端生效 |
-| DEC-016 | 2026-10-21 | 用户明确批准两项精确CI延期：指定整条60秒超时、cycle证据连续性与尾部未证明风险非阻塞；核心编译/单测/业务不等/崩溃及完整证据生命周期违规仍阻塞。保留执行/报告/工件/原预算与断言，无通用continue-on-error，汇总显式核心通过但存在延期，状态未闭环。 | 用户本次决定起适用；实现/验收进度单列，至2026-11-04或发布前更早复核；详见7.2/7.5，未推送不称远端配置生效 |
-| DEC-014 | 2026-10-19 | 用户明确未实现功能不纳入CI行为测试，并补充“同时让纯占位/文档改动跳过流水线”。按7.2移除占位操作/提示验收；纯文档/可确认占位diff经classify后跳过重验证，required-checks明确区分不需运行和实际成功，拒绝其他失败/取消/未知/缺失。部分功能中已有展示、图片、切换、导航与状态合同仍验证，真实实现随变更补测；旧失败保留。 | 用户本次指令起；本地配置与正反例已落地，尚未推送/远端运行验证 |
+| DEC-017 | 2026-10-23 | 用户授权 required/full 两层；历史红灯/延期不扩大当前选测；保留关键 PR 行为、全部单测与生产计时路径、未知/共享保守覆盖；明确完整层延后风险。原生逐方法最终结果独立保存，生命周期审计限 begin/end，窗口外仅诊断；不改业务/预算/延期范围。 | 历史实现；后续CI修正随PR41合入，工作流随后移除；原Evidence已删除，当前范围见7.2/7.4 |
+| DEC-016 | 2026-10-21 | 用户明确批准两项精确CI延期：指定整条60秒超时、cycle证据连续性与尾部未证明风险非阻塞；核心编译/单测/业务不等/崩溃及完整证据生命周期违规仍阻塞。保留执行/报告/工件/原预算与断言，无通用continue-on-error，汇总显式核心通过但存在延期，状态未闭环。 | 历史批准自2026-11-04起已到期，未续期；实现保留供拒绝到期延期及报告历史失败，当前无远端工作流；详见7.2/7.5 |
+| DEC-014 | 2026-10-19 | 用户明确未实现功能不纳入CI行为测试，并补充“同时让纯占位/文档改动跳过流水线”。按7.2移除占位操作/提示验收；纯文档/可确认占位diff经classify后跳过重验证，required-checks明确区分不需运行和实际成功，拒绝其他失败/取消/未知/缺失。部分功能中已有展示、图片、切换、导航与状态合同仍验证，真实实现随变更补测；旧失败保留。 | 历史分类实现保留，后续CI修正随PR41合入；工作流已移除，当前不自动运行 |
 | DEC-015 | 2026-10-21 | User approved cumulative PR scope selection with explicit consumer unions and actual compiled discovery/exact result validation; main/schedule/manual full, PR DEC-014 exclusions only. Unknown or unresolved failures fall back full; diagnostics/timing remain independent. | Local tooling implementation; independent and remote validation tracked separately, no App behavior or timeout change |
 | DEC-001 | 2026-10-07 | 从单一 MallUI 改为 Core/Data/DesignSystem/CatalogFeature/CartFeature；当前无迁移成本，需要隐藏业务内部模型；细节见 3.1 | F0 创建工程即遵循 |
 | DEC-002 | 2026-10-07 | 购物车/会话由数据服务持有事实源，Feature/App 只持 UI 投影；消除跨 Feature 共享具体 Model 的依赖 | 首个对应状态实现前 |
 | DEC-003 | 2026-10-07 | 用户确认按功能模块化 + 页面按需 MVVM + UI 组件组合复用 + 协议注入；页面协调对象统一 ViewModel 命名，原泛称 Model 按职责澄清；见 1.3、2.5 | 从工程创建和首个页面起生效 |
 
-2026-10-26 CART-CHECKOUT-01：用户要求购物车结算复用确认订单，沿既有Cart/Checkout Targets与Core导航合同，新增只读CheckoutIntent聚合真实SKU行及cart来源scope/revision，CartEntryView.onCheckout输出此输入；现有BuyNowIntent保持单行消费者兼容。CartProductCheck仅携带新鲜catalog只读事实，购物车schema/owner不变。App按原scope注入同一store，不合并游客/账号。Checkout仅在创建已确认且原revision未变时调用既有remove命令；失败/未知或并发变化保留并提示。无新依赖/Target/SDK/支付/CI规则，消费者与验证见本轮scope.md。
+2026-10-26 CART-CHECKOUT-01：用户要求购物车结算复用确认订单，沿既有Cart/Checkout Targets与Core导航合同，新增只读CheckoutIntent聚合真实SKU行及cart来源scope/revision，CartEntryView.onCheckout输出此输入；现有BuyNowIntent保持单行消费者兼容。CartProductCheck仅携带新鲜catalog只读事实，购物车schema/owner不变。App按原scope注入同一store，不合并游客/账号。Checkout仅在创建已确认且原revision未变时调用既有remove命令；失败/未知或并发变化保留并提示。无新依赖/Target/SDK/支付/CI规则；原消费者与验证附件已删除，当前须核对既有源码及消费者测试。
 
 ## 8. 实施计划与当前状态
 
 ### 8.1 阶段顺序
+
+下表是工程建立及后续能力的先决条件记录。当前功能已合入main并完成维护者手动验收；用户随后明确停用CI/远端保护，不因F0历史远端门禁条款重置当前进度或自动恢复CI。未完成的系统/设备/发布覆盖仍保持未验证；检查未执行不算通过。
 
 | 阶段 | 必须交付的基础能力 | 通过后才能推进 |
 | --- | --- | --- |
@@ -1308,9 +1313,9 @@ Apple 的 Xcode 27 支持表列出 iOS 17 及以上模拟器；但 Xcode 27 发�
 | 订单与结算 | 订单读取、确认/创建、只读收银台、待付款取消、分页和角标；真实支付SDK未接入 |
 | 工程交付 | 共享Scheme/TestPlan、正式资源、依赖锁、本地格式/边界/构建/测试入口；远端CI关闭 |
 
-原始失败、旧独立验收、截图/日志、源代码身份及交付流水在维护者本地保留，不随本章反复上传；用户手动验收不改写这些历史结果。iOS17实际运行、真机、完整VoiceOver、发布签名及未覆盖的真实后端场景不因本次验收自动记作通过。延期策略原范围和到期日期保持。
+原Evidence及旧备份已于2026-11-04经用户同意删除，原始失败工件、旧独立验收、截图/日志及交付流水不再保证可复核；保留的Git提交历史和本章结果文字不等于原始工件。用户手动验收不改写历史失败，也不能补回已删除的证据。iOS17实际运行、真机、完整VoiceOver、发布签名及未覆盖的真实后端场景不因本次验收自动记作通过。延期策略原范围和到期日期保持。
 
-本次交付内容整理只迁出停用工程实验/独立诊断和过程记录，不改App、资源、Xcode工程、Package/锁文件或业务测试；未新增构建或测试运行。当前验收模拟器和冻结构建在维护者本地保留。
+2026-11-04本轮获批维护仅修正文档、停用CI合同及历史延期测试的时钟/出处，补定向离线正反例；不改App、资源、Xcode工程、Package/锁文件、生产策略或业务测试。离线自检62项通过（57项分类/判定/报告检查、5项替身driver检查），不代表App验收；driver首次因沙箱管道权限未到达断言，记录保留，允许管道操作后同5项通过。不构建App、不跑全套、不提交推送、不续期，不重建Evidence或恢复超时诊断。当前验收模拟器和冻结构建保持原状。
 
 ### 8.4 接下来如何开工
 

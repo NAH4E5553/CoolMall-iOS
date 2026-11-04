@@ -1,5 +1,5 @@
 {
-  "provenance": "Pruned native main CI39605435062; raw original retained in local evidence. Not a generated App run.",
+  "provenance": "Pruned native main CI39605435062 retained as a versioned parser fixture. The local raw archive was deleted with user approval on 2026-11-04; this fixture is not a complete archive or a new App run.",
   "summary": {
     "devicesAndConfigurations": [
       {

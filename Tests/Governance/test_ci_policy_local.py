@@ -140,14 +140,30 @@ class ImpactAndReportingTests(unittest.TestCase):
                                      'artifacts': {'conclusion': 'failure'}}), 'evidence')
         self.assertEqual(O.category({}), 'unclassified')
 
-    def test_workflow_keeps_mac_and_single_complete_gate(self):
-        workflow = (ROOT / '.github/workflows/ios.yml').read_text()
-        self.assertNotIn('governance-driver:', workflow)
-        self.assertIn('needs: [classify, verify]', workflow)
-        self.assertIn('failure_category: ${{ steps.outcome.outputs.failure_category }}', workflow)
-        self.assertIn('deferred_ids: ${{ steps.gates.outputs.deferred_ids }}', workflow)
-        self.assertNotIn('MALL_GOVERNANCE_EXCLUDE', workflow)
-        self.assertIn('timeout-minutes: 120', workflow)
+    def assert_ci_disabled(self, root):
+        # Local contract only; repository files cannot prove remote settings.
+        workflows = root / '.github/workflows'
+        entries = sorted(path.name for path in workflows.iterdir()
+                         if path.suffix.lower() in {'.yml', '.yaml'}) if workflows.exists() else []
+        self.assertEqual(entries, [], 'CI is disabled: workflow entries must remain absent')
+
+    def test_disabled_ci_has_no_workflow_entry(self):
+        self.assert_ci_disabled(ROOT)
+
+    def test_disabled_ci_rejects_restored_workflow_entries(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self.assert_ci_disabled(root)
+            workflows = root / '.github/workflows'
+            workflows.mkdir(parents=True)
+            self.assert_ci_disabled(root)
+            for name in ['ios.yml', 'other.yaml']:
+                with self.subTest(name=name):
+                    path = workflows / name
+                    path.write_text('name: forbidden workflow fixture\n')
+                    with self.assertRaisesRegex(AssertionError, 'workflow entries must remain absent'):
+                        self.assert_ci_disabled(root)
+                    path.unlink()
 
 
 class SupportValidatorTests(unittest.TestCase):

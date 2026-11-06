@@ -4,15 +4,16 @@ import Testing
 
 struct HomeCatalogNavigationTests {
     @Test func eachHomeCategoryUsesOnlyItsOwnDirectChildren() {
-        let categories = (1...10).flatMap { index in
-            [
-                HomeCategory(id: Int64(index), name: "一级", parentID: nil, imageURL: nil),
+        let categories: [HomeCategory] = (1...10).flatMap { (index: Int) -> [HomeCategory] in
+            let id = Int64(index)
+            return [
+                HomeCategory(id: id, name: "一级", parentID: nil, imageURL: nil),
                 HomeCategory(
-                    id: Int64(index + 100), name: "二级", parentID: Int64(index), imageURL: nil),
+                    id: id + 100, name: "二级", parentID: id, imageURL: nil),
                 HomeCategory(
-                    id: Int64(index + 200), name: "二级", parentID: Int64(index), imageURL: nil),
+                    id: id + 200, name: "二级", parentID: id, imageURL: nil),
                 HomeCategory(
-                    id: Int64(index + 300), name: "更深层", parentID: Int64(index + 100), imageURL: nil
+                    id: id + 300, name: "更深层", parentID: id + 100, imageURL: nil
                 ),
             ]
         }

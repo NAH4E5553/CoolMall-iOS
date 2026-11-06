@@ -11,8 +11,8 @@ struct HTTPProductSearchServiceTests {
         _ = try await service.search(.init(keyword: "", allProducts: true), page: 1, pageSize: 10)
         let requests = await transport.requests
         let bodies = try requests.map { request in
-            try #require(
-                JSONSerialization.jsonObject(with: #require(request.httpBody)) as? [String: Any])
+            let requestBody = try #require(request.httpBody)
+            return try #require(JSONSerialization.jsonObject(with: requestBody) as? [String: Any])
         }
         #expect(bodies[0]["typeId"] as? [Int] == [801008])
         #expect(bodies[1]["typeId"] == nil)

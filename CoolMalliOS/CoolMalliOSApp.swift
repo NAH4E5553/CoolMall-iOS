@@ -4,6 +4,6 @@ import SwiftUI
 struct CoolMalliOSApp: App {
     private let dependencies = AppDependencies()
     var body: some Scene {
-        WindowGroup { RootView(dependencies: dependencies) }
+        WindowGroup { LaunchExperienceView(dependencies: dependencies) }
     }
 }

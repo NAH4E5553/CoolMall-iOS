@@ -34,6 +34,18 @@ xcodebuild build \
 
 模拟器构建不需要发布签名或开发者的私有证书。App 默认使用正式接口；不要添加 UI 测试夹具启动参数。登录和账号业务需要有效账号及服务端可用，真实支付 SDK 未接入。
 
+预览系统启动画面时，使用 Xcode 正常 Run，或让 Xcode 生成本地 ad-hoc 签名的模拟器构建。无需发布证书或开发团队账号，沿用已有模拟器身份。上面的 `CODE_SIGNING_ALLOWED=NO` 用于编译检查；其产物可能被系统拒绝加载 LaunchScreen，出现黑场，不能据此验收启动视觉。手工对这一布局的可执行文件补签不能代替 Xcode 的完整签名构建。
+
+```sh
+xcodebuild build \
+  -project CoolMalliOS.xcodeproj \
+  -scheme CoolMalliOS \
+  -configuration Debug \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath .build/xcode \
+  CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+```
+
 ## 本地工程检查与测试
 
 以下是按任务需要手动调用的入口，不会由 GitHub 自动执行：

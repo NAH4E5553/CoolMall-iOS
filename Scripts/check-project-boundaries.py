@@ -91,7 +91,8 @@ def validate_project(root, policy, paths):
     targets = {objects[i]['name']: objects[i] for i in main['targets']}
     require(set(targets) == {'CoolMalliOS', 'CoolMalliOSUITests'}, 'MOD-01: App target set mismatch')
     require(len([o for o in objects.values() if o['isa'] == 'PBXNativeTarget']) == 2, 'MOD-01: unregistered App target')
-    allowed_settings = {'PRODUCT_NAME', 'PRODUCT_BUNDLE_IDENTIFIER', 'GENERATE_INFOPLIST_FILE', 'SWIFT_VERSION', 'SWIFT_ACTIVE_COMPILATION_CONDITIONS', 'IPHONEOS_DEPLOYMENT_TARGET', 'TARGETED_DEVICE_FAMILY', 'SDKROOT', 'SUPPORTED_PLATFORMS', 'CODE_SIGN_STYLE', 'SWIFT_STRICT_CONCURRENCY', 'SWIFT_OPTIMIZATION_LEVEL', 'INFOPLIST_KEY_UILaunchScreen_Generation', 'INFOPLIST_KEY_UIApplicationSceneManifest_Generation', 'INFOPLIST_KEY_CFBundleDisplayName', 'CURRENT_PROJECT_VERSION', 'MARKETING_VERSION', 'TEST_TARGET_NAME', 'CLANG_ENABLE_MODULES', 'DEBUG_INFORMATION_FORMAT', 'ENABLE_TESTABILITY', 'ONLY_ACTIVE_ARCH'}
+    allowed_settings = {'PRODUCT_NAME', 'PRODUCT_BUNDLE_IDENTIFIER', 'GENERATE_INFOPLIST_FILE', 'SWIFT_VERSION', 'SWIFT_ACTIVE_COMPILATION_CONDITIONS', 'IPHONEOS_DEPLOYMENT_TARGET', 'TARGETED_DEVICE_FAMILY', 'SDKROOT', 'SUPPORTED_PLATFORMS', 'CODE_SIGN_STYLE', 'SWIFT_STRICT_CONCURRENCY', 'SWIFT_OPTIMIZATION_LEVEL', 'INFOPLIST_KEY_UIApplicationSceneManifest_Generation', 'INFOPLIST_KEY_CFBundleDisplayName', 'CURRENT_PROJECT_VERSION', 'MARKETING_VERSION', 'TEST_TARGET_NAME', 'CLANG_ENABLE_MODULES', 'DEBUG_INFORMATION_FORMAT', 'ENABLE_TESTABILITY', 'ONLY_ACTIVE_ARCH'}
+    launch_settings = {'INFOPLIST_KEY_UILaunchStoryboardName': 'LaunchScreen'}
     simulator_debug_layout_settings = {'ENABLE_DEBUG_DYLIB[sdk=iphonesimulator*]': '$(MALL_SIMULATOR_DEBUG_DYLIB_$(CODE_SIGNING_ALLOWED))', 'MALL_SIMULATOR_DEBUG_DYLIB_NO': 'NO', 'MALL_SIMULATOR_DEBUG_DYLIB_YES': 'YES'}
     simulator_identity_settings = {'CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]': 'CoolMalliOS/Simulator.entitlements', 'OTHER_LDFLAGS[sdk=iphonesimulator*]': '$(inherited) $(MALL_SIMULATOR_ENTITLEMENTS_$(CODE_SIGNING_ALLOWED))', 'MALL_SIMULATOR_ENTITLEMENTS_NO': '-Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker $(SRCROOT)/CoolMalliOS/Simulator.entitlements', 'MALL_SIMULATOR_ENTITLEMENTS_YES': ''}
     entitlements = root / 'CoolMalliOS/Simulator.entitlements'
@@ -107,12 +108,14 @@ def validate_project(root, policy, paths):
             config = objects[cid]
             settings = config['buildSettings']
             require(settings.get('ONLY_ACTIVE_ARCH') == ('YES' if config['name'] == 'Debug' else 'NO'), 'MOD-06: active architecture configuration changed')
-            require(set(settings) <= allowed_settings | set(simulator_identity_settings) | set(simulator_debug_layout_settings), f'MOD-06: unknown/unsafe build settings: {set(settings)-allowed_settings}')
+            require(set(settings) <= allowed_settings | set(simulator_identity_settings) | set(simulator_debug_layout_settings) | set(launch_settings), f'MOD-06: unknown/unsafe build settings: {set(settings)-allowed_settings}')
             if owner is targets['CoolMalliOS']:
+                require(all(settings.get(k) == v for k, v in launch_settings.items()), 'MOD-06: launch storyboard configuration mismatch')
                 expected_layout = simulator_debug_layout_settings if config['name'] == 'Debug' else {}
                 require(all(settings.get(k) == v for k, v in expected_layout.items()) and not ((set(settings) & set(simulator_debug_layout_settings)) - set(expected_layout)), 'MOD-06: simulator Keychain debug layout mismatch')
                 require(all(settings.get(k) == v for k, v in simulator_identity_settings.items()), 'MOD-06: simulator Keychain identity settings mismatch')
             else:
+                require(not (set(settings) & set(launch_settings)), 'MOD-06: launch storyboard configuration must be App-only')
                 require(not (set(settings) & (set(simulator_identity_settings) | set(simulator_debug_layout_settings))), 'MOD-06: simulator Keychain identity must be App-only')
             conditions = settings.get('SWIFT_ACTIVE_COMPILATION_CONDITIONS')
             if conditions is not None:
@@ -150,7 +153,29 @@ def validate_project(root, policy, paths):
         require(len(links) == len(prodrefs) and {objects[i].get('productRef') for i in links} == set(prodrefs), 'MOD-01: App link membership mismatch')
         for i in links:
             require(set(objects[i]) == {'isa', 'productRef'}, 'MOD-06: link options')
-        require(next(p for p in phases if p['isa'] == 'PBXResourcesBuildPhase')['files'] == [], 'MOD-03: unexpected App resource membership')
+        resources = next(p for p in phases if p['isa'] == 'PBXResourcesBuildPhase')['files']
+        # APPROVAL-LAUNCH-SCREEN-20261107: exact startup resources only.
+        if name == 'CoolMalliOS':
+            expected_resources = {
+                'CoolMalliOS/Launch/LaunchAssets.xcassets': 'folder.assetcatalog',
+                'CoolMalliOS/Launch/LaunchScreen.storyboard': 'file.storyboard',
+            }
+            require(len(resources) == len(expected_resources), 'MOD-03: launch resources must be unique and present')
+            resource_paths = []
+            for bid in resources:
+                build = objects[bid]
+                require(set(build) == {'isa', 'fileRef'}, 'MOD-06: resource build options')
+                ref = objects[build['fileRef']]
+                path = ref.get('path')
+                require(ref.get('sourceTree') == 'SOURCE_ROOT' and path in expected_resources
+                        and ref.get('lastKnownFileType') == expected_resources[path],
+                        'MOD-03: unregistered App resource')
+                resource_paths.append(path)
+            require(set(resource_paths) == set(expected_resources), 'MOD-03: launch resources must be unique and present')
+            require((root / 'CoolMalliOS/Launch/LaunchAssets.xcassets').is_dir(), 'MOD-03: launch asset catalog missing')
+            require((root / 'CoolMalliOS/Launch/LaunchScreen.storyboard').is_file(), 'MOD-03: launch storyboard missing')
+        else:
+            require(resources == [], 'MOD-03: unexpected test resource membership')
     plan = json.loads((root / 'CoolMalliOS.xctestplan').read_text())
     require(plan['version'] == 1, 'MOD-01: unsupported Test Plan version')
     require(len(plan['configurations']) == 1 and plan['configurations'][0]['options'] == {}, 'MOD-01: unreviewed Test Plan configuration override')

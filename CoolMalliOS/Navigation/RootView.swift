@@ -11,6 +11,7 @@ import SwiftUI
 @MainActor
 struct RootView: View {
     let dependencies: AppDependencies
+    let isLaunching: Bool
     @Environment(\.scenePhase) private var accountScenePhase
     @State private var router = SceneRouter()
     @State private var cartBadge = CartBadgeViewModel()
@@ -33,8 +34,9 @@ struct RootView: View {
         private let navTestControl: NavigationTestControl
     #endif
 
-    init(dependencies: AppDependencies) {
+    init(dependencies: AppDependencies, isLaunching: Bool = false) {
         self.dependencies = dependencies
+        self.isLaunching = isLaunching
         #if DEBUG
             let control = NavigationTestControl()
             navTestControl = control
@@ -238,10 +240,10 @@ struct RootView: View {
         router.selectedTab == .home && router.homePath.isEmpty
     }
 
-    /// Coupon presentations pause playback while home images remain active.
+    /// Launch and coupon presentations pause playback while home images remain active.
     /// Explicit DEBUG fixture launches may also suppress playback for manual tests.
     private var allowsBannerAutoplay: Bool {
-        guard claimPresentation == nil else { return false }
+        guard !isLaunching, claimPresentation == nil else { return false }
         #if DEBUG
             return
                 !(dependencies.homeTesting.fixtureMode != nil

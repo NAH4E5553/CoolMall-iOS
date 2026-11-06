@@ -1,6 +1,6 @@
 # CoolMall iOS 项目工程手册
 
-更新日期：2026-11-04。适用范围：以 CoolMallKotlin 的业务和接口为参考的原生 iOS 客户端。
+更新日期：2026-11-07。适用范围：以 CoolMallKotlin 的业务和接口为参考的原生 iOS 客户端。
 
 本手册是架构决策、基础能力选型、代码规约、开发流程和验收要求的统一维护入口。
 
@@ -1208,6 +1208,12 @@ Apple 的 Xcode 27 支持表列出 iOS 17 及以上模拟器；但 Xcode 27 发�
 
 ### 7.5 例外与规则变更
 
+2026-11-07 APPROVAL-LAUNCH-SCREEN-20261107：用户反馈桌面点击后长白屏，并明确批准“补齐系统启动画面”。在既有启动资源目录之外精确登记`CoolMalliOS/Launch/LaunchScreen.storyboard`（file.storyboard、SOURCE_ROOT，无额外构建选项），仅App的Debug/Release允许并必须使用`INFOPLIST_KEY_UILaunchStoryboardName=LaunchScreen`，移除空白`UILaunchScreen_Generation`配置；其他资源/名称/Target仍拒绝。不增加Target、依赖、系统import、公开API或持久化状态，不改变会话/存储初始化所有权。系统启动画面用同一LaunchBag及LaunchBackground，App首帧图片立即可见；删除60ms人为留白，Scene活动后轻抬并回弹，等待取消/后台直接结束，前台返回不重播。精确配置与资源正反例在临时工程副本验证。
+
+2026-11-07 APPROVAL-LAUNCH-ASSETS-20261107：用户要求参考视频设计动画启动页并生成图片，随后明确批准“仅登记启动页资源目录”。App资源从原空列表改为唯一精确的`CoolMalliOS/Launch/LaunchAssets.xcassets`（folder.assetcatalog、SOURCE_ROOT，无额外构建选项）；测试Target仍禁止资源，未知目录、重复/缺失归属和错误类型继续拒绝。仅App内增加启动展示与本地图片，不新增Target、SDK、依赖、public API或持久化字段；正反例在临时工程副本验证。CI保持关闭。
+
+LAUNCH-01状态合同：LaunchExperienceView为每个Scene启动展示的唯一owner，MainActor局部@State，waiting（品牌已可见）→lifted→settled→finished；RootView在同一位置并行加载且保留身份，展示期间禁止底层命中与无障碍曝光，并通过只读输入暂停首页轮播自动推进。结构化.task受Scene活动状态及视图生命周期约束；等待取消或后台切换直接finished，返回前台不重播；展示不依赖网络成败，不持久化完成标记。正常约1.8秒含退场，减少动态效果只淡入淡出，深浅色跟随系统。系统静态启动画面在App代码运行前显示同一购物袋，首帧衔接而非延时等待；验证及缺口见8.3。
+
 以下批准ID及合同正文保留。原Evidence内任务卡、scope附件和原始验收资料已于2026-11-04经用户同意删除，故移除失效路径；不能再据本节声称附件可读或重算旧验收。未在正文或现有源码/测试中留存的细节需维护者提供或重新取证，不重建Evidence；已提交实现和规则演进仍可查Git历史。
 
 2026-11-03 HOME-CATALOG-NAV-PAGING-01 / CHANGE-02：用户要求首页10分类和分类Tab二级分类进入既有搜索结果页，并修正首页全部商品缺少后续加载。最小公开增量为HomeEntryView的可选onOpenCategory([Int64])和商品分页能力注入、SearchResultsEntryView的categoryIDs默认空数组、SearchQuery的allProducts默认false。首页分类按categoryAll取直接子ID，无子节点使用所点ID，二级分类传真实单ID；App类型化路由保留来源Tab。分类查询允许空词但必须有正数分类ID；全商品空词仅显式allProducts有效，不编码新服务端字段。首页分页复用ProductSearchLoading/NumberedPageCoordinator，首次触底从page1读取权威分页再追加，避免假设首页goods条数等于分页size；成功刷新重置、刷新开始/离页取消旧追加，失败保留旧商品。无新Target/SDK/依赖/存储/CI修改，不放宽既有断言或预算。2026-11-04用户确认分类跳转、首页自动续页及图片保留手动验收通过；Debug构建和Astra独立静态复验通过，原生自动化测试本轮未执行。
@@ -1300,6 +1306,19 @@ Apple 的 Xcode 27 支持表列出 iOS 17 及以上模拟器；但 Xcode 27 发�
 每项基础能力的完成定义：有真实使用场景、最小清晰 API、正确归属、失败/取消合同、自动化验证和必要的设备验证；不存在第二套页面私有实现绕过它；文档状态更新为实际结果。
 
 ### 8.3 当前实施状态
+
+2026-11-07 LAUNCH-01 / LAUNCH-WHITE-FIX-01 / LAUNCH-MOTION-02：启动页已实现，维护者在iPhone18Pro/iOS27.0模拟器实际查看后明确确认“这个动画效果可以了”，本次动画视觉已手动验收通过。原生LaunchScreen与SwiftUI首帧使用同一购物袋，随后上浮、放大、转动并弹性落稳，配合扩散光圈和中英文错峰出现，约1.8秒后进入并行加载的首页；展示期间暂停首页轮播，前台返回不重播。状态/取消合同及精确资源配置见7.5。生成图片位于`CoolMalliOS/Launch/LaunchAssets.xcassets/LaunchBag.imageset/launch-bag.png`，内置imagegen的原始提示词见`docs/launch-artwork-prompt.txt`；无新增Target、依赖或存储状态。
+
+实际验证使用Xcode27.0/27A266a、Swift6.4，iPhone18Pro/iOS27.0/24A434、arm64，UDID `A82A0761-D2D8-4A46-A517-98B945A52E15`：
+
+- `Scripts/check-format.sh`、`Scripts/check-source-boundaries.sh`（222源码文件）、`git diff --check`通过。已批准资源/配置改动经`Scripts/check-boundary-negative.sh`共享入口验证：327项治理自测0失败/0跳过，含13项启动资源/配置负例；编译器public-control退出0、internal-dto按预期诊断退出65（`.build/launch-blank-policy.log`）。后续仅视觉参数调整，没有将上轮327项冒称重复执行。
+- 最终动效以7.3的`xcodebuild build`入口、共享Scheme、`.build/launch-xcode`及`CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-`分别构建Debug/Release，均通过（`.build/launch-motion-Debug.log`、`.build/launch-motion-Release.log`）。预览原生启动画面使用完整模拟器签名，运行说明见README；不需要发布证书。
+- 同共享Scheme/TestPlan、Debug、上述具体模拟器、`-parallel-testing-enabled NO`、同DerivedData及正常模拟器签名执行三个精确NavigationSmokeTests方法：`testColdStartDefaultsToHomeWithFourTabs`、`testCatalogRouteOpensCartAndReturns`、`testForegroundReturnKeepsCurrentTabWithoutLaunchCover`，最终原生结果3通过/0失败/0跳过（`.build/launch-motion-ui.xcresult`，`xcrun xcresulttool get test-results summary --path …`已核对）。搜索HTTPProductSearchServiceTests与首页HomeCatalogNavigationTests分别实际执行8+1项，9通过/0失败/0跳过（`.build/launch-contracts.xcresult`）；两处解除编译阻塞的测试修正保留原数据及全部断言，独立提交。
+- 正常签名实际录屏确认图标展开时已有购物袋，再完成明显的上浮、转动、回弹及真实首页过渡。修改前30fps抽样的连续纯白段约4.567秒；修复后与增强版在相同视觉阈值（中央画布98.5%以上像素RGB均>246）下未检出该类连续段，逐帧同时核对真实可见内容。此为单次模拟器视觉对照，非多机首帧性能基准；未改变依赖初始化，不声称0ms启动。最终录屏及分析位于`.build/launch-motion-*`，不纳入工程装配输入或Git交付。
+
+失败与纠正记录保留：最初沙箱内86项工程自测中的4项清单负例先受SwiftPM缓存权限阻挡，允许访问后共享入口通过，原日志`.build/launch-governance.log`未覆盖。前两次TestPlan构建分别受既有嵌套`#require`宏展开和分类夹具类型推断阻塞，失败日志/xcresult保存在`.build/launch-ui.*`与`.build/launch-ui-final.*`；仅拆分宏输入与显式类型后完成上述9项复验，未删除断言。Swift Testing方法过滤曾未命中，零项未计通过，随后按Suite真实执行。未签名产物曾因LaunchScreen资源验证Security -67056出现黑场，手工补签后启动又返回NSPOSIX3；该两轮未验收视觉，改用Xcode完整签名后进程、系统资源验证及录屏确认正常（`.build/launch-blank-system.log`、`.build/launch-blank-sign-runtime.log`、`.build/launch-blank-xcode-signed-system.log`）。
+
+iOS17、真机、新原生启动画面的深色/横屏/小屏、完整VoiceOver、实际减少动态效果开关及动画中断覆盖仍待补验；未执行完整App/Package/轮播回归，不将本次视觉验收扩大为这些范围通过。既有历史延期问题未关闭，CI保持关闭。本次提交整理复查格式、源码/工程边界和最终差异，未改生产行为，未重复构建或运行UI测试；提交只包含正式源码、资源、测试和必要说明，排除本地录屏、日志与构建缓存。
 
 2026-11-04 HOME-CATALOG-NAV-PAGING-01：首页/分类Tab到搜索结果路由、首页触底自动续页及来源页图片保留已由用户手动验收通过；Debug构建与Astra独立静态复验通过，原生自动化测试本轮未执行。公开合同及首页分页交互见7.5、4.5和4.7；CI保持关闭。
 

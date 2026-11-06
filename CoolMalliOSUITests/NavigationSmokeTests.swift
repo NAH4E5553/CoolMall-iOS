@@ -19,12 +19,24 @@ final class NavigationSmokeTests: XCTestCase {
 
     @MainActor func testColdStartDefaultsToHomeWithFourTabs() {
         let app = launchApp()
+        XCTAssertFalse(app.otherElements["launch.brand"].exists)
         let tabs = app.tabBars.buttons
         XCTAssertTrue(tabs.element(boundBy: 0).waitForExistence(timeout: 5))
         XCTAssertEqual(tabs.element(boundBy: 0).label, "首页")
         XCTAssertEqual(tabs.element(boundBy: 1).label, "分类")
         XCTAssertEqual(tabs.element(boundBy: 2).label, "购物车")
         XCTAssertEqual(tabs.element(boundBy: 3).label, "我的")
+    }
+
+    @MainActor func testForegroundReturnKeepsCurrentTabWithoutLaunchCover() {
+        let app = launchApp()
+        app.tabBars.buttons["购物车"].tap()
+        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(app.staticTexts["cart.fixture"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["购物车"].isSelected)
+        XCTAssertFalse(app.otherElements["launch.brand"].exists)
     }
 
     /// Re-tapping the current tab is only reachable while the tab bar is visible, i.e.

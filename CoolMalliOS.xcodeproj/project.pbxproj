@@ -233,6 +233,7 @@
 				<string>A3455D618CDB889A33E9BEE7</string>
 				<string>E9FDBEE110D50994421BE649</string>
 				<string>BAE6A4EF5C8345E0A3230A90</string>
+				<string>C21ED54B7866B2A4596B58FE</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>
@@ -265,7 +266,10 @@
 			<key>buildActionMask</key>
 			<integer>2147483647</integer>
 			<key>files</key>
-			<array/>
+			<array>
+				<string>1030903AE229FA58D4F062FC</string>
+				<string>B42AABBE5C27482DEAF20675</string>
+			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<integer>0</integer>
 		</dict>
@@ -314,8 +318,6 @@
 				<string>complete</string>
 				<key>SWIFT_OPTIMIZATION_LEVEL</key>
 				<string>-Onone</string>
-				<key>INFOPLIST_KEY_UILaunchScreen_Generation</key>
-				<string>YES</string>
 				<key>INFOPLIST_KEY_UIApplicationSceneManifest_Generation</key>
 				<string>YES</string>
 				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
@@ -340,6 +342,8 @@
 				<string>NO</string>
 				<key>MALL_SIMULATOR_DEBUG_DYLIB_YES</key>
 				<string>YES</string>
+				<key>INFOPLIST_KEY_UILaunchStoryboardName</key>
+				<string>LaunchScreen</string>
 			</dict>
 		</dict>
 		<key>1DAC554E0E59C5F7C036939D</key>
@@ -372,8 +376,6 @@
 				<string>complete</string>
 				<key>SWIFT_OPTIMIZATION_LEVEL</key>
 				<string>-O</string>
-				<key>INFOPLIST_KEY_UILaunchScreen_Generation</key>
-				<string>YES</string>
 				<key>INFOPLIST_KEY_UIApplicationSceneManifest_Generation</key>
 				<string>YES</string>
 				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
@@ -392,6 +394,8 @@
 				<string>-Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker $(SRCROOT)/CoolMalliOS/Simulator.entitlements</string>
 				<key>MALL_SIMULATOR_ENTITLEMENTS_YES</key>
 				<string></string>
+				<key>INFOPLIST_KEY_UILaunchStoryboardName</key>
+				<string>LaunchScreen</string>
 			</dict>
 		</dict>
 		<key>37AF596E125FD2B7C6CD1B5F</key>
@@ -733,6 +737,9 @@
 				<string>75894D0D71D9D09617A019B2</string>
 				<string>F4080C654B99455FA7601EAC</string>
 				<string>51A34F8D22B04948B397AE6F</string>
+				<string>780AB5631E921186C76161B5</string>
+				<string>102523EDEF63A96B69342E10</string>
+				<string>0A5E948294BF8A3B2E958940</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -1322,6 +1329,60 @@
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>51A34F8D22B04948B397AE6F</string>
+		</dict>
+		<key>780AB5631E921186C76161B5</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CoolMalliOS/Launch/LaunchExperienceView.swift</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>C21ED54B7866B2A4596B58FE</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>780AB5631E921186C76161B5</string>
+		</dict>
+		<key>102523EDEF63A96B69342E10</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>folder.assetcatalog</string>
+			<key>path</key>
+			<string>CoolMalliOS/Launch/LaunchAssets.xcassets</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>1030903AE229FA58D4F062FC</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>102523EDEF63A96B69342E10</string>
+		</dict>
+		<key>0A5E948294BF8A3B2E958940</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>file.storyboard</string>
+			<key>path</key>
+			<string>CoolMalliOS/Launch/LaunchScreen.storyboard</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>B42AABBE5C27482DEAF20675</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>0A5E948294BF8A3B2E958940</string>
 		</dict>
 	</dict>
 	<key>rootObject</key>

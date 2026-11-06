@@ -1,0 +1,12 @@
+LAUNCH-01 — generated with the built-in image_gen tool on 2026-11-07.
+Project asset: CoolMalliOS/Launch/LaunchAssets.xcassets/LaunchBag.imageset/launch-bag.png
+Original alpha channel retained. Typography, halo and motion are rendered by SwiftUI.
+
+Use case: stylized-concept
+Asset type: transparent cutout illustration for CoolMall iOS animated launch screen
+Primary request: one beautifully crafted periwinkle blue / violet shopping bag with a white U-shaped smiling handle, inspired by the simple shopping bag identity of the reference video. Premium minimal 3D clay render, friendly, elegant, restrained, suitable for a modern native shopping app.
+Subject: a single compact soft-square shopping bag, slightly tapered sides, rounded corners, subtle folded side panel, white thick U handle with two round attachment ends; front faces camera with a very slight three-quarter tilt. The handle looks like a smile. No eyes.
+Color palette: luminous periwinkle front (#6664FF), deeper violet side, soft lavender highlights, pure white handle.
+Composition: bag centered and isolated, occupies about 74 percent of square canvas, complete silhouette, ample transparent margin on every side. Flat front readable at 100pt.
+Lighting: soft studio light upper left, delicate realistic ambient shading on the bag itself.
+Constraints: actual transparent alpha background, no background plane, no cast shadow outside the object, no glow, no text, no typography, no letters, no watermark, no border, no extra objects or confetti. This is a single bag asset, not a phone mockup or whole screen.

@@ -46,6 +46,93 @@ class ProjectBoundariesTests(unittest.TestCase):
 
     def test_normal_project(self): GATE.check(self.root, BINARY)
 
+    def launch_resources(self, objects):
+        target = next(o for o in objects.values() if o.get('isa') == 'PBXNativeTarget' and o['name'] == 'CoolMalliOS')
+        return next(objects[i]['files'] for i in target['buildPhases'] if objects[i]['isa'] == 'PBXResourcesBuildPhase')
+
+    def test_launch_catalog_missing_membership_rejected(self):
+        self.mutate_project(lambda objects: self.launch_resources(objects).clear())
+        self.reject('MOD-03: launch resources must be unique and present')
+
+    def test_launch_catalog_duplicate_membership_rejected(self):
+        def mutation(objects):
+            resources = self.launch_resources(objects)
+            resources.append(resources[0])
+        self.mutate_project(mutation)
+        self.reject('MOD-03: launch resources must be unique and present')
+
+    def test_launch_catalog_foreign_path_rejected(self):
+        def mutation(objects):
+            build = objects[self.launch_resources(objects)[0]]
+            objects[build['fileRef']]['path'] = 'CoolMalliOS/Other.xcassets'
+        self.mutate_project(mutation)
+        self.reject('MOD-03: unregistered App resource')
+
+    def test_launch_catalog_wrong_file_type_rejected(self):
+        def mutation(objects):
+            build = objects[self.launch_resources(objects)[0]]
+            objects[build['fileRef']]['lastKnownFileType'] = 'folder'
+        self.mutate_project(mutation)
+        self.reject('MOD-03: unregistered App resource')
+
+    def test_launch_catalog_build_options_rejected(self):
+        def mutation(objects):
+            objects[self.launch_resources(objects)[0]]['settings'] = {'COMPILER_FLAGS': '-DOTHER'}
+        self.mutate_project(mutation)
+        self.reject('MOD-06: resource build options')
+
+    def test_launch_catalog_missing_directory_rejected(self):
+        shutil.rmtree(self.root / 'CoolMalliOS/Launch/LaunchAssets.xcassets')
+        self.reject('MOD-03: launch asset catalog missing')
+
+    def test_launch_catalog_cannot_belong_to_ui_tests(self):
+        def mutation(objects):
+            target = next(o for o in objects.values() if o.get('isa') == 'PBXNativeTarget' and o['name'] == 'CoolMalliOSUITests')
+            resources = next(objects[i]['files'] for i in target['buildPhases'] if objects[i]['isa'] == 'PBXResourcesBuildPhase')
+            resources.append(self.launch_resources(objects)[0])
+        self.mutate_project(mutation)
+        self.reject('MOD-03: unexpected test resource membership')
+
+    def test_launch_storyboard_missing_file_rejected(self):
+        (self.root / 'CoolMalliOS/Launch/LaunchScreen.storyboard').unlink()
+        self.reject('MOD-03: launch storyboard missing')
+
+    def test_launch_storyboard_cannot_be_replaced_by_duplicate_catalog(self):
+        def mutation(objects):
+            resources = self.launch_resources(objects)
+            resources[1] = resources[0]
+        self.mutate_project(mutation)
+        self.reject('MOD-03: launch resources must be unique and present')
+
+    def launch_settings(self, objects):
+        target = next(o for o in objects.values() if o.get('isa') == 'PBXNativeTarget' and o['name'] == 'CoolMalliOS')
+        cid = objects[target['buildConfigurationList']]['buildConfigurations'][0]
+        return objects[cid]['buildSettings']
+
+    def test_launch_storyboard_setting_missing_rejected(self):
+        self.mutate_project(lambda objects: self.launch_settings(objects).pop('INFOPLIST_KEY_UILaunchStoryboardName'))
+        self.reject('MOD-06: launch storyboard configuration mismatch')
+
+    def test_launch_storyboard_setting_foreign_name_rejected(self):
+        def mutation(objects):
+            self.launch_settings(objects)['INFOPLIST_KEY_UILaunchStoryboardName'] = 'Other'
+        self.mutate_project(mutation)
+        self.reject('MOD-06: launch storyboard configuration mismatch')
+
+    def test_launch_storyboard_setting_test_target_rejected(self):
+        def mutation(objects):
+            target = next(o for o in objects.values() if o.get('isa') == 'PBXNativeTarget' and o['name'] == 'CoolMalliOSUITests')
+            cid = objects[target['buildConfigurationList']]['buildConfigurations'][0]
+            objects[cid]['buildSettings']['INFOPLIST_KEY_UILaunchStoryboardName'] = 'LaunchScreen'
+        self.mutate_project(mutation)
+        self.reject('MOD-06: launch storyboard configuration must be App-only')
+
+    def test_launch_blank_screen_generation_rejected(self):
+        def mutation(objects):
+            self.launch_settings(objects)['INFOPLIST_KEY_UILaunchScreen_Generation'] = 'YES'
+        self.mutate_project(mutation)
+        self.reject('MOD-06: unknown/unsafe build settings')
+
     def test_checkout_cannot_import_orders_feature(self):
         self.append('import OrdersFeature\n', target='CheckoutFeature')
         self.reject('MOD-01:.*forbidden import OrdersFeature')
